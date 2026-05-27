@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>隐私政策 · 溪语 AI</title>
+  <link rel="icon" href="/logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FFF5F9] text-[#1D1D1F] font-sans antialiased">
+  <main class="max-w-3xl mx-auto px-6 py-12">
+    <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← 返回首页</a>
+
+    <h1 class="mt-6 text-3xl font-bold tracking-tight">隐私政策（开源示例版）</h1>
+    <p class="mt-2 text-sm text-[#86868B]">最后更新：2026-05-28</p>
+
+    <article class="mt-8 space-y-6 leading-7 text-[15px]">
+      <div class="bg-white border border-[#FFE8F2] rounded-2xl p-5">
+        <p class="font-semibold mb-2">⚠️ 这是开源示例占位</p>
+        <p class="text-[#86868B] text-sm">
+          本页面是开源项目 <b>溪语 AI</b> 附带的示例性隐私政策模板，仅作部署后链接可达占位。
+          若用于公开运营，请<b>自行</b>撰写符合《个人信息保护法》/ GDPR / 所在司法辖区的正式隐私政策替换本文件。
+        </p>
+      </div>
+
+      <section>
+        <h2 class="text-xl font-bold">1. 收集的信息</h2>
+        <ul class="list-disc pl-6 space-y-1">
+          <li><b>账户信息</b>：邮箱、密码哈希（scrypt）、出生日期</li>
+          <li><b>对话内容</b>：用户与 AI 的聊天记录、上传的图片/语音</li>
+          <li><b>派生信息</b>：AI 提取的长期记忆、用户画像、好感度等</li>
+          <li><b>日志</b>：请求时间、IP、错误堆栈（用于排障）</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">2. 使用方式</h2>
+        <p>个人信息仅用于：</p>
+        <ul class="list-disc pl-6 space-y-1">
+          <li>提供 AI 对话服务（必要时调用第三方大模型 API，详见下条）</li>
+          <li>账户认证、密码找回、付费记录</li>
+          <li>反作弊、内容审核、安全审计</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">3. 第三方共享</h2>
+        <p>本应用通过部署者在 <code>.env</code> 中配置的 AI 服务商（如 DeepSeek、OpenAI、智谱、阿里通义、火山方舟、Moonshot 等）实现 AI 能力。
+          你的聊天文本会被发送到所选 provider 以获得回复。请部署者明确告知用户使用了哪些 provider，并链接其各自的隐私政策。</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">4. 数据存储</h2>
+        <p>本应用默认使用 SQLite 本地存储。WAL 文件可能保留至下次启动。如未额外备份，删除账户即删除全部对话与记忆。</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">5. 你的权利</h2>
+        <ul class="list-disc pl-6 space-y-1">
+          <li>导出：<code>GET /api/me/export</code></li>
+          <li>删除：<code>DELETE /api/me/account</code>（同时清空 wechat_accounts、companions、记忆、消息历史）</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">6. 联系方式</h2>
+        <p>开源版本无中央运营方。如你使用的是某个具体部署，请联系该部署的运营者。</p>
+      </section>
+    </article>
+
+    <p class="mt-12 text-xs text-[#C0C0C5]">License: MIT · 仅供模板参考，不构成法律建议。</p>
+  </main>
+</body>
+</html>

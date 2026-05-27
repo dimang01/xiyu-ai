@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>登录注册 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+            ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA',
+            danger:'#FF4D4F',
+          },
+          fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+          boxShadow: {
+            sakura: '0 4px 24px rgba(255, 182, 217, 0.15)',
+            'sakura-lg':'0 16px 48px rgba(255, 143, 184, 0.22)',
+            card: '0 12px 48px rgba(0,0,0,0.06)',
+          },
+          letterSpacing: { tightest: '-0.04em' },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    body { background:
+      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255,182,217,.35), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 90% 100%, rgba(255,232,242,.6), transparent 70%),
+      #FAFAFA;
+    }
+    input:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,182,217,.25); border-color: #FFB6D9 !important; }
+    .petal { position:absolute; top:-40px; pointer-events:none; animation: petal-fall linear infinite; opacity:0; }
+    @keyframes petal-fall {
+      0% { transform: translate3d(0,-40px,0) rotate(0deg); opacity:0; }
+      10% { opacity:.45; } 90% { opacity:.45; }
+      100% { transform: translate3d(60px,110vh,0) rotate(420deg); opacity:0; }
+    }
+    .tab-active { color: #1D1D1F; }
+    .tab-active::after { content:''; position:absolute; left:50%; bottom:-1px; transform: translateX(-50%); width:24px; height:2px; background: linear-gradient(90deg, #FFB6D9, #FF8FB8); border-radius:2px; }
+    .btn-primary { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 16px 48px rgba(255,143,184,.32); transform: translateY(-1px); }
+    .btn-primary:disabled { opacity:.6; cursor: not-allowed; }
+    .spinner { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .auth-card { backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); }
+  </style>
+</head>
+
+<body class="min-h-screen bg-cloud font-sans text-ink antialiased flex flex-col">
+
+  <!-- Petals -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+    <svg width="0" height="0" style="position:absolute"><defs>
+      <symbol id="petal" viewBox="0 0 100 100"><path d="M50 8 C30 28, 28 58, 50 92 C72 58, 70 28, 50 8 Z" fill="#FFB6D9"/></symbol>
+    </defs></svg>
+    <svg class="petal" style="left:10%; width:20px; animation-duration:15s; animation-delay:0s"><use href="#petal"/></svg>
+    <svg class="petal" style="left:35%; width:18px; animation-duration:17s; animation-delay:6s"><use href="#petal"/></svg>
+    <svg class="petal" style="left:65%; width:22px; animation-duration:14s; animation-delay:3s"><use href="#petal"/></svg>
+    <svg class="petal" style="left:85%; width:18px; animation-duration:16s; animation-delay:9s"><use href="#petal"/></svg>
+  </div>
+
+  <!-- Top bar -->
+  <header class="relative z-10 px-6 lg:px-10 py-5">
+    <a href="/" class="inline-flex items-center gap-2.5 group">
+      <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
+      <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+    </a>
+  </header>
+
+  <!-- Main -->
+  <main class="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
+    <div class="w-full max-w-[440px]">
+
+      <div class="text-center mb-10">
+        <h1 class="text-[36px] font-bold tracking-tightest leading-tight">欢迎来到溪语</h1>
+        <p class="mt-3 text-[15px] text-mute font-medium">用一个账号，记住你和她之间的一切。</p>
+      </div>
+
+      <!-- Card -->
+      <div class="auth-card rounded-3xl shadow-card p-8 sm:p-10 border border-white">
+
+        <!-- Tabs -->
+        <div class="flex items-center justify-center border-b border-line mb-8 -mt-2">
+          <button id="tab-login"    class="relative px-6 py-3 text-[15px] font-semibold tab-active">登录</button>
+          <button id="tab-register" class="relative px-6 py-3 text-[15px] font-semibold text-mute">注册</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="form-login" class="space-y-4">
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">账号</label>
+            <input name="account" type="text" autocomplete="username" required
+                   placeholder="用户名 或 邮箱"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+          <div>
+            <label class="flex items-center justify-between mb-2">
+              <span class="text-[13px] font-semibold text-ink">密码</span>
+              <a href="/app/forgot.html" class="text-[12px] text-mute hover:text-sakura-deep transition-colors">忘记密码？</a>
+            </label>
+            <input name="password" type="password" autocomplete="current-password" required minlength="8"
+                   placeholder="至少 8 位"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+          <div id="msg-login" class="hidden text-[13px] font-medium px-3 py-2 rounded-xl"></div>
+          <button type="submit" id="btn-login"
+                  class="btn-primary w-full mt-2 py-3.5 text-[15px] font-semibold text-white rounded-full shadow-sakura transition-all">
+            登录
+          </button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="form-register" class="space-y-4 hidden">
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">用户名</label>
+            <input name="username" type="text" autocomplete="username" required pattern="[a-zA-Z0-9_]{3,32}"
+                   placeholder="3-32 位字母/数字/下划线"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">邮箱</label>
+            <input name="email" type="email" autocomplete="email" required
+                   placeholder="you@example.com"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">邮箱验证码</label>
+            <div class="flex gap-2 items-stretch">
+              <input name="code" type="text" inputmode="numeric" pattern="\d{6}" maxlength="6" required
+                     placeholder="6 位数字"
+                     class="flex-1 min-w-0 px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 tracking-widest transition-all" />
+              <button type="button" id="btn-send-code"
+                      class="shrink-0 px-3 sm:px-4 py-3 text-[13px] font-semibold text-sakura-deep bg-sakura-soft rounded-2xl hover:bg-sakura/30 transition-all whitespace-nowrap">
+                <span class="hidden sm:inline">发送验证码</span>
+                <span class="sm:hidden">发送</span>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">设置密码</label>
+            <input name="password" type="password" autocomplete="new-password" required minlength="8"
+                   placeholder="至少 8 位"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+          <div class="flex items-start gap-2.5 pt-1">
+            <input id="terms-accept" name="terms_accepted" type="checkbox" required
+                   class="mt-1 w-4 h-4 accent-sakura-deep" />
+            <label for="terms-accept" class="text-[12px] text-mute font-medium leading-relaxed">
+              我已年满 18 周岁，理解并同意
+              <a href="/app/terms.html" target="_blank" class="text-sakura-deep hover:underline">《用户协议》</a>
+              和
+              <a href="/app/privacy.html" target="_blank" class="text-sakura-deep hover:underline">《隐私政策》</a>
+            </label>
+          </div>
+          <div id="msg-register" class="hidden text-[13px] font-medium px-3 py-2 rounded-xl"></div>
+          <button type="submit" id="btn-register"
+                  class="btn-primary w-full mt-2 py-3.5 text-[15px] font-semibold text-white rounded-full shadow-sakura transition-all">
+            创建账号
+          </button>
+        </form>
+      </div>
+
+      <p class="text-center text-[13px] text-mute mt-8 font-medium">
+        遇到问题？
+        <a href="#" class="text-sakura-deep hover:underline ml-1">联系我们</a>
+      </p>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+
+    const API = ''; // same-origin via nginx proxy
+
+    // ─── Tab switching ─────────────────────────────────────────────────────
+    const tabLogin = document.getElementById('tab-login');
+    const tabReg   = document.getElementById('tab-register');
+    const formLogin = document.getElementById('form-login');
+    const formReg   = document.getElementById('form-register');
+
+    function activate(tab) {
+      if (tab === 'login') {
+        tabLogin.classList.add('tab-active');     tabLogin.classList.remove('text-mute');
+        tabReg.classList.remove('tab-active');    tabReg.classList.add('text-mute');
+        formLogin.classList.remove('hidden');     formReg.classList.add('hidden');
+      } else {
+        tabReg.classList.add('tab-active');       tabReg.classList.remove('text-mute');
+        tabLogin.classList.remove('tab-active');  tabLogin.classList.add('text-mute');
+        formReg.classList.remove('hidden');       formLogin.classList.add('hidden');
+      }
+    }
+    tabLogin.addEventListener('click', () => activate('login'));
+    tabReg.addEventListener('click',   () => activate('register'));
+
+    // URL ?tab=register
+    if (new URLSearchParams(location.search).get('tab') === 'register') activate('register');
+
+    // ─── Utilities ─────────────────────────────────────────────────────────
+    function showMsg(elId, text, kind) {
+      const el = document.getElementById(elId);
+      el.textContent = text;
+      el.className = 'text-[13px] font-medium px-3 py-2 rounded-xl ' +
+        (kind === 'error' ? 'bg-red-50 text-danger' :
+         kind === 'success' ? 'bg-emerald-50 text-emerald-600' :
+         'bg-sakura-soft text-sakura-deep');
+    }
+    async function apiPost(path, body) {
+      const r = await fetch(API + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      return { ok: r.ok, status: r.status, data };
+    }
+    function setLoading(btn, loading, originalText) {
+      btn.disabled = loading;
+      btn.innerHTML = loading
+        ? '<i data-lucide="loader-2" class="inline w-4 h-4 spinner align-[-2px]"></i> 处理中...'
+        : originalText;
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    }
+
+    // ─── 发送验证码 ─────────────────────────────────────────────────────────
+    const btnSendCode = document.getElementById('btn-send-code');
+    let cooldownTimer = null;
+    btnSendCode.addEventListener('click', async () => {
+      const email = formReg.email.value.trim();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return showMsg('msg-register', '请先填写正确的邮箱地址', 'error');
+      }
+
+      btnSendCode.disabled = true;
+      btnSendCode.textContent = '发送中...';
+
+      const { ok, data } = await apiPost('/api/auth/send-code', { email, purpose: 'register' });
+      if (!ok) {
+        showMsg('msg-register', data.message || '发送失败，请稍后再试', 'error');
+        btnSendCode.disabled = false;
+        btnSendCode.textContent = '发送验证码';
+        return;
+      }
+      showMsg('msg-register', '验证码已发送至邮箱，5 分钟内有效', 'success');
+
+      // Cooldown 60s
+      let left = 60;
+      btnSendCode.textContent = left + ' s';
+      cooldownTimer = setInterval(() => {
+        left--;
+        if (left <= 0) {
+          clearInterval(cooldownTimer);
+          btnSendCode.disabled = false;
+          btnSendCode.textContent = '重新发送';
+        } else {
+          btnSendCode.textContent = left + ' s';
+        }
+      }, 1000);
+    });
+
+    // ─── 注册 ───────────────────────────────────────────────────────────────
+    formReg.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-register');
+      const original = btn.innerHTML;
+
+      const termsAccepted = formReg.terms_accepted && formReg.terms_accepted.checked;
+      if (!termsAccepted) {
+        return showMsg('msg-register', '需要勾选同意《用户协议》和《隐私政策》', 'error');
+      }
+
+      const body = {
+        username: formReg.username.value.trim(),
+        email:    formReg.email.value.trim(),
+        code:     formReg.code.value.trim(),
+        password: formReg.password.value,
+        terms_accepted: true,
+      };
+
+      setLoading(btn, true, '创建账号');
+      const { ok, data } = await apiPost('/api/auth/register', body);
+      setLoading(btn, false, original);
+
+      if (!ok) {
+        return showMsg('msg-register', data.message || '注册失败', 'error');
+      }
+      showMsg('msg-register', '注册成功，即将进入...', 'success');
+      localStorage.setItem('xiyu_user', JSON.stringify(data.user));
+      if (data.token) localStorage.setItem('xiyu_token', data.token);
+      setTimeout(() => { location.href = '/app/create.html'; }, 600);
+    });
+
+    // ─── 登录 ───────────────────────────────────────────────────────────────
+    formLogin.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-login');
+      const original = btn.innerHTML;
+      const body = {
+        account:  formLogin.account.value.trim(),
+        password: formLogin.password.value,
+      };
+      setLoading(btn, true, '登录');
+      const { ok, data } = await apiPost('/api/auth/login', body);
+      setLoading(btn, false, original);
+
+      if (!ok) {
+        return showMsg('msg-login', data.message || '账号或密码错误', 'error');
+      }
+      showMsg('msg-login', '登录成功，即将进入...', 'success');
+      localStorage.setItem('xiyu_user', JSON.stringify(data.user));
+      if (data.token) localStorage.setItem('xiyu_token', data.token);
+      setTimeout(() => { location.href = '/app/dashboard.html'; }, 500);
+    });
+  </script>
+</body>
+</html>

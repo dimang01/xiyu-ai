@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>管理员后台 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+            ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA',
+            danger:'#FF4D4F',
+          },
+          fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+          boxShadow: { card: '0 12px 48px rgba(0,0,0,0.06)' },
+          letterSpacing: { tightest: '-0.04em' },
+        },
+      },
+    };
+  </script>
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    input:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,182,217,.25); border-color: #FFB6D9 !important; }
+    .btn-primary { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 16px 48px rgba(255,143,184,.32); }
+    .btn-primary:disabled { opacity:.6; cursor: not-allowed; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    table th { font-weight:600; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:600; }
+    .badge-ok { background:#ECFDF5; color:#059669; }
+    .badge-ban { background:#FEF2F2; color:#DC2626; }
+  </style>
+</head>
+
+<body class="min-h-screen bg-cloud font-sans text-ink antialiased">
+
+  <!-- ====== 登录视图 ====== -->
+  <div id="view-login" class="min-h-screen flex items-center justify-center px-6 py-12">
+    <div class="w-full max-w-[400px]">
+      <div class="text-center mb-8">
+        <h1 class="text-[28px] font-bold tracking-tightest">管理员后台</h1>
+        <p class="mt-2 text-[14px] text-mute font-medium">登录凭据存在服务器 .admin-credentials 文件中</p>
+      </div>
+      <div class="bg-white rounded-3xl shadow-card p-8">
+        <form id="form-login" class="space-y-4">
+          <div>
+            <label class="block text-[13px] font-semibold mb-2">用户名</label>
+            <input name="username" type="text" required autocomplete="username"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold mb-2">密码</label>
+            <input name="password" type="password" required autocomplete="current-password"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium mono" />
+          </div>
+          <div id="msg-login" class="hidden text-[13px] font-medium px-3 py-2 rounded-xl"></div>
+          <button type="submit"
+                  class="btn-primary w-full mt-2 py-3.5 text-[15px] font-semibold text-white rounded-full transition-all">
+            登录
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 主视图 ====== -->
+  <div id="view-main" class="hidden">
+    <header class="bg-white border-b border-line">
+      <div class="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <img src="/logo-256.webp" alt="" class="w-8 h-8 rounded-lg" />
+          <span class="text-[15px] font-semibold tracking-tight">溪语AI · 管理员后台</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="btn-reload-stickers" class="text-[13px] px-3 py-2 rounded-xl bg-cloud text-ink font-semibold hover:bg-line">重载表情包</button>
+          <button id="btn-regen-admin" class="text-[13px] px-3 py-2 rounded-xl bg-sakura-soft text-sakura-deep font-semibold hover:bg-sakura/30">重置管理员密码</button>
+          <button id="btn-logout" class="text-[13px] px-3 py-2 rounded-xl bg-cloud text-ink font-semibold hover:bg-line">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-[1400px] mx-auto px-6 py-8 space-y-8">
+
+      <!-- 今日总览 -->
+      <section>
+        <h2 class="text-[20px] font-bold tracking-tightest mb-4">今日总览</h2>
+        <div id="stats-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4"></div>
+      </section>
+
+      <!-- 账号列表 -->
+      <section>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 class="text-[20px] font-bold tracking-tightest">账号列表</h2>
+          <div class="flex gap-2">
+            <input id="search-input" type="text" placeholder="按用户名 / 邮箱搜索"
+                   class="flex-1 sm:w-72 px-4 py-2 text-[14px] bg-white border border-line rounded-2xl" />
+            <button id="btn-search" class="px-4 py-2 text-[13px] font-semibold bg-white border border-line rounded-2xl hover:bg-cloud">搜索</button>
+          </div>
+        </div>
+        <div class="bg-white rounded-3xl shadow-card overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-[13px]">
+              <thead class="bg-cloud border-b border-line">
+                <tr>
+                  <th class="text-left px-4 py-3">ID</th>
+                  <th class="text-left px-4 py-3">用户名</th>
+                  <th class="text-left px-4 py-3">邮箱</th>
+                  <th class="text-left px-4 py-3">状态</th>
+                  <th class="text-left px-4 py-3">微信</th>
+                  <th class="text-right px-4 py-3">今日 tokens</th>
+                  <th class="text-right px-4 py-3">今日消息</th>
+                  <th class="text-right px-4 py-3">累计 tokens</th>
+                  <th class="text-left px-4 py-3">注册时间</th>
+                  <th class="text-right px-4 py-3">操作</th>
+                </tr>
+              </thead>
+              <tbody id="accounts-tbody"></tbody>
+            </table>
+          </div>
+          <div class="px-4 py-3 border-t border-line flex items-center justify-between text-[12px] text-mute">
+            <span id="pager-info">—</span>
+            <div class="flex gap-2">
+              <button id="btn-prev" class="px-3 py-1 rounded-lg bg-cloud hover:bg-line disabled:opacity-40" disabled>上一页</button>
+              <button id="btn-next" class="px-3 py-1 rounded-lg bg-cloud hover:bg-line disabled:opacity-40" disabled>下一页</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ====== 详情弹窗 ====== -->
+  <div id="modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-[600px] w-full max-h-[90vh] overflow-y-auto p-6 shadow-card">
+      <div class="flex items-start justify-between mb-4">
+        <h3 id="modal-title" class="text-[18px] font-bold tracking-tightest">账号详情</h3>
+        <button id="modal-close" class="text-mute hover:text-ink">✕</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = '';
+    const TOKEN_KEY = 'xiyu_admin_token';
+
+    function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+    function setToken(t) { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); }
+
+    async function call(path, opts = {}) {
+      const token = getToken();
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const r = await fetch(API + path, { ...opts, headers });
+      const data = await r.json().catch(() => ({}));
+      if (r.status === 401) {
+        setToken(null);
+        showLogin();
+      }
+      return { ok: r.ok, status: r.status, data };
+    }
+
+    function showLogin() {
+      document.getElementById('view-login').classList.remove('hidden');
+      document.getElementById('view-main').classList.add('hidden');
+    }
+    function showMain() {
+      document.getElementById('view-login').classList.add('hidden');
+      document.getElementById('view-main').classList.remove('hidden');
+      loadStats();
+      loadAccounts();
+    }
+
+    function showMsg(text, kind) {
+      const el = document.getElementById('msg-login');
+      el.textContent = text;
+      el.className = 'text-[13px] font-medium px-3 py-2 rounded-xl ' +
+        (kind === 'error' ? 'bg-red-50 text-danger' : 'bg-emerald-50 text-emerald-600');
+    }
+
+    // ─── 登录 ───
+    document.getElementById('form-login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const { ok, data } = await call('/api/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ username: f.username.value, password: f.password.value }),
+      });
+      if (!ok) return showMsg(data.error || data.message || '登录失败', 'error');
+      setToken(data.data.token);
+      showMain();
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      setToken(null);
+      showLogin();
+    });
+
+    // ─── 今日总览 ───
+    async function loadStats() {
+      const { ok, data } = await call('/api/admin/stats/today');
+      if (!ok) return;
+      const s = data.data;
+      const cells = [
+        { label: '今日 Tokens', val: s.today.total_tokens.toLocaleString() },
+        { label: '今日消息数', val: s.today.message_count.toLocaleString() },
+        { label: '今日活跃账号', val: s.today.active_accounts.toLocaleString() },
+        { label: '总账号数', val: `${s.total_accounts} (${s.banned_accounts} 封禁)` },
+        { label: '总人设数', val: s.total_companions.toLocaleString() },
+      ];
+      document.getElementById('stats-grid').innerHTML = cells.map(c => `
+        <div class="bg-white rounded-2xl p-5 shadow-card">
+          <div class="text-[12px] text-mute font-medium">${c.label}</div>
+          <div class="text-[22px] font-bold tracking-tight mt-1">${c.val}</div>
+        </div>
+      `).join('');
+    }
+
+    // ─── 账号列表 ───
+    let pagerState = { limit: 50, offset: 0, total: 0, search: null };
+
+    async function loadAccounts() {
+      const params = new URLSearchParams();
+      params.set('limit', pagerState.limit);
+      params.set('offset', pagerState.offset);
+      if (pagerState.search) params.set('search', pagerState.search);
+      const { ok, data } = await call('/api/admin/accounts?' + params.toString());
+      if (!ok) return;
+      pagerState.total = data.data.total;
+
+      const rows = data.data.accounts.map(a => `
+        <tr class="border-b border-line/60 hover:bg-cloud/60">
+          <td class="px-4 py-3 mono">${a.id}</td>
+          <td class="px-4 py-3 font-semibold">${escapeHtml(a.username)}</td>
+          <td class="px-4 py-3 mono text-mute">${escapeHtml(a.email)}</td>
+          <td class="px-4 py-3">
+            ${a.is_banned ? `<span class="badge badge-ban" title="${escapeHtml(a.banned_reason || '')}">已封禁</span>` : '<span class="badge badge-ok">正常</span>'}
+          </td>
+          <td class="px-4 py-3 text-mute">${a.wechat_bound ? '已绑定' : '未绑定'}</td>
+          <td class="px-4 py-3 text-right mono">${a.today_tokens.toLocaleString()}</td>
+          <td class="px-4 py-3 text-right mono">${a.today_messages.toLocaleString()}</td>
+          <td class="px-4 py-3 text-right mono">${a.total_tokens.toLocaleString()}</td>
+          <td class="px-4 py-3 text-mute text-[12px]">${a.created_at || ''}</td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">
+            <button class="btn-action text-[12px] px-2 py-1 rounded-lg bg-cloud hover:bg-line font-semibold" data-act="detail" data-id="${a.id}">详情</button>
+            ${a.is_banned
+              ? `<button class="btn-action text-[12px] px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-semibold ml-1" data-act="unban" data-id="${a.id}">解封</button>`
+              : `<button class="btn-action text-[12px] px-2 py-1 rounded-lg bg-red-50 text-danger hover:bg-red-100 font-semibold ml-1" data-act="ban" data-id="${a.id}">封禁</button>`}
+            <button class="btn-action text-[12px] px-2 py-1 rounded-lg bg-sakura-soft text-sakura-deep hover:bg-sakura/30 font-semibold ml-1" data-act="reset" data-id="${a.id}">重置密码</button>
+          </td>
+        </tr>
+      `).join('');
+      document.getElementById('accounts-tbody').innerHTML = rows || `<tr><td colspan="10" class="text-center py-12 text-mute">暂无账号</td></tr>`;
+
+      const pageStart = pagerState.offset + 1;
+      const pageEnd = Math.min(pagerState.offset + data.data.accounts.length, pagerState.total);
+      document.getElementById('pager-info').textContent = pagerState.total === 0
+        ? '共 0 条'
+        : `第 ${pageStart}–${pageEnd} 条，共 ${pagerState.total} 条`;
+      document.getElementById('btn-prev').disabled = pagerState.offset === 0;
+      document.getElementById('btn-next').disabled = pageEnd >= pagerState.total;
+
+      // 绑定操作按钮
+      document.querySelectorAll('.btn-action').forEach(btn => {
+        btn.addEventListener('click', () => handleAction(btn.dataset.act, btn.dataset.id));
+      });
+    }
+
+    document.getElementById('btn-search').addEventListener('click', () => {
+      pagerState.search = document.getElementById('search-input').value.trim() || null;
+      pagerState.offset = 0;
+      loadAccounts();
+    });
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') document.getElementById('btn-search').click();
+    });
+    document.getElementById('btn-prev').addEventListener('click', () => {
+      pagerState.offset = Math.max(0, pagerState.offset - pagerState.limit);
+      loadAccounts();
+    });
+    document.getElementById('btn-next').addEventListener('click', () => {
+      pagerState.offset += pagerState.limit;
+      loadAccounts();
+    });
+
+    // ─── 操作 ───
+    async function handleAction(action, id) {
+      if (action === 'detail') {
+        const { ok, data } = await call(`/api/admin/accounts/${id}`);
+        if (!ok) return alert(data.error || '获取详情失败');
+        showDetail(data.data);
+      } else if (action === 'ban') {
+        const reason = prompt('封禁原因（可选）：') || '';
+        const { ok, data } = await call(`/api/admin/accounts/${id}/ban`, {
+          method: 'POST', body: JSON.stringify({ reason }),
+        });
+        if (!ok) return alert(data.error || '封禁失败');
+        loadAccounts();
+      } else if (action === 'unban') {
+        if (!confirm('确认解封该账号？')) return;
+        const { ok, data } = await call(`/api/admin/accounts/${id}/unban`, { method: 'POST' });
+        if (!ok) return alert(data.error || '解封失败');
+        loadAccounts();
+      } else if (action === 'reset') {
+        if (!confirm('确认重置该账号密码？\n旧密码将立即失效。')) return;
+        const { ok, data } = await call(`/api/admin/accounts/${id}/reset-password`, { method: 'POST' });
+        if (!ok) return alert(data.error || '重置失败');
+        showResetResult(data.data);
+      }
+    }
+
+    function showDetail(d) {
+      const a = d.account, u = d.usage, h = d.history || [];
+      const historyRows = h.map(r => `
+        <tr class="border-b border-line/40">
+          <td class="px-3 py-2 mono">${r.day}</td>
+          <td class="px-3 py-2 text-right mono">${r.total_tokens.toLocaleString()}</td>
+          <td class="px-3 py-2 text-right mono">${r.message_count}</td>
+        </tr>
+      `).join('') || `<tr><td colspan="3" class="text-center py-4 text-mute text-[12px]">暂无用量记录</td></tr>`;
+
+      document.getElementById('modal-title').textContent = `账号 #${a.id} · ${a.username}`;
+      document.getElementById('modal-body').innerHTML = `
+        <dl class="grid grid-cols-2 gap-3 text-[13px] mb-5">
+          <dt class="text-mute">用户名</dt><dd class="font-semibold">${escapeHtml(a.username)}</dd>
+          <dt class="text-mute">邮箱</dt><dd class="mono">${escapeHtml(a.email)}</dd>
+          <dt class="text-mute">注册时间</dt><dd>${a.created_at || '-'}</dd>
+          <dt class="text-mute">状态</dt><dd>${a.is_banned ? `<span class="badge badge-ban">已封禁</span> ${escapeHtml(a.banned_reason || '')}` : '<span class="badge badge-ok">正常</span>'}</dd>
+          <dt class="text-mute">微信绑定</dt><dd>${d.binding ? `已绑定 (${escapeHtml(d.binding.wechat_user_id.slice(0,16))}…)` : '未绑定'}</dd>
+          <dt class="text-mute">人设</dt><dd>${d.companion ? `${escapeHtml(d.companion.name)} · 好感 ${d.companion.affection_level} (${escapeHtml(d.companion.relationship_stage || '')})` : '未创建'}</dd>
+        </dl>
+        <div class="bg-cloud rounded-2xl p-4 mb-5">
+          <div class="text-[12px] text-mute font-semibold mb-2">用量统计</div>
+          <div class="grid grid-cols-2 gap-3 text-[13px]">
+            <div>今日 tokens：<span class="font-bold mono">${u.today.total_tokens.toLocaleString()}</span></div>
+            <div>今日消息数：<span class="font-bold mono">${u.today.message_count}</span></div>
+            <div>累计 tokens：<span class="font-bold mono">${u.total.total_tokens.toLocaleString()}</span></div>
+            <div>累计消息数：<span class="font-bold mono">${u.total.message_count}</span></div>
+          </div>
+        </div>
+        <div class="text-[12px] text-mute font-semibold mb-2">近 30 天明细</div>
+        <table class="w-full text-[12px]">
+          <thead><tr class="bg-cloud"><th class="text-left px-3 py-2">日期</th><th class="text-right px-3 py-2">Tokens</th><th class="text-right px-3 py-2">消息数</th></tr></thead>
+          <tbody>${historyRows}</tbody>
+        </table>
+      `;
+      document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function showResetResult(d) {
+      document.getElementById('modal-title').textContent = '密码已重置';
+      document.getElementById('modal-body').innerHTML = `
+        <p class="text-[14px] mb-4">用户 <span class="font-semibold">${escapeHtml(d.username)}</span>（${escapeHtml(d.email)}）的新密码：</p>
+        <div class="bg-cloud rounded-2xl p-5 text-center mb-4">
+          <div class="mono text-[20px] font-bold tracking-wider select-all">${escapeHtml(d.new_password)}</div>
+        </div>
+        <p class="text-[12px] text-danger mb-4">${escapeHtml(d.note)}</p>
+        <button id="btn-copy-pw" class="btn-primary w-full py-3 text-[14px] font-semibold text-white rounded-full">复制密码</button>
+      `;
+      document.getElementById('modal').classList.remove('hidden');
+      document.getElementById('btn-copy-pw').addEventListener('click', () => {
+        navigator.clipboard.writeText(d.new_password).then(() => {
+          document.getElementById('btn-copy-pw').textContent = '已复制 ✓';
+        });
+      });
+    }
+
+    document.getElementById('modal-close').addEventListener('click', () => {
+      document.getElementById('modal').classList.add('hidden');
+    });
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target.id === 'modal') document.getElementById('modal').classList.add('hidden');
+    });
+
+    // ─── 重载表情包 ───
+    document.getElementById('btn-reload-stickers').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-reload-stickers');
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '加载中...';
+      const { ok, data } = await call('/api/admin/stickers/reload', { method: 'POST' });
+      btn.disabled = false;
+      btn.textContent = orig;
+      if (!ok) return alert(data.error || '重载失败');
+      alert(`表情包已重载：${data.data.count} 张`);
+    });
+
+    // ─── 管理员密码重置 ───
+    document.getElementById('btn-regen-admin').addEventListener('click', async () => {
+      if (!confirm('确认重置管理员密码？\n旧密码会立即失效，下次登录需用新密码。')) return;
+      const { ok, data } = await call('/api/admin/regenerate-password', { method: 'POST' });
+      if (!ok) return alert(data.error || '重置失败');
+      document.getElementById('modal-title').textContent = '管理员密码已重置';
+      document.getElementById('modal-body').innerHTML = `
+        <p class="text-[14px] mb-4">新的管理员密码：</p>
+        <div class="bg-cloud rounded-2xl p-5 text-center mb-4">
+          <div class="mono text-[18px] font-bold tracking-wider select-all break-all">${escapeHtml(data.data.new_password)}</div>
+        </div>
+        <p class="text-[12px] text-danger mb-4">${escapeHtml(data.data.note)}</p>
+        <p class="text-[12px] text-mute">同时已写入服务器 <span class="mono">.admin-credentials</span> 文件。</p>
+      `;
+      document.getElementById('modal').classList.remove('hidden');
+    });
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',
+      }[c]));
+    }
+
+    // ─── 启动 ───
+    if (getToken()) showMain(); else showLogin();
+  </script>
+</body>
+</html>

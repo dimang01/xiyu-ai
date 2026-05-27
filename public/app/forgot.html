@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>找回密码 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+            ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA',
+            danger:'#FF4D4F',
+          },
+          fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+          boxShadow: {
+            sakura: '0 4px 24px rgba(255, 182, 217, 0.15)',
+            card:   '0 12px 48px rgba(0,0,0,0.06)',
+          },
+          letterSpacing: { tightest: '-0.04em' },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    body { background:
+      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255,182,217,.35), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 90% 100%, rgba(255,232,242,.6), transparent 70%),
+      #FAFAFA;
+    }
+    input:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,182,217,.25); border-color: #FFB6D9 !important; }
+    .btn-primary { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 16px 48px rgba(255,143,184,.32); transform: translateY(-1px); }
+    .btn-primary:disabled { opacity:.6; cursor: not-allowed; }
+    .spinner { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .auth-card { backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); }
+  </style>
+</head>
+
+<body class="min-h-screen bg-cloud font-sans text-ink antialiased flex flex-col">
+
+  <!-- Petals -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+    <svg width="0" height="0" style="position:absolute"><defs>
+      <symbol id="petal-f" viewBox="0 0 100 100"><path d="M50 8 C30 28, 28 58, 50 92 C72 58, 70 28, 50 8 Z" fill="#FFB6D9"/></symbol>
+    </defs></svg>
+    <svg class="petal" style="position:absolute; top:-40px; left:15%; width:18px; animation: petal-fall 16s linear infinite; animation-delay:1s;"><use href="#petal-f"/></svg>
+    <svg class="petal" style="position:absolute; top:-40px; left:42%; width:20px; animation: petal-fall 18s linear infinite; animation-delay:4s;"><use href="#petal-f"/></svg>
+    <svg class="petal" style="position:absolute; top:-40px; left:72%; width:16px; animation: petal-fall 15s linear infinite; animation-delay:7s;"><use href="#petal-f"/></svg>
+  </div>
+  <style>
+    @keyframes petal-fall {
+      0% { transform: translate3d(0,-40px,0) rotate(0deg); opacity:0; }
+      10% { opacity:.4; } 90% { opacity:.4; }
+      100% { transform: translate3d(60px,110vh,0) rotate(420deg); opacity:0; }
+    }
+  </style>
+
+  <header class="relative z-10 px-6 lg:px-10 py-5">
+    <a href="/" class="inline-flex items-center gap-2.5 group">
+      <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
+      <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+    </a>
+  </header>
+
+  <main class="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
+    <div class="w-full max-w-[440px]">
+
+      <div class="text-center mb-10">
+        <h1 class="text-[32px] font-bold tracking-tightest leading-tight">找回密码</h1>
+        <p class="mt-3 text-[15px] text-mute font-medium">通过注册邮箱验证后重置密码。</p>
+      </div>
+
+      <div class="auth-card rounded-3xl shadow-card p-8 sm:p-10 border border-white">
+
+        <form id="form-forgot" class="space-y-4">
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">注册邮箱</label>
+            <input name="email" type="email" autocomplete="email" required
+                   placeholder="you@example.com"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">邮箱验证码</label>
+            <div class="flex gap-2 items-stretch">
+              <input name="code" type="text" inputmode="numeric" pattern="\d{6}" maxlength="6" required
+                     placeholder="6 位数字"
+                     class="flex-1 min-w-0 px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 tracking-widest transition-all" />
+              <button type="button" id="btn-send-code"
+                      class="shrink-0 px-3 sm:px-4 py-3 text-[13px] font-semibold text-sakura-deep bg-sakura-soft rounded-2xl hover:bg-sakura/30 transition-all whitespace-nowrap">
+                <span class="hidden sm:inline">发送验证码</span>
+                <span class="sm:hidden">发送</span>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">新密码</label>
+            <input name="new_password" type="password" autocomplete="new-password" required minlength="8"
+                   placeholder="至少 8 位"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold text-ink mb-2">确认新密码</label>
+            <input name="confirm_password" type="password" autocomplete="new-password" required minlength="8"
+                   placeholder="再次输入新密码"
+                   class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
+          </div>
+
+          <div id="msg" class="hidden text-[13px] font-medium px-3 py-2 rounded-xl"></div>
+
+          <button type="submit" id="btn-submit"
+                  class="btn-primary w-full mt-2 py-3.5 text-[15px] font-semibold text-white rounded-full shadow-sakura transition-all">
+            重置密码
+          </button>
+        </form>
+      </div>
+
+      <p class="text-center text-[13px] text-mute mt-8 font-medium">
+        想起来了？
+        <a href="/app/auth.html" class="text-sakura-deep hover:underline ml-1">返回登录</a>
+      </p>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    const API = '';
+    const form = document.getElementById('form-forgot');
+    const btnSendCode = document.getElementById('btn-send-code');
+    const btnSubmit = document.getElementById('btn-submit');
+
+    function showMsg(text, kind) {
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      el.className = 'text-[13px] font-medium px-3 py-2 rounded-xl ' +
+        (kind === 'error' ? 'bg-red-50 text-danger' :
+         kind === 'success' ? 'bg-emerald-50 text-emerald-600' :
+         'bg-sakura-soft text-sakura-deep');
+    }
+    async function apiPost(path, body) {
+      const r = await fetch(API + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      return { ok: r.ok, status: r.status, data };
+    }
+    function setLoading(btn, loading, originalText) {
+      btn.disabled = loading;
+      btn.innerHTML = loading
+        ? '<i data-lucide="loader-2" class="inline w-4 h-4 spinner align-[-2px]"></i> 处理中...'
+        : originalText;
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    }
+
+    let cooldownTimer = null;
+    btnSendCode.addEventListener('click', async () => {
+      const email = form.email.value.trim();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return showMsg('请先填写正确的邮箱地址', 'error');
+      }
+      btnSendCode.disabled = true;
+      const originalLabel = btnSendCode.innerHTML;
+      btnSendCode.textContent = '发送中...';
+
+      const { ok, data } = await apiPost('/api/auth/send-code', { email, purpose: 'reset_password' });
+      if (!ok) {
+        showMsg(data.message || '发送失败，请稍后再试', 'error');
+        btnSendCode.disabled = false;
+        btnSendCode.innerHTML = originalLabel;
+        return;
+      }
+      showMsg('验证码已发送至邮箱，5 分钟内有效', 'success');
+
+      let left = 60;
+      btnSendCode.textContent = left + ' s';
+      cooldownTimer = setInterval(() => {
+        left--;
+        if (left <= 0) {
+          clearInterval(cooldownTimer);
+          btnSendCode.disabled = false;
+          btnSendCode.innerHTML = originalLabel;
+        } else {
+          btnSendCode.textContent = left + ' s';
+        }
+      }, 1000);
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newPassword = form.new_password.value;
+      const confirmPassword = form.confirm_password.value;
+      if (newPassword !== confirmPassword) {
+        return showMsg('两次输入的密码不一致', 'error');
+      }
+      if (newPassword.length < 8) {
+        return showMsg('密码至少 8 位', 'error');
+      }
+      const originalText = btnSubmit.innerHTML;
+      setLoading(btnSubmit, true, '重置密码');
+
+      const { ok, data } = await apiPost('/api/auth/reset-password', {
+        email: form.email.value.trim(),
+        code: form.code.value.trim(),
+        new_password: newPassword,
+      });
+      setLoading(btnSubmit, false, originalText);
+
+      if (!ok) {
+        return showMsg(data.message || '重置失败', 'error');
+      }
+      showMsg('密码已重置，3 秒后跳转登录...', 'success');
+      setTimeout(() => { location.href = '/app/auth.html'; }, 3000);
+    });
+  </script>
+</body>
+</html>

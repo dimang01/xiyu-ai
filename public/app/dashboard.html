@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>控制台 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+          ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA' },
+        fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+        boxShadow: { sakura: '0 4px 24px rgba(255, 182, 217, 0.15)', card: '0 12px 48px rgba(0,0,0,0.06)' },
+        letterSpacing: { tightest: '-0.04em' },
+      } },
+    };
+  </script>
+
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    body { background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255,182,217,.32), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 100% 20%, rgba(255,232,242,.5), transparent 60%),
+      #FAFAFA;
+      background-attachment: fixed;
+    }
+
+    /* 樱花花瓣装饰 */
+    .petal { position:absolute; top:-40px; pointer-events:none; animation: petal-fall linear infinite; opacity:0; will-change: transform; }
+    @keyframes petal-fall {
+      0% { transform: translate3d(0,-40px,0) rotate(0deg); opacity:0; }
+      10% { opacity:.35; } 90% { opacity:.35; }
+      100% { transform: translate3d(40px,110vh,0) rotate(360deg); opacity:0; }
+    }
+
+    /* 数据进度条：心动渐变 + shimmer 流光 */
+    .stat-bar { background: linear-gradient(90deg, #FFB6D9, #FF8FB8); height: 100%; transition: width .8s cubic-bezier(.16,1,.3,1); position:relative; overflow:hidden; }
+    .stat-bar::after {
+      content:''; position:absolute; inset:0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.45) 50%, transparent 100%);
+      animation: shimmer 2.5s ease-in-out infinite;
+    }
+    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+    .mood-pill { background: linear-gradient(135deg, #FFE8F2, #FFD3E5); color:#FF8FB8; }
+
+    /* iOS 风格 toggle */
+    .toggle { position:relative; display:inline-block; width:42px; height:24px; }
+    .toggle input { display:none; }
+    .toggle .slider { position:absolute; inset:0; background:#E5E5EA; border-radius:999px; transition: background .25s; cursor:pointer; }
+    .toggle .slider::before { content:''; position:absolute; left:2px; top:2px; width:20px; height:20px; background:#fff; border-radius:999px; transition: transform .3s cubic-bezier(.16,1,.3,1); box-shadow:0 2px 6px rgba(0,0,0,.18); }
+    .toggle input:checked + .slider { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); }
+    .toggle input:checked + .slider::before { transform: translateX(18px); }
+
+    .pro-chip { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); color:#fff; box-shadow: 0 2px 8px rgba(255,143,184,.32); }
+    .free-chip { background:#FAFAFA; color:#86868B; border:1px solid #F0F0F2; }
+
+    /* 卡片悬浮反馈 */
+    .card { background:#fff; border-radius:24px; box-shadow: 0 12px 48px rgba(0,0,0,0.04), 0 1px 0 rgba(0,0,0,0.02); transition: transform .25s, box-shadow .25s; }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 20px 56px rgba(255,143,184,0.10), 0 2px 0 rgba(0,0,0,0.02); }
+
+    /* 头像 mood 圆环 */
+    .avatar-ring {
+      position:relative;
+      padding:3px;
+      border-radius:9999px;
+      background: conic-gradient(from 0deg, #FFB6D9, #FFD3E5, #FFB6D9, #FF8FB8, #FFB6D9);
+      animation: ring-rotate 8s linear infinite;
+    }
+    @keyframes ring-rotate { to { transform: rotate(360deg); } }
+    .avatar-ring > img { display:block; border-radius:9999px; background:#fff; }
+
+    /* Stage 进度条 - 5 段式 */
+    .stage-track { display:grid; grid-template-columns: repeat(5, 1fr); gap:4px; }
+    .stage-seg { height:6px; border-radius:999px; background:#F0F0F2; transition: background .4s; }
+    .stage-seg.on { background: linear-gradient(90deg, #FFB6D9, #FF8FB8); }
+    .stage-seg.cur { background: linear-gradient(90deg, #FFB6D9, #FF8FB8); box-shadow: 0 0 12px rgba(255,143,184,.5); }
+
+    /* 时间轴 */
+    .tl-item { position:relative; padding-left:32px; padding-bottom:14px; }
+    .tl-item::before { content:''; position:absolute; left:9px; top:24px; bottom:-4px; width:2px; background: linear-gradient(180deg, #FFD3E5, transparent); }
+    .tl-item:last-child::before { display:none; }
+    .tl-dot { position:absolute; left:0; top:6px; width:20px; height:20px; border-radius:50%; background: linear-gradient(135deg, #FFE8F2, #FFB6D9); display:flex; align-items:center; justify-content:center; font-size:11px; box-shadow: 0 2px 8px rgba(255,143,184,.25); }
+    .tl-dot.stage { background: linear-gradient(135deg, #FF8FB8, #D946A0); color:#fff; box-shadow: 0 4px 16px rgba(217,70,160,.35); }
+
+    /* 现在状态卡片闪动 dot */
+    .live-dot { width:8px; height:8px; border-radius:50%; background:#34C759; box-shadow:0 0 0 0 rgba(52,199,89,.4); animation: live-pulse 2s infinite; }
+    @keyframes live-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(52,199,89,.5); }
+      70% { box-shadow: 0 0 0 10px rgba(52,199,89,0); }
+      100% { box-shadow: 0 0 0 0 rgba(52,199,89,0); }
+    }
+
+    /* Reveal 动画 */
+    .reveal { opacity:0; transform: translateY(16px); transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1); }
+    .reveal.in { opacity:1; transform: translateY(0); }
+  </style>
+</head>
+
+<body class="min-h-screen bg-cloud font-sans text-ink antialiased">
+
+  <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
+    <div class="max-w-content mx-auto px-6 lg:px-8 h-16 flex items-center justify-between" style="max-width:1120px;">
+      <a href="/" class="flex items-center gap-2.5">
+        <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
+        <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+      </a>
+      <div class="flex items-center gap-4">
+        <span id="user-name" class="text-[13px] font-medium text-mute"></span>
+        <span id="plan-badge" class="text-[11px] font-bold px-2 py-0.5 rounded-full pro-chip">内测 Pro</span>
+        <a id="btn-upgrade" href="/app/upgrade.html" class="hidden text-[12px] font-semibold text-mute hover:text-ink transition-colors">了解套餐</a>
+        <button id="btn-logout" class="text-[13px] font-medium text-mute hover:text-ink transition-colors">登出</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 浮动樱花装饰 -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+    <svg width="0" height="0" style="position:absolute"><defs>
+      <symbol id="petal-d" viewBox="0 0 100 100"><path d="M50 8 C30 28, 28 58, 50 92 C72 58, 70 28, 50 8 Z" fill="#FFB6D9"/></symbol>
+    </defs></svg>
+    <svg class="petal" style="left:8%; width:14px; animation-duration:18s; animation-delay:0s"><use href="#petal-d"/></svg>
+    <svg class="petal" style="left:28%; width:18px; animation-duration:22s; animation-delay:7s"><use href="#petal-d"/></svg>
+    <svg class="petal" style="left:55%; width:12px; animation-duration:20s; animation-delay:3s"><use href="#petal-d"/></svg>
+    <svg class="petal" style="left:78%; width:16px; animation-duration:24s; animation-delay:11s"><use href="#petal-d"/></svg>
+    <svg class="petal" style="left:92%; width:14px; animation-duration:19s; animation-delay:5s"><use href="#petal-d"/></svg>
+  </div>
+
+  <main class="relative z-10 max-w-[1120px] mx-auto px-6 py-10 lg:py-12">
+    <div id="toast" class="hidden mb-6 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-600 text-[14px] font-semibold shadow-card"></div>
+
+    <!-- Greeting -->
+    <div class="mb-8 reveal">
+      <h1 class="text-[28px] sm:text-[40px] font-bold tracking-tightest leading-[1.1]">
+        你好，<span id="greet-name" class="bg-gradient-to-r from-sakura-deep to-rose-500 bg-clip-text text-transparent">朋友</span>
+      </h1>
+      <p class="mt-3 text-[15px] text-mute font-medium" id="greet-subtitle">这是你和她共同的小世界 ✿</p>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="text-center py-20">
+      <div class="inline-block w-8 h-8 border-2 border-sakura-soft border-t-sakura-deep rounded-full" style="animation: spin .8s linear infinite"></div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      <p class="mt-3 text-[13px] text-mute font-medium">加载中...</p>
+    </div>
+
+    <!-- No companion yet -->
+    <div id="no-companion" class="hidden card p-10 text-center">
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-sakura-soft flex items-center justify-center mb-5">
+        <i data-lucide="user-plus" class="w-8 h-8 text-sakura-deep"></i>
+      </div>
+      <h2 class="text-[20px] font-bold mb-2">还没有创建她</h2>
+      <p class="text-[14px] text-mute font-medium mb-7">花两分钟，定义那个独一无二的她。</p>
+      <a href="/app/create.html" class="inline-block px-7 py-3 text-[14px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:scale-[1.03] transition-all">
+        现在创建
+      </a>
+    </div>
+
+    <!-- Has companion -->
+    <div id="has-companion" class="hidden grid lg:grid-cols-3 gap-5">
+
+      <!-- Profile card (large) -->
+      <div class="lg:col-span-2 card p-8 relative overflow-hidden">
+        <!-- 装饰背景渐变 -->
+        <div class="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-gradient-to-br from-sakura-soft to-transparent opacity-60 pointer-events-none" aria-hidden="true"></div>
+
+        <div class="relative flex items-start gap-5">
+          <div class="avatar-ring shrink-0">
+            <img id="c-avatar" src="/logo-512.webp" class="w-20 h-20 object-cover" />
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h2 id="c-name" class="text-[26px] font-bold tracking-tight"></h2>
+              <span id="c-mood" class="mood-pill px-3 py-1 rounded-full text-[11px] font-semibold"></span>
+            </div>
+            <p id="c-meta" class="text-[13px] text-mute font-medium mt-1"></p>
+            <div class="flex items-center gap-3 mt-2.5">
+              <span id="c-stage" class="text-[12px] text-sakura-deep font-bold"></span>
+              <span class="text-[12px] text-mute font-medium" id="c-days">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5 段式关系阶段进度 -->
+        <div class="relative mt-8">
+          <div class="flex items-center justify-between mb-2.5">
+            <div class="flex items-center gap-2">
+              <i data-lucide="heart" class="w-4 h-4 text-sakura-deep"></i>
+              <span class="text-[13px] font-semibold">好感度</span>
+            </div>
+            <span class="text-[13px] font-bold text-sakura-deep"><span id="aff-val">0</span> <span class="text-mute font-medium">/ 100</span></span>
+          </div>
+          <div class="w-full h-2.5 bg-cloud rounded-full overflow-hidden mb-2">
+            <div id="aff-bar" class="stat-bar" style="width:0%"></div>
+          </div>
+          <div class="stage-track mb-2">
+            <div class="stage-seg" id="stage-seg-0"></div>
+            <div class="stage-seg" id="stage-seg-1"></div>
+            <div class="stage-seg" id="stage-seg-2"></div>
+            <div class="stage-seg" id="stage-seg-3"></div>
+            <div class="stage-seg" id="stage-seg-4"></div>
+          </div>
+          <div class="grid grid-cols-5 text-[10px] text-mute font-medium text-center">
+            <span>陌生</span><span>朋友</span><span>暧昧</span><span>恋人</span><span>深爱</span>
+          </div>
+        </div>
+
+        <div class="relative grid grid-cols-3 gap-3 mt-7 pt-6 border-t border-line/70">
+          <div>
+            <p class="text-[11px] text-mute font-semibold tracking-wider mb-1">她在做</p>
+            <p id="c-scene" class="text-[14px] font-semibold truncate">—</p>
+          </div>
+          <div>
+            <p class="text-[11px] text-mute font-semibold tracking-wider mb-1">对话模式</p>
+            <p id="c-mode" class="text-[14px] font-semibold"><i data-lucide="sparkles" class="inline w-3.5 h-3.5 align-[-2px] text-sakura-deep"></i> 自适应</p>
+          </div>
+          <div>
+            <p class="text-[11px] text-mute font-semibold tracking-wider mb-1">长期记忆</p>
+            <p id="c-mem" class="text-[14px] font-semibold">— 条</p>
+          </div>
+        </div>
+
+        <div class="mt-7 pt-6 border-t border-line flex flex-col sm:flex-row gap-3">
+          <a id="btn-edit-companion" href="/app/create.html" class="flex-1 text-center py-3 text-[13px] font-semibold text-ink border border-line rounded-full hover:border-sakura hover:text-sakura-deep transition-all">
+            <i data-lucide="settings-2" class="inline w-4 h-4 align-[-3px]"></i> 调整人设
+          </a>
+          <a id="btn-open-wechat" href="weixin://" class="flex-1 text-center py-3 text-[13px] font-semibold text-white bg-gradient-to-r from-sakura to-sakura-deep rounded-full shadow-sakura hover:scale-[1.02] transition-all">
+            <i data-lucide="message-circle" class="inline w-4 h-4 align-[-3px]"></i> 打开微信
+          </a>
+        </div>
+        <p id="wechat-fallback" class="hidden mt-3 text-center text-[13px] font-medium text-mute">请打开微信，找到溪语与她聊天</p>
+        <div class="mt-7 pt-5 border-t border-line flex items-center justify-between gap-3">
+          <a href="/app/bind.html?rebind=true" class="text-[12px] font-medium text-mute hover:text-ink transition-colors">
+            重新绑定微信
+          </a>
+          <button id="btn-delete-companion" type="button" class="text-[12px] font-medium text-mute hover:text-red-500 transition-colors">
+            删除她
+          </button>
+        </div>
+      </div>
+
+      <!-- Right column -->
+      <div class="space-y-5">
+
+        <!-- 她现在（实时状态）-->
+        <div id="now-card" class="hidden card p-6 relative overflow-hidden bg-gradient-to-br from-white to-sakura-soft/30">
+          <div class="absolute top-0 right-0 w-40 h-40 rounded-full bg-gradient-to-br from-sakura/15 to-transparent pointer-events-none" aria-hidden="true"></div>
+          <div class="relative">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="live-dot"></span>
+              <span class="text-[11px] text-mute font-bold tracking-wider uppercase">SHE'S</span>
+              <span id="now-time" class="ml-auto text-[11px] text-mute font-medium"></span>
+            </div>
+            <p id="now-activity" class="text-[15px] font-semibold leading-snug">—</p>
+            <p id="now-mood" class="text-[12px] text-sakura-deep font-medium mt-2 leading-relaxed">—</p>
+            <div class="mt-4 pt-4 border-t border-sakura-soft/60">
+              <p class="text-[10px] text-mute font-semibold tracking-wider mb-1">接下来</p>
+              <p id="now-next" class="text-[13px] font-medium text-ink/70">—</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 主动消息 settings -->
+        <div class="card p-7">
+          <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+                <i data-lucide="bell-ring" class="w-5 h-5 text-sakura-deep"></i>
+              </div>
+              <h3 class="text-[15px] font-bold">主动找你</h3>
+            </div>
+            <label class="toggle">
+              <input id="t-proactive" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <p class="text-[12px] text-mute font-medium leading-relaxed mt-2" id="proactive-hint">
+            打开后她会在日常时段主动找你聊天
+          </p>
+          <p class="mt-3 text-[11px] text-mute font-medium" id="proactive-quota"></p>
+        </div>
+
+        <!-- 表情包 -->
+        <div class="card p-7">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+                <i data-lucide="smile" class="w-5 h-5 text-sakura-deep"></i>
+              </div>
+              <h3 class="text-[15px] font-bold">表情包回复</h3>
+            </div>
+            <label class="toggle">
+              <input id="t-sticker" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <p class="text-[12px] text-mute font-medium mt-3">让她在合适的时刻发表情包</p>
+        </div>
+
+        <!-- 长期记忆 -->
+        <div class="card p-7">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+                <i data-lucide="brain" class="w-5 h-5 text-sakura-deep"></i>
+              </div>
+              <h3 class="text-[15px] font-bold">长期记忆</h3>
+            </div>
+            <label class="toggle">
+              <input id="t-memory" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <p class="text-[12px] text-mute font-medium mt-3">关闭后她不会记住你说过的事情</p>
+        </div>
+
+        <!-- 聊天模式：完全自适应，无需用户调整 -->
+        <div class="card p-7 bg-gradient-to-br from-white to-sakura-soft/30">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sakura to-sakura-deep flex items-center justify-center shadow-sakura">
+                <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+              </div>
+              <div>
+                <h3 class="text-[15px] font-bold">聊天模式</h3>
+                <p class="text-[12px] text-sakura-deep font-semibold mt-0.5">完全自适应</p>
+              </div>
+            </div>
+          </div>
+          <p class="text-[12px] text-mute font-medium mt-3 leading-relaxed">
+            她会根据时间、心情和当前在做的事自动调整说话方式：早安会简短温暖、睡前会轻柔陪伴、心情低落时会专注倾听。
+          </p>
+        </div>
+
+        <!-- Tips -->
+        <div class="card p-7">
+          <div class="w-12 h-12 rounded-2xl bg-sakura-soft flex items-center justify-center mb-4">
+            <i data-lucide="lightbulb" class="w-6 h-6 text-sakura-deep"></i>
+          </div>
+          <h3 class="text-[16px] font-bold mb-2">小贴士</h3>
+          <ul class="space-y-3 text-[13px] text-mute font-medium leading-relaxed">
+            <li class="flex gap-2"><i data-lucide="check-circle-2" class="w-4 h-4 mt-0.5 text-sakura-deep flex-shrink-0"></i>多和她聊聊日常，好感度会慢慢上升</li>
+            <li class="flex gap-2"><i data-lucide="check-circle-2" class="w-4 h-4 mt-0.5 text-sakura-deep flex-shrink-0"></i>她会自动记住你的习惯和喜好</li>
+            <li class="flex gap-2"><i data-lucide="check-circle-2" class="w-4 h-4 mt-0.5 text-sakura-deep flex-shrink-0"></i>关系阶段升级会解锁新的互动深度</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── 我们的故事 ─────────────────────────────────────────────────── -->
+    <section id="story-section" class="hidden mt-6 card p-8 relative overflow-hidden">
+      <div class="absolute -top-16 -left-16 w-48 h-48 rounded-full bg-gradient-to-br from-sakura-soft to-transparent opacity-50 pointer-events-none" aria-hidden="true"></div>
+      <div class="relative">
+      <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
+        <div>
+          <h2 class="text-[22px] font-bold tracking-tightest">我们的故事</h2>
+          <p class="text-[13px] text-mute font-medium mt-1" id="story-subtitle">—</p>
+        </div>
+        <button id="btn-make-card" class="self-start sm:self-auto px-5 py-2.5 text-[13px] font-semibold rounded-full bg-sakura-soft text-sakura-deep hover:bg-sakura/30 transition-all">
+          <i data-lucide="image-down" class="inline w-4 h-4 align-[-3px]"></i>
+          生成 CP 卡片
+        </button>
+      </div>
+      <div id="story-timeline" class="relative">
+        <div class="text-center text-mute text-[13px] py-8">加载中...</div>
+      </div>
+      </div><!-- /.relative wrapper -->
+    </section>
+  </main>
+
+  <!-- 头像更换弹窗 -->
+  <div id="avatar-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-[440px] w-full p-6 shadow-card">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-[18px] font-bold tracking-tightest">更换头像</h3>
+        <button id="avatar-close" class="text-mute hover:text-ink text-xl leading-none">×</button>
+      </div>
+
+      <div class="flex items-center gap-4 mb-5">
+        <img id="avatar-preview" src="/logo-256.webp" class="w-20 h-20 rounded-2xl border-2 border-line object-cover" />
+        <div class="flex-1 text-[12px] text-mute font-medium leading-relaxed">
+          支持 PNG / JPG / WebP / GIF，最大 5MB。<br>会自动裁剪居中为 512×512 webp。
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <button id="btn-ai-suggest" class="py-3 text-[13px] font-semibold rounded-2xl bg-gradient-to-r from-sakura to-sakura-deep text-white shadow-sakura hover:scale-[1.02] transition-all">
+          <i data-lucide="sparkles" class="inline w-4 h-4 align-[-3px]"></i>
+          为我精选 4 张
+        </button>
+        <button id="btn-pick-file" class="py-3 text-[13px] font-semibold rounded-2xl border-2 border-dashed border-line hover:border-sakura-deep hover:bg-sakura-soft/30 text-mute hover:text-sakura-deep transition-all">
+          <i data-lucide="upload" class="inline w-4 h-4 align-[-3px]"></i>
+          上传图片
+        </button>
+      </div>
+      <input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
+
+      <!-- AI 生成候选区 -->
+      <div id="ai-candidates" class="hidden mb-3">
+        <p class="text-[12px] text-mute font-medium mb-2">点击选择喜欢的：</p>
+        <div id="ai-grid" class="grid grid-cols-2 gap-2"></div>
+      </div>
+
+      <div id="avatar-msg" class="hidden mt-3 text-[12px] font-medium text-center px-3 py-2 rounded-xl"></div>
+
+      <details class="mt-5 group">
+        <summary class="cursor-pointer text-[12px] font-semibold text-sakura-deep hover:text-ink select-none flex items-center gap-1">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5 transition-transform group-open:rotate-90"></i>
+          没有现成头像？复制提示词去 AI 生成
+        </summary>
+        <div class="mt-3 space-y-3 text-[12px]">
+          <p class="text-mute leading-relaxed">复制下面任一段到 <span class="font-semibold">ChatGPT (DALL-E 3) / 即梦 / Midjourney / 智谱清言</span> 生成图片后下载上传：</p>
+          <div class="space-y-2">
+            <div class="bg-cloud rounded-xl p-3">
+              <p class="font-semibold text-ink mb-1">A. 甜美邻家女孩（默认推荐）</p>
+              <p id="prompt-1" class="text-mute leading-snug select-all">柔和动漫风格的少女头像，圆脸大眼睛，乌黑长发自然垂下，温柔笑容，浅粉色衬衫，柔焦樱花背景，柔和暖色调，正面半身像，studio Ghibli 风格，高清细节</p>
+              <button class="mt-2 text-[11px] font-semibold text-sakura-deep" data-copy="prompt-1">复制</button>
+            </div>
+            <div class="bg-cloud rounded-xl p-3">
+              <p class="font-semibold text-ink mb-1">B. 元气少女</p>
+              <p id="prompt-2" class="text-mute leading-snug select-all">动漫风格头像，明亮的眼睛，棕色短发齐肩，扎双马尾，元气满满的笑容，校园制服或休闲卫衣，明亮粉色背景渐变，赛璐璐插画风格，圆润可爱</p>
+              <button class="mt-2 text-[11px] font-semibold text-sakura-deep" data-copy="prompt-2">复制</button>
+            </div>
+            <div class="bg-cloud rounded-xl p-3">
+              <p class="font-semibold text-ink mb-1">C. 温柔学姐</p>
+              <p id="prompt-3" class="text-mute leading-snug select-all">动漫女生头像，黑色微卷长发，温柔成熟气质，淡色针织衫，金色细框眼镜或不戴，柔光自然背景，文艺感氛围，half body portrait，京阿尼风格</p>
+              <button class="mt-2 text-[11px] font-semibold text-sakura-deep" data-copy="prompt-3">复制</button>
+            </div>
+            <div class="bg-cloud rounded-xl p-3">
+              <p class="font-semibold text-ink mb-1">D. 傲娇大小姐</p>
+              <p id="prompt-4" class="text-mute leading-snug select-all">动漫少女头像，金色长发卷发，碧蓝眼睛，骄傲但带害羞的表情，欧式礼服或学院制服带蝴蝶结，奢华浅色背景，精致五官，traditional anime style</p>
+              <button class="mt-2 text-[11px] font-semibold text-sakura-deep" data-copy="prompt-4">复制</button>
+            </div>
+            <div class="bg-cloud rounded-xl p-3">
+              <p class="font-semibold text-ink mb-1">E. 文艺御姐</p>
+              <p id="prompt-5" class="text-mute leading-snug select-all">动漫风格成熟女性头像，黑色直发披肩，冷色调眼睛，淡淡的微笑，简约白色衬衫或针织开衫，浅灰色磨砂背景，极简构图，安静知性气质，high quality anime portrait</p>
+              <button class="mt-2 text-[11px] font-semibold text-sakura-deep" data-copy="prompt-5">复制</button>
+            </div>
+            <div class="bg-cloud rounded-xl p-3">
+              <p class="font-semibold text-ink mb-1">F. 二次元御宅少女</p>
+              <p id="prompt-6" class="text-mute leading-snug select-all">动漫头像，紫粉色双色头发，巨大眼睛带星光，慵懒的笑，oversized 卫衣或动漫T恤，房间内书架背景或猫元素，moe style，pixiv top quality</p>
+              <button class="mt-2 text-[11px] font-semibold text-sakura-deep" data-copy="prompt-6">复制</button>
+            </div>
+          </div>
+          <p class="text-mute text-[11px] mt-2">💡 强烈建议保持 1:1 正方形构图，头像在画面中央。</p>
+        </div>
+      </details>
+
+      <button id="btn-upload-avatar" class="hidden btn-primary w-full mt-4 py-3 text-[14px] font-semibold text-white rounded-full">
+        确认上传
+      </button>
+    </div>
+  </div>
+
+  <style>
+    .btn-primary { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); transition: all .25s; }
+    .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(255,143,184,.32); }
+    .btn-primary:disabled { opacity:.6; cursor:not-allowed; }
+  </style>
+
+  <!-- CP 卡片预览弹窗 -->
+  <div id="card-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-[440px] w-full p-6 shadow-card">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-[16px] font-bold">CP 卡片</h3>
+        <button id="card-close" class="text-mute hover:text-ink text-xl leading-none">×</button>
+      </div>
+      <canvas id="cp-canvas" width="800" height="1200" class="w-full rounded-2xl border border-line"></canvas>
+      <div class="mt-4 flex gap-2">
+        <button id="btn-download-card" class="flex-1 btn-primary py-3 text-[14px] font-semibold text-white rounded-full">下载图片</button>
+        <button id="btn-share-card" class="flex-1 py-3 text-[14px] font-semibold rounded-full bg-cloud text-ink hover:bg-line">分享</button>
+      </div>
+      <p class="mt-3 text-[12px] text-mute text-center">长按图片可以保存到手机相册分享朋友圈</p>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+
+    const user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
+    const token = localStorage.getItem('xiyu_token') || '';
+    if (!user || !token) { location.href = '/app/auth.html'; }
+
+    // 全局 fetch 包装：自动加 Authorization + 处理 401 → 跳登录
+    const _origFetch = window.fetch;
+    window.fetch = function(url, init = {}) {
+      const isApi = typeof url === 'string' && url.startsWith('/api/');
+      if (isApi) {
+        init.headers = { ...(init.headers || {}), Authorization: `Bearer ${token}` };
+      }
+      return _origFetch(url, init).then(res => {
+        if (isApi && res.status === 401) {
+          localStorage.removeItem('xiyu_token');
+          localStorage.removeItem('xiyu_user');
+          location.href = '/app/auth.html';
+        }
+        return res;
+      });
+    };
+
+    document.getElementById('user-name').textContent = user.username;
+    document.getElementById('greet-name').textContent = user.username;
+    const params = new URLSearchParams(location.search);
+    if (params.get('rebind') === 'true') {
+      const toast = document.getElementById('toast');
+      toast.textContent = '已切换到新微信';
+      toast.classList.remove('hidden');
+      history.replaceState(null, '', location.pathname);
+    }
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      localStorage.clear();
+      location.href = '/app/auth.html';
+    });
+
+    // 内测期：所有人显示"内测 Pro"，主动消息按 Pro 配额提示
+    function loadPlanBadge() {
+      const quota = document.getElementById('proactive-quota');
+      if (quota) quota.textContent = '· 内测期：每天 5-15 次 · 23:00 主动晚安';
+    }
+    loadPlanBadge();
+
+    function getRecommendedChatMode(now = new Date()) {
+      const hour = Number(new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Shanghai',
+        hour: '2-digit',
+        hour12: false,
+      }).format(now));
+
+      if (hour >= 6 && hour < 9) return '早安问候';
+      if (hour >= 9 && hour < 12) return '日常聊天';
+      if (hour >= 12 && hour < 14) return '午间陪伴';
+      if (hour >= 14 && hour < 18) return '日常聊天';
+      if (hour >= 18 && hour < 21) return '晚间陪伴';
+      if (hour >= 21 && hour < 23) return '睡前故事';
+      return '深夜陪伴';
+    }
+
+    function clearCompanionCache() {
+      for (const store of [localStorage, sessionStorage]) {
+        store.removeItem('xiyu_companion_id');
+        store.removeItem('xiyu_companion_summary');
+        store.removeItem('xiyu_pending_companion');
+        store.removeItem('xiyu_wechat_user_id');
+      }
+    }
+
+    async function deleteCurrentCompanion() {
+      const companionId = localStorage.getItem('xiyu_companion_id');
+      const name = document.getElementById('c-name').textContent || '她';
+      if (!companionId) {
+        alert('缺少 companion_id，无法删除');
+        return;
+      }
+      if (!confirm(`确定要删除${name}吗？删除后无法恢复，所有记忆也会清空。`)) return;
+
+      const btn = document.getElementById('btn-delete-companion');
+      btn.disabled = true;
+      btn.textContent = '删除中...';
+      try {
+        const res = await fetch('/api/companions/' + encodeURIComponent(companionId) + '?user_id=' + encodeURIComponent(user.id), {
+          method: 'DELETE',
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok || !payload.ok) {
+          throw new Error(payload.message || payload.error || '删除失败');
+        }
+        clearCompanionCache();
+        location.href = '/app/create.html';
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = '删除她';
+        alert(e.message || '删除失败');
+      }
+    }
+
+    async function fetchWechatBinding() {
+      try {
+        const r = await fetch('/api/me/wechat?user_id=' + encodeURIComponent(user.id));
+        const d = await r.json();
+        if (r.ok && d.ok && d.data?.wechat_user_id) return d.data;
+      } catch {}
+      return null;
+    }
+
+    async function tryCreateCompanionFromDraft(binding) {
+      const draft = JSON.parse(localStorage.getItem('xiyu_pending_companion') || 'null');
+      if (!draft || !binding?.wechat_user_id) return null;
+      try {
+        const payload = { wechat_user_id: binding.wechat_user_id, ...draft };
+        if (binding.bot_id) payload.bot_id = binding.bot_id;
+        const cr = await fetch('/api/companions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const cd = await cr.json().catch(() => ({}));
+        if (!cr.ok || !cd.ok || !cd.data?.id) {
+          console.warn('兜底创建人设失败：', cd);
+          return null;
+        }
+        localStorage.removeItem('xiyu_pending_companion');
+        return cd.data.id;
+      } catch (e) {
+        console.warn('兜底创建人设异常：', e);
+        return null;
+      }
+    }
+
+    async function load() {
+      let companionId = null;
+      let c = null;
+
+      try {
+        const meRes = await fetch('/api/me/companion?user_id=' + encodeURIComponent(user.id));
+        const mePayload = await meRes.json();
+        if (!meRes.ok || !mePayload.ok) {
+          throw new Error(mePayload.message || mePayload.error || 'companion 加载失败');
+        }
+
+        if (!mePayload.data) {
+          // 有 binding 但缺 companion，且本地还有 draft，则兜底创建一次
+          const wechatBinding = await fetchWechatBinding();
+          if (wechatBinding) {
+            const newId = await tryCreateCompanionFromDraft(wechatBinding);
+            if (newId) {
+              companionId = String(newId);
+            }
+          }
+          if (!companionId) {
+            clearCompanionCache();
+          }
+        } else {
+          companionId = String(mePayload.data.companion_id);
+          c = mePayload.data.companion;
+          localStorage.setItem('xiyu_companion_id', companionId);
+          localStorage.setItem('xiyu_companion_summary', JSON.stringify(c));
+          if (mePayload.data.binding?.wechat_user_id) {
+            localStorage.setItem('xiyu_wechat_user_id', mePayload.data.binding.wechat_user_id);
+          }
+        }
+      } catch (e) {
+        console.warn(e);
+        companionId = localStorage.getItem('xiyu_companion_id');
+      }
+
+      document.getElementById('loading').classList.add('hidden');
+
+      if (!companionId) {
+        document.getElementById('no-companion').classList.remove('hidden');
+        return;
+      }
+
+      if (!c) {
+        const summaryRes = await fetch('/api/companions/' + companionId + '/summary');
+        const summaryPayload = await summaryRes.json();
+        if (!summaryRes.ok || !summaryPayload.ok) {
+          localStorage.removeItem('xiyu_companion_id');
+          localStorage.removeItem('xiyu_companion_summary');
+          throw new Error(summaryPayload.error || 'companion 加载失败');
+        }
+        c = summaryPayload.data;
+        localStorage.setItem('xiyu_companion_summary', JSON.stringify(c));
+      }
+
+      document.getElementById('has-companion').classList.remove('hidden');
+      document.getElementById('c-name').textContent  = c.name || '溪语';
+      document.getElementById('c-avatar').src = c.avatar_url || '/logo-512.webp';
+      document.getElementById('c-mood').textContent  = (c.mood || '平静');
+      document.getElementById('c-meta').textContent  =
+        `${c.age || 20} 岁 · ${c.role_title || c.persona || '邻家女孩'}`;
+      const stageNames = ['陌生人','朋友','暧昧','恋人','深爱'];
+      const curStage = c.relationship_stage || '陌生人';
+      document.getElementById('c-stage').innerHTML = '💕 ' + curStage;
+
+      const aff = c.affection ?? 0;
+      document.getElementById('aff-val').textContent = aff;
+      document.getElementById('aff-bar').style.width = aff + '%';
+      // 5 段式
+      const stageIdx = stageNames.indexOf(curStage);
+      for (let i = 0; i < 5; i++) {
+        const seg = document.getElementById('stage-seg-' + i);
+        seg.classList.remove('on', 'cur');
+        if (i < stageIdx) seg.classList.add('on');
+        if (i === stageIdx) seg.classList.add('cur');
+      }
+
+      // c-scene 初始用 logo placeholder "—"，loadNowCard 会覆盖为当前活动
+      // c-mode 已在 HTML 中渲染为"✨ 自适应"，无需改
+      document.getElementById('c-mem').textContent   = (c.memory_count ?? 0) + ' 条';
+
+      // greeting subtitle 个性化
+      const sub = document.getElementById('greet-subtitle');
+      if (sub) sub.textContent = `${c.name || '她'}今天的心情：${c.mood || '平静'} · 关系：${curStage}`;
+
+      document.getElementById('btn-edit-companion').href =
+        '/app/create.html?edit=true&id=' + encodeURIComponent(companionId);
+
+      // 初始化 toggles
+      const tProactive = document.getElementById('t-proactive');
+      const tSticker = document.getElementById('t-sticker');
+      const tMemory = document.getElementById('t-memory');
+      tProactive.checked = !!c.proactive_enabled;
+      tSticker.checked = !!c.sticker_reply_enabled;
+      tMemory.checked = c.memory_enabled !== false;   // 默认开
+
+      async function patchCompanion(field, value) {
+        try {
+          const r = await fetch('/api/companions/' + companionId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [field]: value ? 1 : 0 }),
+          });
+          const d = await r.json();
+          if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
+          showToast('已保存');
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      tProactive.addEventListener('change', () => patchCompanion('proactive_enabled', tProactive.checked));
+      tSticker.addEventListener('change', () => patchCompanion('sticker_reply_enabled', tSticker.checked));
+      tMemory.addEventListener('change', () => patchCompanion('memory_enabled', tMemory.checked));
+
+      // 头像点击 → 弹换头像
+      const cAvatarEl = document.getElementById('c-avatar');
+      cAvatarEl.style.cursor = 'pointer';
+      cAvatarEl.title = '点击更换头像';
+      cAvatarEl.addEventListener('click', () => openAvatarModal(companionId));
+
+      // 加载"我们的故事"时间轴
+      loadTimeline(companionId, c);
+
+      // 加载"她现在"实时状态
+      loadNowCard(companionId);
+
+      // reveal in
+      document.querySelectorAll('.reveal').forEach((el, i) => {
+        setTimeout(() => el.classList.add('in'), 80 * i);
+      });
+    }
+
+    // ─── 她现在（实时状态）────────────────────────────────────────────
+    async function loadNowCard(companionId) {
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/today');
+        const d = await r.json();
+        if (!r.ok || !d.ok) return;
+        const x = d.data;
+        if (!x.has_schedule) {
+          // 还没有日程（今天的还没生成或者刚创建），先隐藏
+          return;
+        }
+        const card = document.getElementById('now-card');
+        document.getElementById('now-time').textContent = x.now;
+        const actText = x.current_activity ? x.current_activity.activity : '正在等今天的日程开始...';
+        document.getElementById('now-activity').textContent = actText;
+        // 同步 profile 顶部的"她在做"
+        const sceneEl = document.getElementById('c-scene');
+        if (sceneEl) sceneEl.textContent = x.current_activity ? x.current_activity.activity : '—';
+        document.getElementById('now-mood').textContent = x.segment_mood || x.mood_arc || '';
+        document.getElementById('now-next').textContent = x.next_activity
+          ? `${x.next_activity.time} · ${x.next_activity.activity}`
+          : '今天的日程已经走完啦';
+        card.classList.remove('hidden');
+      } catch (e) {
+        console.warn('today:', e.message);
+      }
+    }
+
+    // ─── 头像更换 ─────────────────────────────────────────────────
+    let _pendingAvatarBase64 = null;
+    function openAvatarModal(companionId) {
+      _pendingAvatarBase64 = null;
+      document.getElementById('avatar-preview').src = document.getElementById('c-avatar').src;
+      document.getElementById('btn-upload-avatar').classList.add('hidden');
+      document.getElementById('avatar-msg').classList.add('hidden');
+      document.getElementById('avatar-modal').classList.remove('hidden');
+      document.getElementById('avatar-modal').dataset.companionId = companionId;
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    }
+    document.getElementById('avatar-close').addEventListener('click', () => {
+      document.getElementById('avatar-modal').classList.add('hidden');
+    });
+    document.getElementById('avatar-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'avatar-modal') document.getElementById('avatar-modal').classList.add('hidden');
+    });
+    document.getElementById('btn-pick-file').addEventListener('click', () => {
+      document.getElementById('avatar-file').click();
+    });
+
+    // 从精选池为我匹配 4 张
+    document.getElementById('btn-ai-suggest').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-ai-suggest');
+      const cid = document.getElementById('avatar-modal').dataset.companionId;
+      const orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" class="inline w-4 h-4 align-[-3px]" style="animation:spin .8s linear infinite"></i> 正在匹配...';
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+      document.getElementById('ai-candidates').classList.add('hidden');
+      try {
+        const r = await fetch('/api/companions/' + cid + '/avatar/suggest');
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '匹配失败');
+        const grid = document.getElementById('ai-grid');
+        grid.innerHTML = d.data.matches.map(m => `
+          <button class="ai-cand relative aspect-square rounded-2xl overflow-hidden border-2 border-line hover:border-sakura-deep transition-all" data-file="${m.file_name}">
+            <img src="${m.url}" class="w-full h-full object-cover" loading="lazy" />
+            <div class="absolute inset-0 bg-black/0 hover:bg-black/30 transition-all flex items-center justify-center opacity-0 hover:opacity-100">
+              <span class="text-white text-[13px] font-semibold bg-sakura-deep px-3 py-1 rounded-full">选这张</span>
+            </div>
+            <span class="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-white/90 rounded-full text-[10px] font-semibold text-sakura-deep">${m.vibe}</span>
+          </button>
+        `).join('');
+        document.getElementById('ai-candidates').classList.remove('hidden');
+        grid.querySelectorAll('.ai-cand').forEach(b => {
+          b.addEventListener('click', () => selectPresetAvatar(cid, b.dataset.file));
+        });
+        showAvatarMsg(`从 ${d.data.pool_size} 张精选池里挑了 4 张最贴合她`, 'ok');
+      } catch (e) {
+        showAvatarMsg(e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+      }
+    });
+
+    async function selectPresetAvatar(cid, fileName) {
+      showAvatarMsg('正在保存...', 'ok');
+      try {
+        const r = await fetch('/api/companions/' + cid + '/avatar/select-preset', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_name: fileName }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
+        document.getElementById('c-avatar').src = d.data.avatar_url + '?t=' + Date.now();
+        showAvatarMsg('头像已更新 ✓', 'ok');
+        setTimeout(() => document.getElementById('avatar-modal').classList.add('hidden'), 800);
+      } catch (e) {
+        showAvatarMsg(e.message, 'error');
+      }
+    }
+    document.getElementById('avatar-file').addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        showAvatarMsg('文件过大（>5MB）', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        _pendingAvatarBase64 = reader.result;
+        document.getElementById('avatar-preview').src = reader.result;
+        document.getElementById('btn-upload-avatar').classList.remove('hidden');
+        showAvatarMsg('点确认上传以保存', 'ok');
+      };
+      reader.readAsDataURL(file);
+    });
+    document.getElementById('btn-upload-avatar').addEventListener('click', async () => {
+      if (!_pendingAvatarBase64) return;
+      const btn = document.getElementById('btn-upload-avatar');
+      const cid = document.getElementById('avatar-modal').dataset.companionId;
+      btn.disabled = true; btn.textContent = '上传中...';
+      try {
+        const r = await fetch('/api/companions/' + cid + '/avatar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: _pendingAvatarBase64 }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '上传失败');
+        document.getElementById('c-avatar').src = d.data.avatar_url + '?t=' + Date.now();
+        showAvatarMsg('头像已更新 ✓', 'ok');
+        setTimeout(() => document.getElementById('avatar-modal').classList.add('hidden'), 800);
+      } catch (e) {
+        showAvatarMsg(e.message, 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = '确认上传';
+      }
+    });
+    function showAvatarMsg(text, kind) {
+      const el = document.getElementById('avatar-msg');
+      el.textContent = text;
+      el.className = 'mt-3 text-[12px] font-medium text-center px-3 py-2 rounded-xl ' +
+        (kind === 'error' ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600');
+    }
+    // 复制提示词
+    document.querySelectorAll('[data-copy]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const t = document.getElementById(btn.dataset.copy).textContent;
+        try {
+          await navigator.clipboard.writeText(t);
+          const orig = btn.textContent;
+          btn.textContent = '已复制 ✓';
+          setTimeout(() => btn.textContent = orig, 1200);
+        } catch {
+          alert('复制失败，请手动选中文本');
+        }
+      });
+    });
+
+    // ─── 我们的故事 ─────────────────────────────────────────────────
+    let _storyData = null;
+    async function loadTimeline(companionId, summary) {
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/timeline');
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '加载失败');
+        _storyData = { ...d.data, summary };
+        renderTimeline(_storyData);
+        document.getElementById('story-section').classList.remove('hidden');
+      } catch (e) {
+        console.warn('timeline:', e.message);
+      }
+    }
+
+    function renderTimeline(data) {
+      const { companion, events } = data;
+      document.getElementById('story-subtitle').innerHTML =
+        `你和 <span class="font-semibold text-ink">${escapeHtml(companion.name)}</span> 已经认识 <span class="font-bold text-sakura-deep">${companion.days_together}</span> 天 · ${escapeHtml(companion.relationship_stage)} · 好感度 ${companion.affection_level}/100`;
+
+      // 同步顶部"已认识 X 天"
+      const dEl = document.getElementById('c-days');
+      if (dEl) dEl.textContent = `· 认识 ${companion.days_together} 天`;
+
+      const container = document.getElementById('story-timeline');
+      if (!events || events.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12">
+            <div class="inline-block text-[40px] mb-3 opacity-50">✿</div>
+            <p class="text-mute text-[14px] font-medium">故事刚刚开始</p>
+            <p class="text-mute text-[12px] mt-1">多和她聊聊，这里会慢慢丰富起来</p>
+          </div>
+        `;
+        return;
+      }
+      const rows = events.map(e => {
+        const at = formatDateShort(e.at);
+        const dotClass = e.kind === 'stage' ? 'tl-dot stage' : 'tl-dot';
+        return `
+          <div class="tl-item">
+            <div class="${dotClass}">${e.icon || '·'}</div>
+            <div class="flex items-baseline gap-2 flex-wrap">
+              <span class="text-[14px] font-semibold">${escapeHtml(e.title)}</span>
+              <span class="text-[11px] text-mute font-medium">${at}</span>
+            </div>
+            <div class="text-[13px] text-mute mt-1 leading-relaxed">${escapeHtml(e.detail || '')}</div>
+          </div>
+        `;
+      }).join('');
+      container.innerHTML = rows;
+    }
+
+    function formatDateShort(s) {
+      if (!s) return '';
+      const d = new Date(String(s).replace(' ', 'T') + (String(s).includes('Z') ? '' : 'Z'));
+      const now = new Date();
+      const diffDays = Math.floor((now - d) / 86400000);
+      if (diffDays === 0) return '今天 ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      if (diffDays === 1) return '昨天';
+      if (diffDays < 7) return diffDays + ' 天前';
+      return `${d.getMonth() + 1}月${d.getDate()}日`;
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // ─── CP 卡片生成 ─────────────────────────────────────────────────
+    document.getElementById('btn-make-card').addEventListener('click', () => {
+      if (!_storyData) return;
+      drawCpCard(_storyData);
+      document.getElementById('card-modal').classList.remove('hidden');
+    });
+    document.getElementById('card-close').addEventListener('click', () => {
+      document.getElementById('card-modal').classList.add('hidden');
+    });
+    document.getElementById('card-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'card-modal') document.getElementById('card-modal').classList.add('hidden');
+    });
+    document.getElementById('btn-download-card').addEventListener('click', () => {
+      const canvas = document.getElementById('cp-canvas');
+      const a = document.createElement('a');
+      a.download = `xiyu-cp-${Date.now()}.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    });
+    document.getElementById('btn-share-card').addEventListener('click', async () => {
+      const canvas = document.getElementById('cp-canvas');
+      canvas.toBlob(async blob => {
+        if (!blob) return;
+        const file = new File([blob], 'xiyu-cp.png', { type: 'image/png' });
+        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: '溪语 AI · 我们的关系' });
+          } catch {}
+        } else {
+          // fallback: 触发下载
+          document.getElementById('btn-download-card').click();
+        }
+      });
+    });
+
+    function drawCpCard(data) {
+      const { companion, summary } = data;
+      const canvas = document.getElementById('cp-canvas');
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+
+      // 背景：樱花渐变
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#FFF5FA');
+      bg.addColorStop(0.5, '#FFE8F2');
+      bg.addColorStop(1, '#FFD3E5');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // 半透明花瓣装饰
+      ctx.fillStyle = 'rgba(255, 182, 217, 0.25)';
+      for (let i = 0; i < 18; i++) {
+        const x = Math.random() * W, y = Math.random() * H, r = 20 + Math.random() * 40;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 标题
+      ctx.fillStyle = '#1D1D1F';
+      ctx.font = 'bold 56px -apple-system, "PingFang SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('溪语 · 我们的故事', W / 2, 140);
+
+      // 主标 "你 ❤ 她名字"
+      ctx.font = 'bold 80px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillStyle = '#FF8FB8';
+      const username = (summary && summary.name) || 'TA';
+      // 这里 summary 实际是 companion summary，没有 username。改用 localStorage 拿
+      const me = JSON.parse(localStorage.getItem('xiyu_user') || '{}').username || '你';
+      ctx.fillText(`${me}  ❤  ${companion.name}`, W / 2, 350);
+
+      // 关系阶段大字
+      ctx.font = 'bold 96px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillStyle = '#1D1D1F';
+      ctx.fillText(companion.relationship_stage, W / 2, 530);
+
+      // 相识天数
+      ctx.font = '36px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillStyle = '#86868B';
+      ctx.fillText(`相识第 ${companion.days_together} 天`, W / 2, 610);
+
+      // 好感度进度条
+      const barX = 120, barY = 720, barW = W - 240, barH = 32;
+      ctx.fillStyle = '#F0F0F2';
+      roundRect(ctx, barX, barY, barW, barH, 16);
+      ctx.fill();
+      const fillW = barW * (companion.affection_level / 100);
+      const fillGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+      fillGrad.addColorStop(0, '#FFB6D9');
+      fillGrad.addColorStop(1, '#FF8FB8');
+      ctx.fillStyle = fillGrad;
+      roundRect(ctx, barX, barY, fillW, barH, 16);
+      ctx.fill();
+      ctx.fillStyle = '#1D1D1F';
+      ctx.font = '28px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillText(`好感度 ${companion.affection_level} / 100`, W / 2, barY + barH + 50);
+
+      // 心心
+      ctx.font = '80px sans-serif';
+      ctx.fillText('💕', W / 2, 920);
+
+      // 底部
+      ctx.font = 'bold 32px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillStyle = '#FF8FB8';
+      ctx.fillText(location.host, W / 2, 1080);
+      ctx.font = '22px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillStyle = '#86868B';
+      ctx.fillText('溪语 AI · 你的微信 AI 女友', W / 2, 1130);
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function showToast(text) {
+      const toast = document.getElementById('toast');
+      toast.textContent = text;
+      toast.classList.remove('hidden');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.classList.add('hidden'), 2000);
+    }
+
+    document.getElementById('btn-open-wechat').addEventListener('click', (e) => {
+      e.preventDefault();
+      const fallback = document.getElementById('wechat-fallback');
+      fallback.classList.add('hidden');
+      location.href = 'weixin://';
+      setTimeout(() => {
+        if (!document.hidden) fallback.classList.remove('hidden');
+      }, 1200);
+    });
+    document.getElementById('btn-delete-companion').addEventListener('click', deleteCurrentCompanion);
+
+    load().catch(e => {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('no-companion').classList.remove('hidden');
+      console.error(e);
+    });
+  </script>
+</body>
+</html>

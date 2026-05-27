@@ -1,0 +1,42 @@
+# 敏感配置
+.env
+.env.local
+.env.*.local
+.auth-secret
+.admin-secret
+.admin-credentials
+.weixin-credentials.json
+*.secret
+
+# 运行时数据
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+
+# 用户上传内容
+public/avatars/*
+!public/avatars/preset/
+!public/avatars/.gitkeep
+public/assets/scenes/
+
+# 依赖
+node_modules/
+package-lock.json.bak
+
+# 系统
+.DS_Store
+Thumbs.db
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*~
+
+# 备份
+_backup_*
+backups/
+*.tar.gz

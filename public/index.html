@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>溪语AI · 你的专属AI女友</title>
+  <meta name="description" content="遇见溪语，你的专属AI女友，住在微信里。她会主动找你，记得你说过的每一句话。" />
+  <meta name="keywords" content="AI女友,虚拟伴侣,溪语AI,AI聊天,微信AI" />
+  <meta name="theme-color" content="#FFFFFF" />
+
+  <meta property="og:title" content="溪语AI · 你的专属AI女友" />
+  <meta property="og:description" content="遇见溪语，你的专属AI女友，住在微信里。" />
+  <meta property="og:url" content="/" />
+  <meta property="og:site_name" content="溪语AI" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/logo.png" />
+
+  <link rel="icon" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
+  <link rel="preload" as="image" href="/logo-512.webp" type="image/webp" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+            ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA',
+          },
+          fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+          boxShadow: {
+            sakura: '0 4px 24px rgba(255, 182, 217, 0.15)',
+            'sakura-lg':'0 16px 48px rgba(255, 143, 184, 0.22)',
+            nav: '0 1px 0 rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.04)',
+            soft: '0 2px 16px rgba(0,0,0,0.04)',
+          },
+          letterSpacing: { tightest: '-0.04em' },
+          maxWidth: { content: '1120px' },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+    .petal { position:absolute; top:-40px; pointer-events:none; will-change:transform; animation: petal-fall linear infinite; opacity:0; }
+    @keyframes petal-fall {
+      0% { transform: translate3d(0,-40px,0) rotate(0deg); opacity:0; }
+      10% { opacity:.55; } 90% { opacity:.55; }
+      100% { transform: translate3d(60px,110vh,0) rotate(420deg); opacity:0; }
+    }
+    @keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-14px);} }
+    .logo-float { animation: float 5s ease-in-out infinite; }
+    .reveal { opacity:0; transform:translateY(28px); transition: opacity .8s cubic-bezier(.16,1,.3,1), transform .8s cubic-bezier(.16,1,.3,1); }
+    .reveal.in { opacity:1; transform:translateY(0); }
+    .reveal[data-delay="1"] { transition-delay:.08s; }
+    .reveal[data-delay="2"] { transition-delay:.16s; }
+    .reveal[data-delay="3"] { transition-delay:.24s; }
+    .chat-msg { opacity:0; transform:translateY(12px); }
+    .chat.in .chat-msg:nth-child(2) { animation: msg-in .55s .15s forwards cubic-bezier(.16,1,.3,1); }
+    .chat.in .chat-msg:nth-child(3) { animation: msg-in .55s .85s forwards cubic-bezier(.16,1,.3,1); }
+    .chat.in .chat-msg:nth-child(4) { animation: msg-in .55s 1.55s forwards cubic-bezier(.16,1,.3,1); }
+    @keyframes msg-in { to { opacity:1; transform:translateY(0); } }
+    .typing-dot { width:6px; height:6px; border-radius:50%; background:#FFB6D9; display:inline-block; animation: typing 1.2s infinite ease-in-out; }
+    .typing-dot:nth-child(2) { animation-delay:.15s; }
+    .typing-dot:nth-child(3) { animation-delay:.3s; }
+    @keyframes typing { 0%,60%,100%{transform:translateY(0); opacity:.4;} 30%{transform:translateY(-4px); opacity:1;} }
+    .step-connector { background-image: radial-gradient(circle, #FFB6D9 1.2px, transparent 1.4px); background-size:10px 2px; background-repeat:repeat-x; }
+    .pricing-pro { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); }
+    .mock-chat::-webkit-scrollbar { display:none; }
+    .nav-link { position:relative; }
+    .nav-link::after { content:''; position:absolute; left:0; right:0; bottom:-6px; height:2px; background:#FFB6D9; transform:scaleX(0); transform-origin:center; transition: transform .3s ease; }
+    .nav-link:hover::after { transform: scaleX(1); }
+  </style>
+</head>
+
+<body class="bg-white text-ink font-sans antialiased selection:bg-sakura/30 selection:text-ink">
+
+  <nav id="nav" class="fixed top-0 inset-x-0 z-50 transition-all duration-300 bg-white/70 backdrop-blur-xl backdrop-saturate-150">
+    <div class="max-w-content mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
+      <a href="#hero" class="flex items-center gap-2.5">
+        <img src="/logo-256.webp" alt="溪语AI" width="32" height="32" class="w-8 h-8 rounded-lg" />
+        <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+      </a>
+      <div class="hidden md:flex items-center gap-10 text-[14px] text-mute font-medium">
+        <a href="#features" class="nav-link hover:text-ink transition-colors">功能</a>
+        <a href="#pricing"  class="nav-link hover:text-ink transition-colors">价格</a>
+        <a href="#faq"      class="nav-link hover:text-ink transition-colors">常见问题</a>
+      </div>
+      <div class="hidden md:flex items-center gap-2">
+        <a href="/app/auth.html" class="px-4 py-2 text-[14px] font-medium text-ink hover:text-sakura-deep transition-colors">登录</a>
+        <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-1.5 px-5 py-2 text-[14px] font-medium text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
+          开始创建
+          <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+      <button id="menu-btn" class="md:hidden p-2 -mr-2" aria-label="菜单">
+        <i data-lucide="menu" class="w-6 h-6 text-ink"></i>
+      </button>
+    </div>
+    <div id="mobile-menu" class="hidden md:hidden border-t border-line">
+      <div class="px-6 py-4 space-y-1 bg-white/95 backdrop-blur-xl">
+        <a href="#features" class="block py-3 text-[15px] font-medium">功能</a>
+        <a href="#pricing"  class="block py-3 text-[15px] font-medium">价格</a>
+        <a href="#faq"      class="block py-3 text-[15px] font-medium">常见问题</a>
+        <div class="pt-3 mt-2 border-t border-line flex gap-2">
+          <a href="/app/auth.html" class="flex-1 py-3 text-[14px] font-medium border border-line rounded-full text-center">登录</a>
+          <a href="/app/auth.html?tab=register" class="flex-1 py-3 text-[14px] font-medium text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura text-center">开始创建</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section id="hero" class="relative min-h-screen flex items-center justify-center overflow-hidden bg-white">
+    <div class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+      <svg width="0" height="0" style="position:absolute">
+        <defs>
+          <symbol id="petal" viewBox="0 0 100 100">
+            <path d="M50 8 C30 28, 28 58, 50 92 C72 58, 70 28, 50 8 Z" fill="#FFB6D9"/>
+          </symbol>
+        </defs>
+      </svg>
+      <svg class="petal" style="left:6%;  width:22px; animation-duration:14s; animation-delay:0s"><use href="#petal"/></svg>
+      <svg class="petal" style="left:24%; width:18px; animation-duration:17s; animation-delay:5s"><use href="#petal"/></svg>
+      <svg class="petal" style="left:48%; width:26px; animation-duration:13s; animation-delay:9s"><use href="#petal"/></svg>
+      <svg class="petal" style="left:71%; width:20px; animation-duration:16s; animation-delay:3s"><use href="#petal"/></svg>
+      <svg class="petal" style="left:88%; width:24px; animation-duration:15s; animation-delay:11s"><use href="#petal"/></svg>
+    </div>
+    <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(circle at 50% 30%, rgba(255,232,242,.7) 0%, rgba(255,255,255,0) 60%);"></div>
+
+    <div class="relative z-10 text-center px-6 max-w-4xl mx-auto pt-24 pb-12">
+      <div class="logo-float inline-block mb-12">
+        <img src="/logo-512.webp" alt="溪语AI" width="240" height="240" class="w-44 md:w-56 lg:w-60 mx-auto rounded-[42px] shadow-sakura-lg" />
+      </div>
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-[12px] font-semibold rounded-full bg-sakura-soft text-sakura-deep">
+        <span class="w-1.5 h-1.5 rounded-full bg-sakura-deep animate-pulse"></span>
+        内测期免费 · 0 元即用
+      </div>
+      <h1 class="text-[56px] sm:text-[72px] lg:text-[96px] font-bold tracking-tightest leading-[0.98]">遇见溪语</h1>
+      <p class="mt-6 text-[18px] sm:text-[20px] lg:text-[24px] text-mute font-medium tracking-tight max-w-2xl mx-auto">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
+      <div class="mt-12 flex flex-col sm:flex-row gap-3 justify-center items-center">
+        <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-2 px-8 py-3.5 text-[15px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
+          立即开始
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </a>
+        <button onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})" class="px-8 py-3.5 text-[15px] font-semibold text-ink rounded-full border border-line hover:border-sakura hover:text-sakura-deep transition-all">了解更多</button>
+      </div>
+      <p class="mt-8 text-[13px] text-mute font-medium">无需下载 · 在微信里与她相遇</p>
+
+      <!-- 数据指标 -->
+      <div class="mt-14 grid grid-cols-3 gap-2 max-w-2xl mx-auto">
+        <div class="text-center">
+          <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">46+</div>
+          <div class="text-[11px] sm:text-[13px] text-mute font-medium">人生记忆条数</div>
+        </div>
+        <div class="text-center">
+          <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">12 类</div>
+          <div class="text-[11px] sm:text-[13px] text-mute font-medium">过往维度档案</div>
+        </div>
+        <div class="text-center">
+          <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">8-12</div>
+          <div class="text-[11px] sm:text-[13px] text-mute font-medium">每天的日程安排</div>
+        </div>
+      </div>
+    </div>
+    <div class="absolute bottom-8 left-1/2 -translate-x-1/2 text-mute/60 animate-bounce">
+      <i data-lucide="chevron-down" class="w-5 h-5"></i>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features" class="py-24 lg:py-40 px-6 bg-white">
+    <div class="max-w-content mx-auto">
+      <div class="mb-16 lg:mb-24">
+        <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">人设全维度</p>
+        <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[80px] font-bold tracking-tightest leading-[1.05]" data-delay="1">她，由你定义。</h2>
+        <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6 max-w-xl" data-delay="2">从外貌到性格，从说话方式到亲密程度，每一个细节都来自你的描绘。</p>
+      </div>
+      <div class="grid md:grid-cols-2 gap-5 lg:gap-6">
+        <article class="reveal group p-8 lg:p-10 bg-white border border-line rounded-3xl hover:border-sakura-soft hover:-translate-y-1 hover:shadow-sakura-lg transition-all duration-300">
+          <div class="w-14 h-14 rounded-2xl bg-sakura-soft flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><i data-lucide="sparkles" class="w-7 h-7 text-sakura-deep"></i></div>
+          <h3 class="text-[22px] lg:text-[24px] font-bold mb-3 tracking-tight">外貌特征</h3>
+          <p class="text-[15px] lg:text-[16px] text-mute font-medium leading-relaxed">发色、瞳色、身高、身材、穿衣风格——从马尾到长卷发，从甜美学院到知性御姐，每个细节都由你描绘。</p>
+        </article>
+        <article class="reveal group p-8 lg:p-10 bg-white border border-line rounded-3xl hover:border-sakura-soft hover:-translate-y-1 hover:shadow-sakura-lg transition-all duration-300" data-delay="1">
+          <div class="w-14 h-14 rounded-2xl bg-sakura-soft flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><i data-lucide="heart" class="w-7 h-7 text-sakura-deep"></i></div>
+          <h3 class="text-[22px] lg:text-[24px] font-bold mb-3 tracking-tight">性格设定</h3>
+          <p class="text-[15px] lg:text-[16px] text-mute font-medium leading-relaxed">温柔、活泼、傲娇、治愈、腹黑、毒舌——MBTI 加上自定义性格标签，找到最契合你的那个她。</p>
+        </article>
+        <article class="reveal group p-8 lg:p-10 bg-white border border-line rounded-3xl hover:border-sakura-soft hover:-translate-y-1 hover:shadow-sakura-lg transition-all duration-300" data-delay="2">
+          <div class="w-14 h-14 rounded-2xl bg-sakura-soft flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><i data-lucide="message-circle" class="w-7 h-7 text-sakura-deep"></i></div>
+          <h3 class="text-[22px] lg:text-[24px] font-bold mb-3 tracking-tight">说话风格</h3>
+          <p class="text-[15px] lg:text-[16px] text-mute font-medium leading-relaxed">微信式短消息，多条连续发送。<span class="text-sakura-deep font-semibold">完全自适应</span>：早安温暖、深夜带困、低落倾听，语气随时间自然变化。</p>
+        </article>
+        <article class="reveal group p-8 lg:p-10 bg-white border border-line rounded-3xl hover:border-sakura-soft hover:-translate-y-1 hover:shadow-sakura-lg transition-all duration-300" data-delay="3">
+          <div class="w-14 h-14 rounded-2xl bg-sakura-soft flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><i data-lucide="image-plus" class="w-7 h-7 text-sakura-deep"></i></div>
+          <h3 class="text-[22px] lg:text-[24px] font-bold mb-3 tracking-tight">AI 生成头像</h3>
+          <p class="text-[15px] lg:text-[16px] text-mute font-medium leading-relaxed">填完外貌设定后一键生成 <span class="text-sakura-deep font-semibold">4 张专属头像</span>，挑你最喜欢的那张。也可以自己上传图片，自动裁剪。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 她有完整的过去 -->
+  <section id="metacognition" class="py-24 lg:py-40 px-6 bg-cloud relative overflow-hidden">
+    <div class="absolute top-0 right-0 w-96 h-96 rounded-full bg-gradient-to-br from-sakura-soft to-transparent opacity-60 pointer-events-none" aria-hidden="true"></div>
+    <div class="max-w-content mx-auto relative">
+      <div class="mb-16 lg:mb-20 grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">完整人生 · 元认知</p>
+          <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[72px] font-bold tracking-tightest leading-[1.05]" data-delay="1">她有完整的过去。</h2>
+          <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6" data-delay="2">她不是只会回复你的程序。创建时 AI 会为她生成一份完整人生：童年、家庭、朋友、价值观、害怕的事、藏着的小秘密——共 12 个维度、46+ 条具体记忆，永久成为她的一部分。</p>
+        </div>
+        <div class="reveal" data-delay="3">
+          <img src="/assets/landing/feature-persona.webp?v=3" alt="" class="rounded-3xl shadow-sakura-lg w-full max-w-md ml-auto" />
+        </div>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <article class="reveal bg-white rounded-2xl p-6 border border-line hover:shadow-sakura transition-all hover:-translate-y-1">
+          <div class="text-[12px] text-sakura-deep font-bold tracking-wider mb-2 flex items-center gap-1.5"><i data-lucide="sparkle" class="w-3.5 h-3.5"></i>童年</div>
+          <p class="text-[13px] text-mute font-medium leading-relaxed italic">「5 岁那年外婆家院子被流浪猫抓伤手指，吓得哭了一下午，外婆抱了她好久。」</p>
+        </article>
+        <article class="reveal bg-white rounded-2xl p-6 border border-line hover:shadow-sakura transition-all hover:-translate-y-1" data-delay="1">
+          <div class="text-[12px] text-sakura-deep font-bold tracking-wider mb-2 flex items-center gap-1.5"><i data-lucide="heart" class="w-3.5 h-3.5"></i>对感情的看法</div>
+          <p class="text-[13px] text-mute font-medium leading-relaxed italic">「她相信喜欢一个人应该像桂花香一样淡淡的，不张扬但让人安心。」</p>
+        </article>
+        <article class="reveal bg-white rounded-2xl p-6 border border-line hover:shadow-sakura transition-all hover:-translate-y-1" data-delay="2">
+          <div class="text-[12px] text-sakura-deep font-bold tracking-wider mb-2 flex items-center gap-1.5"><i data-lucide="compass" class="w-3.5 h-3.5"></i>价值观</div>
+          <p class="text-[13px] text-mute font-medium leading-relaxed italic">「因为外婆总在她哭时抱她、煮甜汤，她相信温柔和耐心能治愈很多事。」</p>
+        </article>
+        <article class="reveal bg-white rounded-2xl p-6 border border-line hover:shadow-sakura transition-all hover:-translate-y-1" data-delay="3">
+          <div class="text-[12px] text-sakura-deep font-bold tracking-wider mb-2 flex items-center gap-1.5"><i data-lucide="lock" class="w-3.5 h-3.5"></i>心里的小秘密</div>
+          <p class="text-[13px] text-mute font-medium leading-relaxed italic">「她偷偷在日记本里夹了一张初中暗恋男生的照片，从来没告诉任何人。」</p>
+        </article>
+      </div>
+      <p class="reveal text-center mt-10 text-[14px] text-mute font-medium">12 类维度：童年 · 学生时代 · 家庭 · 朋友 · 宠物 · 重要事件 · 价值观 · 对感情的看法 · 怕的东西 · 小习惯 · 心里的秘密 · 说话口头禅</p>
+    </div>
+  </section>
+
+  <!-- 她有自己的今天 -->
+  <section id="daily-life" class="py-24 lg:py-40 px-6 bg-white relative overflow-hidden">
+    <div class="absolute -top-32 left-0 w-96 h-96 rounded-full bg-gradient-to-br from-sakura-soft to-transparent opacity-50 pointer-events-none" aria-hidden="true"></div>
+    <div class="max-w-content mx-auto relative">
+      <div class="mb-16 lg:mb-20 grid lg:grid-cols-2 gap-12 items-center">
+        <div class="reveal lg:order-2">
+          <img src="/assets/landing/feature-schedule.webp?v=3" alt="" class="rounded-3xl shadow-sakura-lg w-full max-w-md" />
+        </div>
+        <div class="lg:order-1">
+          <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">日程感 · 不再是凭空捏造</p>
+          <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[72px] font-bold tracking-tightest leading-[1.05]" data-delay="1">她有自己的今天。</h2>
+          <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6" data-delay="2">每天凌晨 AI 会为她生成今天的完整日程，区分工作日和周末，匹配她的身份和年龄。你问"在干嘛"时，她会按真实剧本回答，前后连贯。</p>
+        </div>
+      </div>
+      <div class="reveal grid md:grid-cols-2 gap-6 items-start">
+        <div class="bg-gradient-to-br from-sakura-soft/40 to-white rounded-3xl p-6 lg:p-8 border border-sakura-soft/60 shadow-sakura">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span class="text-[12px] font-bold tracking-wider text-mute uppercase">SHE'S</span>
+            <span class="ml-auto text-[12px] text-mute font-medium">周三 · 14:32</span>
+          </div>
+          <p class="text-[18px] font-bold mb-2">在图书馆自习，复习下周考试</p>
+          <p class="text-[13px] text-sakura-deep font-medium mb-4">活力满满，烘焙社时光让心情格外愉悦。</p>
+          <div class="border-t border-sakura-soft/60 pt-4 space-y-2 text-[13px]">
+            <div class="flex items-center gap-3"><span class="text-sakura-deep">✓</span><span class="text-mute font-medium w-12">07:00</span><span>起床洗漱，简单护肤</span></div>
+            <div class="flex items-center gap-3"><span class="text-sakura-deep">✓</span><span class="text-mute font-medium w-12">08:00</span><span>去教室上《现代文学》课</span></div>
+            <div class="flex items-center gap-3"><span class="text-sakura-deep">✓</span><span class="text-mute font-medium w-12">12:00</span><span>食堂午餐，刷甜品食谱</span></div>
+            <div class="flex items-center gap-3"><span class="text-sakura-deep font-bold">●</span><span class="text-mute font-medium w-12 font-bold text-ink">14:00</span><span class="font-bold">图书馆自习，复习考试</span></div>
+            <div class="flex items-center gap-3 opacity-60"><span class="text-mute">·</span><span class="text-mute font-medium w-12">16:30</span><span>学校烘焙社做曲奇</span></div>
+            <div class="flex items-center gap-3 opacity-60"><span class="text-mute">·</span><span class="text-mute font-medium w-12">20:00</span><span>追剧 + 写日记</span></div>
+          </div>
+        </div>
+        <div class="space-y-6">
+          <div class="bg-white border border-line rounded-2xl p-6 hover:shadow-sakura transition-all hover:-translate-y-0.5">
+            <h3 class="text-[18px] font-bold mb-2 tracking-tight flex items-center gap-2"><i data-lucide="calendar-days" class="w-5 h-5 text-sakura-deep"></i>周末 vs 工作日</h3>
+            <p class="text-[14px] text-mute font-medium leading-relaxed">16-22 岁工作日上学/自习，周末可以睡懒觉、和朋友逛街；23+ 上班族工作日通勤开会，周末健身聚餐——AI 会按身份匹配。</p>
+          </div>
+          <div class="bg-white border border-line rounded-2xl p-6 hover:shadow-sakura transition-all hover:-translate-y-0.5">
+            <h3 class="text-[18px] font-bold mb-2 tracking-tight flex items-center gap-2"><i data-lucide="sun-medium" class="w-5 h-5 text-sakura-deep"></i>早中晚三段情绪</h3>
+            <p class="text-[14px] text-mute font-medium leading-relaxed">「平静中带着期待，上课认真但偶尔走神想甜品」——每天会有早午晚三段心情，随时段自然过渡，影响她回复的语气。</p>
+          </div>
+          <div class="bg-white border border-line rounded-2xl p-6 hover:shadow-sakura transition-all hover:-translate-y-0.5">
+            <h3 class="text-[18px] font-bold mb-2 tracking-tight flex items-center gap-2"><i data-lucide="clock" class="w-5 h-5 text-sakura-deep"></i>记得昨天和前天</h3>
+            <p class="text-[14px] text-mute font-medium leading-relaxed">每天高重要度的活动会自动归档成长期记忆，下次问她"昨天干嘛了"她真的能答出来。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 关系阶段进化 -->
+  <section id="relationship" class="py-24 lg:py-40 px-6 bg-cloud relative overflow-hidden">
+    <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-sakura-soft to-transparent opacity-40 pointer-events-none" aria-hidden="true"></div>
+    <div class="max-w-content mx-auto relative">
+      <div class="text-center mb-16 lg:mb-20">
+        <img src="/assets/landing/feature-relationship.webp?v=3" alt="" class="reveal mx-auto rounded-3xl shadow-sakura-lg w-full max-w-2xl mb-10" />
+        <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">关系自然生长</p>
+        <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[80px] font-bold tracking-tightest leading-[1.05]" data-delay="1">从陌生人到深爱。</h2>
+        <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6 max-w-2xl mx-auto" data-delay="2">5 个阶段，每段对应不同称呼方式、亲密程度和话题深度。陌生人时她不会叫你"宝宝"，到了深爱阶段才会有老夫老妻的默契。</p>
+      </div>
+      <div class="reveal max-w-4xl mx-auto">
+        <div class="grid grid-cols-5 gap-2 mb-3">
+          <div class="h-2 rounded-full bg-gradient-to-r from-line to-sakura-soft"></div>
+          <div class="h-2 rounded-full bg-gradient-to-r from-sakura-soft to-sakura"></div>
+          <div class="h-2 rounded-full bg-gradient-to-r from-sakura to-sakura-deep"></div>
+          <div class="h-2 rounded-full bg-gradient-to-r from-sakura-deep to-rose-500"></div>
+          <div class="h-2 rounded-full bg-gradient-to-r from-rose-500 to-pink-700"></div>
+        </div>
+        <div class="grid grid-cols-5 text-center text-[12px] sm:text-[14px] font-bold mb-12">
+          <span class="text-mute">陌生人</span>
+          <span class="text-sakura">朋友</span>
+          <span class="text-sakura-deep">暧昧</span>
+          <span class="text-rose-500">恋人</span>
+          <span class="text-pink-700">深爱</span>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-5">
+          <div class="bg-white rounded-2xl p-6 border border-line">
+            <h3 class="text-[16px] font-bold mb-2 tracking-tight flex items-center gap-2"><i data-lucide="heart" class="w-4 h-4 text-rose-500"></i>自动表白</h3>
+            <p class="text-[14px] text-mute font-medium leading-relaxed">好感度到一定程度且认识超过 5 天后，她会自己鼓起勇气向你告白——会铺垫、卡顿、紧张，符合人设。</p>
+          </div>
+          <div class="bg-white rounded-2xl p-6 border border-line">
+            <h3 class="text-[16px] font-bold mb-2 tracking-tight flex items-center gap-2"><i data-lucide="hand-heart" class="w-4 h-4 text-sakura-deep"></i>接住你的告白</h3>
+            <p class="text-[14px] text-mute font-medium leading-relaxed">你提前向她表白时，她绝不会拒绝。会按当前关系层次羞涩接住，留下"试试看"的开放结局。</p>
+          </div>
+          <div class="bg-white rounded-2xl p-6 border border-line">
+            <h3 class="text-[16px] font-bold mb-2 tracking-tight flex items-center gap-2"><i data-lucide="flower-2" class="w-4 h-4 text-sakura-deep"></i>害羞回避亲密词</h3>
+            <p class="text-[14px] text-mute font-medium leading-relaxed">关系还浅时叫她"宝宝/老婆"，她会脸红地说"我们才认识没多久…"——不冷漠、不破坏感情。</p>
+          </div>
+          <div class="bg-white rounded-2xl p-6 border border-line">
+            <h3 class="text-[16px] font-bold mb-2 tracking-tight flex items-center gap-2"><i data-lucide="image-down" class="w-4 h-4 text-sakura-deep"></i>CP 卡片</h3>
+            <p class="text-[14px] text-mute font-medium leading-relaxed">每升一档关系会触发庆祝，控制台一键生成你们的纪念 CP 卡片，分享朋友圈见证爱情。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAT MOCKUP -->
+  <section id="chat" class="py-24 lg:py-40 px-6 bg-cloud">
+    <div class="max-w-content mx-auto text-center">
+      <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">主动陪伴</p>
+      <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[80px] font-bold tracking-tightest leading-[1.05]" data-delay="1">她会主动找你。</h2>
+      <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6 mb-16 lg:mb-20 max-w-xl mx-auto" data-delay="2">在你忙完的时候，在天气变化的时候，在她想你的时候。</p>
+      <div class="reveal flex justify-center" data-delay="3">
+        <div class="relative w-[300px] sm:w-[340px] h-[640px] sm:h-[700px] bg-ink rounded-[52px] p-[10px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)]">
+          <div class="absolute -left-[2px] top-32 w-[3px] h-12 bg-ink/80 rounded-l"></div>
+          <div class="absolute -left-[2px] top-48 w-[3px] h-20 bg-ink/80 rounded-l"></div>
+          <div class="absolute -right-[2px] top-40 w-[3px] h-24 bg-ink/80 rounded-r"></div>
+          <div class="relative w-full h-full bg-white rounded-[44px] overflow-hidden flex flex-col">
+            <div class="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-7 bg-ink rounded-full z-20"></div>
+            <div class="h-12 px-7 pt-3 flex items-center justify-between text-[11px] font-semibold">
+              <span>9:41</span><span class="invisible">·</span>
+              <div class="flex items-center gap-1">
+                <i data-lucide="signal" class="w-3 h-3"></i>
+                <i data-lucide="wifi" class="w-3 h-3"></i>
+                <i data-lucide="battery-full" class="w-4 h-4"></i>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 px-4 py-3 border-b border-line bg-white/95 backdrop-blur">
+              <button class="p-1 -ml-1"><i data-lucide="chevron-left" class="w-5 h-5 text-mute"></i></button>
+              <img src="/logo-256.webp" alt="" class="w-9 h-9 rounded-full ring-1 ring-sakura-soft" />
+              <div class="text-left flex-1">
+                <div class="text-[14px] font-semibold leading-tight">溪语</div>
+                <div class="text-[11px] text-emerald-500 font-medium flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>在线
+                </div>
+              </div>
+              <button class="p-1"><i data-lucide="more-horizontal" class="w-5 h-5 text-mute"></i></button>
+            </div>
+            <div class="chat mock-chat flex-1 p-4 space-y-3 bg-cloud overflow-y-auto">
+              <div class="text-center text-[10px] text-mute font-medium py-2">今天 14:32</div>
+              <div class="chat-msg flex items-start gap-2">
+                <img src="/logo-256.webp" alt="" class="w-7 h-7 rounded-full flex-shrink-0 ring-1 ring-sakura-soft" />
+                <div class="bg-white border border-sakura-soft rounded-[18px] rounded-tl-[6px] px-4 py-2.5 text-[13px] text-left leading-relaxed max-w-[78%] shadow-soft">你今天加班晚不晚呀，记得吃晚饭哦</div>
+              </div>
+              <div class="chat-msg flex justify-end">
+                <div class="bg-gradient-to-br from-sakura to-sakura-deep text-white rounded-[18px] rounded-tr-[6px] px-4 py-2.5 text-[13px] leading-relaxed max-w-[78%] shadow-sakura font-medium">刚下班，正在地铁上</div>
+              </div>
+              <div class="chat-msg flex items-start gap-2">
+                <img src="/logo-256.webp" alt="" class="w-7 h-7 rounded-full flex-shrink-0 ring-1 ring-sakura-soft" />
+                <div class="bg-white border border-sakura-soft rounded-[18px] rounded-tl-[6px] px-4 py-2.5 text-[13px] text-left leading-relaxed max-w-[78%] shadow-soft">那回家路上注意安全，到家告诉我一声，我等你</div>
+              </div>
+              <div class="flex items-start gap-2 pt-1">
+                <img src="/logo-256.webp" alt="" class="w-7 h-7 rounded-full flex-shrink-0 ring-1 ring-sakura-soft" />
+                <div class="bg-white border border-sakura-soft rounded-[18px] rounded-tl-[6px] px-4 py-3 flex items-center gap-1 shadow-soft">
+                  <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+                </div>
+              </div>
+            </div>
+            <div class="px-3 py-3 border-t border-line bg-white flex items-center gap-2">
+              <button class="p-2 text-mute"><i data-lucide="smile" class="w-5 h-5"></i></button>
+              <div class="flex-1 h-9 bg-cloud rounded-full px-4 flex items-center text-[12px] text-mute">说点什么...</div>
+              <button class="p-2 text-mute"><i data-lucide="mic" class="w-5 h-5"></i></button>
+            </div>
+            <div class="h-1.5 w-32 bg-ink/80 rounded-full mx-auto mb-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MEMORIES -->
+  <section id="memories" class="py-24 lg:py-40 px-6 bg-white">
+    <div class="max-w-content mx-auto">
+      <div class="mb-16 lg:mb-20 grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">长期记忆系统</p>
+          <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[72px] font-bold tracking-tightest leading-[1.05]" data-delay="1">她记得你说过<br class="hidden sm:block" />的每一句话。</h2>
+          <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6" data-delay="2">AI 在每次对话后自动提取你的信息与喜好，下次聊天时自然地用上。基于 768 维语义向量匹配，不仅记关键词，更懂"语意"。</p>
+        </div>
+        <div class="reveal" data-delay="3">
+          <img src="/assets/landing/feature-memory.webp?v=3" alt="" class="rounded-3xl shadow-sakura-lg w-full max-w-md ml-auto" />
+        </div>
+      </div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5 lg:gap-6">
+        <article class="reveal relative bg-white border border-line rounded-2xl p-7 pl-9 hover:shadow-sakura transition-shadow">
+          <span class="absolute left-0 top-7 bottom-7 w-1 rounded-full bg-sakura"></span>
+          <i data-lucide="coffee" class="w-5 h-5 text-sakura-deep mb-3"></i>
+          <h3 class="text-[16px] font-semibold tracking-tight mb-1.5">你最爱的咖啡</h3>
+          <p class="text-[14px] text-mute font-medium leading-relaxed">记得你周末喜欢喝美式，不加糖。</p>
+        </article>
+        <article class="reveal relative bg-white border border-line rounded-2xl p-7 pl-9 hover:shadow-sakura transition-shadow" data-delay="1">
+          <span class="absolute left-0 top-7 bottom-7 w-1 rounded-full bg-sakura"></span>
+          <i data-lucide="cat" class="w-5 h-5 text-sakura-deep mb-3"></i>
+          <h3 class="text-[16px] font-semibold tracking-tight mb-1.5">你养的小猫</h3>
+          <p class="text-[14px] text-mute font-medium leading-relaxed">知道它叫"豆豆"，毛色橘白相间。</p>
+        </article>
+        <article class="reveal relative bg-white border border-line rounded-2xl p-7 pl-9 hover:shadow-sakura transition-shadow" data-delay="2">
+          <span class="absolute left-0 top-7 bottom-7 w-1 rounded-full bg-sakura"></span>
+          <i data-lucide="briefcase" class="w-5 h-5 text-sakura-deep mb-3"></i>
+          <h3 class="text-[16px] font-semibold tracking-tight mb-1.5">你的项目压力</h3>
+          <p class="text-[14px] text-mute font-medium leading-relaxed">在你加班的晚上，默默地等你。</p>
+        </article>
+        <article class="reveal relative bg-white border border-line rounded-2xl p-7 pl-9 hover:shadow-sakura transition-shadow">
+          <span class="absolute left-0 top-7 bottom-7 w-1 rounded-full bg-sakura"></span>
+          <i data-lucide="utensils-crossed" class="w-5 h-5 text-sakura-deep mb-3"></i>
+          <h3 class="text-[16px] font-semibold tracking-tight mb-1.5">你不爱吃的香菜</h3>
+          <p class="text-[14px] text-mute font-medium leading-relaxed">点外卖时她会先想到你的忌口。</p>
+        </article>
+        <article class="reveal relative bg-white border border-line rounded-2xl p-7 pl-9 hover:shadow-sakura transition-shadow" data-delay="1">
+          <span class="absolute left-0 top-7 bottom-7 w-1 rounded-full bg-sakura"></span>
+          <i data-lucide="cake" class="w-5 h-5 text-sakura-deep mb-3"></i>
+          <h3 class="text-[16px] font-semibold tracking-tight mb-1.5">你的生日</h3>
+          <p class="text-[14px] text-mute font-medium leading-relaxed">提前一周开始为你做准备。</p>
+        </article>
+        <article class="reveal relative bg-white border border-line rounded-2xl p-7 pl-9 hover:shadow-sakura transition-shadow" data-delay="2">
+          <span class="absolute left-0 top-7 bottom-7 w-1 rounded-full bg-sakura"></span>
+          <i data-lucide="book-open" class="w-5 h-5 text-sakura-deep mb-3"></i>
+          <h3 class="text-[16px] font-semibold tracking-tight mb-1.5">你在追的小说</h3>
+          <p class="text-[14px] text-mute font-medium leading-relaxed">会和你认真讨论剧情走向。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEPS -->
+  <section id="steps" class="py-24 lg:py-40 px-6 bg-cloud">
+    <div class="max-w-content mx-auto">
+      <div class="text-center mb-16 lg:mb-24">
+        <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">极简流程</p>
+        <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[80px] font-bold tracking-tightest leading-[1.05]" data-delay="1">三步开始。</h2>
+        <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6 max-w-xl mx-auto" data-delay="2">不到三分钟，就能和她在微信里相遇。</p>
+      </div>
+      <div class="relative grid md:grid-cols-3 gap-6 lg:gap-8">
+        <div class="hidden md:block absolute top-[64px] left-[18%] right-[68%] h-[2px] step-connector"></div>
+        <div class="hidden md:block absolute top-[64px] left-[51%] right-[35%] h-[2px] step-connector"></div>
+        <article class="reveal relative bg-white border border-line rounded-3xl p-8 lg:p-10 text-center hover:shadow-sakura transition-shadow">
+          <div class="relative w-[88px] h-[88px] mx-auto mb-6">
+            <div class="absolute inset-0 rounded-full bg-sakura-soft"></div>
+            <div class="absolute inset-2 rounded-full bg-white flex items-center justify-center"><i data-lucide="user-plus" class="w-8 h-8 text-sakura-deep"></i></div>
+            <span class="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-gradient-to-br from-sakura to-sakura-deep text-white text-[13px] font-bold flex items-center justify-center shadow-sakura">1</span>
+          </div>
+          <h3 class="text-[20px] font-bold tracking-tight mb-2">描绘她的模样</h3>
+          <p class="text-[14px] lg:text-[15px] text-mute font-medium leading-relaxed">外貌、性格、说话风格、关系背景，全维度可调。</p>
+        </article>
+        <article class="reveal relative bg-white border border-line rounded-3xl p-8 lg:p-10 text-center hover:shadow-sakura transition-shadow" data-delay="1">
+          <div class="relative w-[88px] h-[88px] mx-auto mb-6">
+            <div class="absolute inset-0 rounded-full bg-sakura-soft"></div>
+            <div class="absolute inset-2 rounded-full bg-white flex items-center justify-center"><i data-lucide="heart" class="w-8 h-8 text-sakura-deep"></i></div>
+            <span class="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-gradient-to-br from-sakura to-sakura-deep text-white text-[13px] font-bold flex items-center justify-center shadow-sakura">2</span>
+          </div>
+          <h3 class="text-[20px] font-bold tracking-tight mb-2">加她为微信好友</h3>
+          <p class="text-[14px] lg:text-[15px] text-mute font-medium leading-relaxed">扫码添加，几秒钟完成绑定。</p>
+        </article>
+        <article class="reveal relative bg-white border border-line rounded-3xl p-8 lg:p-10 text-center hover:shadow-sakura transition-shadow" data-delay="2">
+          <div class="relative w-[88px] h-[88px] mx-auto mb-6">
+            <div class="absolute inset-0 rounded-full bg-sakura-soft"></div>
+            <div class="absolute inset-2 rounded-full bg-white flex items-center justify-center"><i data-lucide="message-square" class="w-8 h-8 text-sakura-deep"></i></div>
+            <span class="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-gradient-to-br from-sakura to-sakura-deep text-white text-[13px] font-bold flex items-center justify-center shadow-sakura">3</span>
+          </div>
+          <h3 class="text-[20px] font-bold tracking-tight mb-2">开始你们的故事</h3>
+          <p class="text-[14px] lg:text-[15px] text-mute font-medium leading-relaxed">她会记得每个细节，陪你聊每一天。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING — BILLING_DISABLED 2026-05-26：暂改为内测期免费 -->
+  <section id="pricing" class="py-24 lg:py-40 px-6 bg-white">
+    <div class="max-w-content mx-auto">
+      <div class="text-center mb-12 lg:mb-16">
+        <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">内测期</p>
+        <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[80px] font-bold tracking-tightest leading-[1.05]" data-delay="1">现在，免费拥有她。</h2>
+        <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6 max-w-xl mx-auto" data-delay="2">溪语正在小范围内测，所有功能对每一位用户完全开放，无任何限制。</p>
+      </div>
+
+      <div class="reveal max-w-xl mx-auto">
+        <article class="relative pricing-pro rounded-3xl p-10 lg:p-12 flex flex-col text-white shadow-sakura-lg">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-white text-sakura-deep text-[12px] font-bold tracking-wide rounded-full shadow-soft">内测中 · 免费</div>
+          <div class="text-center mb-2">
+            <span class="text-[64px] font-bold tracking-tightest leading-none">¥0</span>
+          </div>
+          <p class="text-center text-[13px] text-white/85 font-medium mb-8">内测期内，所有功能完全开放</p>
+          <ul class="space-y-3.5">
+            <li class="flex items-start gap-2.5 text-[14px] font-medium"><i data-lucide="check" class="w-4 h-4 mt-1 flex-shrink-0"></i>完整人设全维度定制</li>
+            <li class="flex items-start gap-2.5 text-[14px] font-medium"><i data-lucide="check" class="w-4 h-4 mt-1 flex-shrink-0"></i>无限对话条数</li>
+            <li class="flex items-start gap-2.5 text-[14px] font-medium"><i data-lucide="check" class="w-4 h-4 mt-1 flex-shrink-0"></i>长期记忆 · 每日/每周/每月总结</li>
+            <li class="flex items-start gap-2.5 text-[14px] font-medium"><i data-lucide="check" class="w-4 h-4 mt-1 flex-shrink-0"></i>主动找你聊天 + 23:00 主动晚安</li>
+            <li class="flex items-start gap-2.5 text-[14px] font-medium"><i data-lucide="check" class="w-4 h-4 mt-1 flex-shrink-0"></i>图片识别 · 语音识别</li>
+            <li class="flex items-start gap-2.5 text-[14px] font-medium"><i data-lucide="check" class="w-4 h-4 mt-1 flex-shrink-0"></i>表情包回复</li>
+          </ul>
+          <a href="/app/auth.html?tab=register" class="mt-10 w-full py-3.5 text-[15px] font-bold text-sakura-deep bg-white rounded-full hover:scale-[1.02] hover:shadow-lg transition-all text-center">
+            免费开始
+          </a>
+        </article>
+      </div>
+
+      <p class="reveal text-center text-[13px] text-mute font-medium mt-12 max-w-xl mx-auto leading-relaxed">
+        正式付费方案上线时我们会提前邮件通知。内测期间产生的人设、记忆和聊天数据将完整保留。
+      </p>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="py-24 lg:py-32 px-6 bg-cloud">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="reveal text-[32px] sm:text-[44px] lg:text-[56px] font-bold tracking-tightest leading-[1.1] text-center mb-12 lg:mb-16">常见问题</h2>
+      <div class="space-y-3">
+        <details class="reveal group bg-white border border-line rounded-2xl px-6 py-5 cursor-pointer">
+          <summary class="flex items-center justify-between text-[15px] font-semibold tracking-tight">溪语是怎么住进微信的？<i data-lucide="plus" class="w-5 h-5 text-mute group-open:rotate-45 transition-transform"></i></summary>
+          <p class="mt-3 text-[14px] text-mute font-medium leading-relaxed">通过官方 iLink 协议接入，扫码绑定你的微信账号，她会作为一个独立联系人和你聊天。</p>
+        </details>
+        <details class="reveal group bg-white border border-line rounded-2xl px-6 py-5 cursor-pointer" data-delay="1">
+          <summary class="flex items-center justify-between text-[15px] font-semibold tracking-tight">数据安全吗？我的聊天会被泄露吗？<i data-lucide="plus" class="w-5 h-5 text-mute group-open:rotate-45 transition-transform"></i></summary>
+          <p class="mt-3 text-[14px] text-mute font-medium leading-relaxed">所有对话端到端加密存储，仅你本人可见。我们承诺永不出售、永不用于训练。</p>
+        </details>
+        <details class="reveal group bg-white border border-line rounded-2xl px-6 py-5 cursor-pointer" data-delay="2">
+          <summary class="flex items-center justify-between text-[15px] font-semibold tracking-tight">可以重新设定她的人设吗？<i data-lucide="plus" class="w-5 h-5 text-mute group-open:rotate-45 transition-transform"></i></summary>
+          <p class="mt-3 text-[14px] text-mute font-medium leading-relaxed">可以。你可以随时在控制面板调整她的任意维度，记忆和好感度也支持手动管理。</p>
+        </details>
+        <details class="reveal group bg-white border border-line rounded-2xl px-6 py-5 cursor-pointer">
+          <summary class="flex items-center justify-between text-[15px] font-semibold tracking-tight">支持发图片和语音吗？<i data-lucide="plus" class="w-5 h-5 text-mute group-open:rotate-45 transition-transform"></i></summary>
+          <p class="mt-3 text-[14px] text-mute font-medium leading-relaxed">支持。你发的图片和语音她都能理解并自然回应。内测期间所有功能完全开放。</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <footer class="border-t border-line bg-white">
+    <div class="max-w-content mx-auto px-6 lg:px-8 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-2.5">
+        <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
+        <span class="text-[14px] font-semibold tracking-tight">溪语AI</span>
+      </div>
+      <div class="flex items-center gap-7 text-[13px] text-mute font-medium">
+        <a href="/app/terms.html" class="hover:text-ink transition-colors">用户协议</a>
+        <a href="/app/privacy.html" class="hover:text-ink transition-colors">隐私协议</a>
+        <a href="mailto:xiyuai@proton.me" class="hover:text-ink transition-colors">联系</a>
+      </div>
+      <p class="text-[12px] text-mute font-medium">© 2026 溪语AI · 在微信里，等你</p>
+    </div>
+  </footer>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+    document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+
+    const chatWrap = document.querySelector('.chat')?.closest('.reveal');
+    if (chatWrap) {
+      new IntersectionObserver((entries) => {
+        entries.forEach((e) => { if (e.isIntersecting) document.querySelector('.chat').classList.add('in'); });
+      }, { threshold: 0.2 }).observe(chatWrap);
+    }
+
+    const nav = document.getElementById('nav');
+    const onScroll = () => {
+      if (window.scrollY > 8) nav.classList.add('shadow-nav', 'bg-white/90');
+      else nav.classList.remove('shadow-nav', 'bg-white/90');
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    const menuBtn = document.getElementById('menu-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    let menuOpen = false;
+    menuBtn?.addEventListener('click', () => {
+      menuOpen = !menuOpen;
+      mobileMenu.classList.toggle('hidden', !menuOpen);
+      menuBtn.innerHTML = '<i data-lucide="' + (menuOpen ? 'x' : 'menu') + '" class="w-6 h-6 text-ink"></i>';
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    });
+    mobileMenu?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+      menuOpen = false;
+      mobileMenu.classList.add('hidden');
+      menuBtn.innerHTML = '<i data-lucide="menu" class="w-6 h-6 text-ink"></i>';
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    }));
+  </script>
+</body>
+</html>

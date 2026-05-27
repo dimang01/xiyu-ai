@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>定义她 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+            ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA',
+          },
+          fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+          boxShadow: {
+            sakura: '0 4px 24px rgba(255, 182, 217, 0.15)',
+            card: '0 12px 48px rgba(0,0,0,0.06)',
+          },
+          letterSpacing: { tightest: '-0.04em' },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    input:focus, textarea:focus, select:focus { outline:none; box-shadow: 0 0 0 3px rgba(255,182,217,.25); border-color: #FFB6D9 !important; }
+    .chip {
+      display:inline-flex; align-items:center; gap:6px;
+      padding: 9px 16px; border-radius:9999px; font-size:14px; font-weight:500;
+      background:#FAFAFA; border:1px solid #F0F0F2; color:#1D1D1F;
+      cursor:pointer; transition: all .2s ease;
+    }
+    .chip:hover { border-color:#FFB6D9; }
+    .chip.selected { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); color:white; border-color: transparent; box-shadow: 0 4px 16px rgba(255,143,184,.3); }
+    .chip.selected .check { display:inline-block; }
+    .chip .check { display:none; }
+    .step-dot { width:8px; height:8px; border-radius:50%; background:#F0F0F2; transition: all .3s ease; }
+    .step-dot.active { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); width: 28px; border-radius: 9999px; }
+    .step-dot.done { background: #FFB6D9; }
+    .btn-primary { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 16px 48px rgba(255,143,184,.32); transform: translateY(-1px); }
+    .slider {
+      -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:9999px;
+      background: linear-gradient(to right, #FFB6D9 var(--val,50%), #F0F0F2 var(--val,50%));
+    }
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance:none; appearance:none;
+      width:22px; height:22px; border-radius:50%; background:white; cursor:pointer;
+      box-shadow: 0 2px 8px rgba(255,143,184,.5); border: 2px solid #FFB6D9;
+    }
+    .slider::-moz-range-thumb {
+      width:22px; height:22px; border-radius:50%; background:white; cursor:pointer;
+      box-shadow: 0 2px 8px rgba(255,143,184,.5); border: 2px solid #FFB6D9;
+    }
+    @keyframes fadeUp { from { opacity:0; transform: translateY(16px); } to { opacity:1; transform: translateY(0); } }
+    .step-content { animation: fadeUp .5s cubic-bezier(.16,1,.3,1); }
+    .spinner { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body class="min-h-screen bg-cloud font-sans text-ink antialiased">
+
+  <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
+    <div class="max-w-3xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5">
+        <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
+        <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+      </a>
+      <div class="flex items-center gap-4">
+        <span id="user-badge" class="hidden text-[13px] font-medium text-mute"></span>
+        <button id="btn-logout" class="hidden text-[13px] font-medium text-mute hover:text-ink transition-colors">登出</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-6 py-10 lg:py-16">
+
+    <div class="text-center mb-10">
+      <p class="text-[14px] font-semibold text-sakura-deep tracking-wider mb-3">第 <span id="step-num">1</span> 步，共 4 步</p>
+      <h1 id="page-title" class="text-[32px] sm:text-[42px] font-bold tracking-tightest leading-tight">定义你的她</h1>
+      <p class="mt-3 text-[15px] text-mute font-medium">每一个细节，都让她更像你想象中的样子。</p>
+
+      <div class="flex justify-center gap-2 mt-8" id="step-dots">
+        <span class="step-dot active"></span>
+        <span class="step-dot"></span>
+        <span class="step-dot"></span>
+        <span class="step-dot"></span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-3xl shadow-card p-7 sm:p-10">
+
+      <!-- STEP 1: 基础身份 -->
+      <section data-step="1" class="step-content">
+        <h2 class="text-[22px] font-bold mb-1">她叫什么？</h2>
+        <p class="text-[14px] text-mute font-medium mb-7">先从最基础的开始。</p>
+
+        <div class="space-y-5">
+          <div>
+            <label class="block text-[13px] font-semibold mb-2">名字</label>
+            <input name="name" type="text" maxlength="20" value="溪语"
+              class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-[13px] font-semibold mb-2">年龄</label>
+              <input name="age" type="number" min="16" max="80" value="22"
+                class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+            </div>
+            <div>
+              <label class="block text-[13px] font-semibold mb-2">身高 (cm)</label>
+              <input name="height" type="number" min="140" max="200" value="165"
+                class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold mb-3">她是谁？（身份标签）</label>
+            <div class="flex flex-wrap gap-2" data-single="role_title">
+              <button type="button" class="chip" data-val="邻家女孩"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>邻家女孩</button>
+              <button type="button" class="chip" data-val="青梅竹马"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>青梅竹马</button>
+              <button type="button" class="chip" data-val="学姐"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>学姐</button>
+              <button type="button" class="chip" data-val="傲娇大小姐"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>傲娇大小姐</button>
+              <button type="button" class="chip" data-val="温柔御姐"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>温柔御姐</button>
+              <button type="button" class="chip" data-val="同班同学"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>同班同学</button>
+              <button type="button" class="chip" data-val="网恋对象"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>网恋对象</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold mb-3">穿衣风格</label>
+            <div class="flex flex-wrap gap-2" data-single="clothing_style">
+              <button type="button" class="chip" data-val="甜美"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>甜美</button>
+              <button type="button" class="chip" data-val="温柔"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>温柔</button>
+              <button type="button" class="chip" data-val="学生装"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>学生装</button>
+              <button type="button" class="chip" data-val="帅气"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>帅气</button>
+              <button type="button" class="chip" data-val="性感"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>性感</button>
+              <button type="button" class="chip" data-val="森系"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>森系</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 2: 性格 + 亲密度 -->
+      <section data-step="2" class="step-content hidden">
+        <h2 class="text-[22px] font-bold mb-1">她的性格</h2>
+        <p class="text-[14px] text-mute font-medium mb-7">最多选 4 个标签，描绘她的性格。</p>
+
+        <div class="space-y-7">
+          <div>
+            <label class="block text-[13px] font-semibold mb-3">性格标签</label>
+            <div class="flex flex-wrap gap-2" data-multi="personality_tags" data-max="4">
+              <button type="button" class="chip" data-val="温柔"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>温柔</button>
+              <button type="button" class="chip" data-val="活泼"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>活泼</button>
+              <button type="button" class="chip" data-val="傲娇"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>傲娇</button>
+              <button type="button" class="chip" data-val="治愈"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>治愈</button>
+              <button type="button" class="chip" data-val="冷静"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>冷静</button>
+              <button type="button" class="chip" data-val="腹黑"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>腹黑</button>
+              <button type="button" class="chip" data-val="天然"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>天然</button>
+              <button type="button" class="chip" data-val="毒舌"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>毒舌</button>
+              <button type="button" class="chip" data-val="爱撒娇"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>爱撒娇</button>
+              <button type="button" class="chip" data-val="知性"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>知性</button>
+              <button type="button" class="chip" data-val="文艺"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>文艺</button>
+              <button type="button" class="chip" data-val="开朗"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>开朗</button>
+            </div>
+          </div>
+
+          <div class="bg-sakura-soft/40 rounded-2xl px-4 py-3">
+            <p class="text-[12px] text-sakura-deep font-medium leading-relaxed">
+              <i data-lucide="heart" class="inline w-3.5 h-3.5 align-[-2px]"></i>
+              你们的关系会随着聊天慢慢升温（陌生人 → 朋友 → 暧昧 → 恋人 → 深爱），不需要预设。
+            </p>
+          </div>
+
+          <div>
+            <label class="flex items-center justify-between mb-3">
+              <span class="text-[13px] font-semibold">内向 → 外向</span>
+              <span class="text-[13px] font-semibold text-sakura-deep"><span id="introvert-val">5</span> / 10</span>
+            </label>
+            <input type="range" min="1" max="10" value="5" class="slider" name="introvert_level" />
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 3: 说话风格 -->
+      <section data-step="3" class="step-content hidden">
+        <h2 class="text-[22px] font-bold mb-1">她怎么和你说话</h2>
+        <p class="text-[14px] text-mute font-medium mb-7">这些会影响她每一条回复的语气。</p>
+
+        <div class="space-y-7">
+          <div>
+            <label class="block text-[13px] font-semibold mb-3">说话风格（可多选）</label>
+            <div class="flex flex-wrap gap-2" data-multi="speech_styles">
+              <button type="button" class="chip" data-val="自然口语"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>自然口语</button>
+              <button type="button" class="chip" data-val="会撒娇"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>会撒娇</button>
+              <button type="button" class="chip" data-val="偶尔吐槽"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>偶尔吐槽</button>
+              <button type="button" class="chip" data-val="喜欢鼓励"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>喜欢鼓励</button>
+              <button type="button" class="chip" data-val="简短直接"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>简短直接</button>
+              <button type="button" class="chip" data-val="甜一点"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>甜一点</button>
+              <button type="button" class="chip" data-val="文艺"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>文艺</button>
+              <button type="button" class="chip" data-val="活泼"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>活泼</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold mb-3">回复长度</label>
+            <div class="flex flex-wrap gap-2" data-single="reply_length">
+              <button type="button" class="chip" data-val="简短(1-2句)"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>简短 1-2 句</button>
+              <button type="button" class="chip" data-val="适中(3-4句)"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>适中 3-4 句</button>
+              <button type="button" class="chip" data-val="喜欢长聊"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>喜欢长聊</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="flex items-center justify-between mb-3">
+              <span class="text-[13px] font-semibold">表情使用频率</span>
+              <span class="text-[13px] font-semibold text-sakura-deep"><span id="emoji-val">5</span> / 10</span>
+            </label>
+            <input type="range" min="0" max="10" value="5" class="slider" name="use_emoji_level" />
+            <p class="text-[12px] text-mute font-medium mt-2">越高表示她越爱在消息里加表情</p>
+          </div>
+
+          <label class="flex items-center justify-between p-4 bg-cloud rounded-2xl cursor-pointer hover:bg-sakura-soft/50 transition-colors">
+            <div>
+              <div class="text-[14px] font-semibold">使用颜文字</div>
+              <div class="text-[12px] text-mute font-medium mt-0.5">(｡♥‿♥｡) (≧▽≦) 这种风格</div>
+            </div>
+            <input type="checkbox" name="use_kaomoji" class="w-5 h-5 accent-sakura-deep" />
+          </label>
+        </div>
+      </section>
+
+      <!-- STEP 4: 称呼 + 关系背景 -->
+      <section data-step="4" class="step-content hidden">
+        <h2 class="text-[22px] font-bold mb-1">你们的故事</h2>
+        <p class="text-[14px] text-mute font-medium mb-7">这些细节让她对你独一无二。</p>
+
+        <div class="space-y-5">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-[13px] font-semibold mb-2">她怎么叫你</label>
+              <input name="call_user_as" type="text" maxlength="10" value="你" placeholder="例如：宝宝"
+                class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+            </div>
+            <div>
+              <label class="block text-[13px] font-semibold mb-2">你怎么叫她</label>
+              <input name="user_call_her_as" type="text" maxlength="10" placeholder="例如：小溪"
+                class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold mb-2">我们是怎么认识的</label>
+            <input name="how_met" type="text" maxlength="80" placeholder="例如：高中时是邻桌同学"
+              class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold mb-2">她的爱好 <span class="text-mute font-medium">（用逗号分隔，聊到这些她会特别来劲）</span></label>
+            <input name="hobbies" type="text" maxlength="120" placeholder="例如：看动漫, 喝奶茶, 听周杰伦, 拍照"
+              class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium" />
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold mb-2">共同回忆 <span class="text-mute font-medium">（选填）</span></label>
+            <textarea name="shared_memory" rows="3" maxlength="200" placeholder="自由描述你们之间发生过的事情..."
+              class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium resize-none"></textarea>
+          </div>
+
+          <div>
+            <label class="block text-[13px] font-semibold mb-2">额外人设 <span class="text-mute font-medium">（选填）</span></label>
+            <textarea name="persona_prompt" rows="3" maxlength="300" placeholder="她还有什么独特之处？比如：偶尔会因为你不主动联系而假装生气..."
+              class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium resize-none"></textarea>
+          </div>
+
+          <div class="flex flex-wrap gap-2" data-multi="forbidden_topics">
+            <span class="block w-full text-[13px] font-semibold mb-1">避免提及（可多选）</span>
+            <button type="button" class="chip" data-val="前任"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>前任</button>
+            <button type="button" class="chip" data-val="分手"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>分手</button>
+            <button type="button" class="chip" data-val="工作压力"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>工作压力</button>
+            <button type="button" class="chip" data-val="政治"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>政治</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Buttons -->
+      <div class="mt-10 pt-7 border-t border-line flex items-center justify-between gap-3">
+        <button id="btn-back" class="px-6 py-3 text-[14px] font-semibold text-ink rounded-full border border-line hover:border-mute transition-all hidden">
+          <i data-lucide="chevron-left" class="inline w-4 h-4 align-[-3px]"></i>
+          上一步
+        </button>
+        <div class="flex-1"></div>
+        <button id="btn-next" class="btn-primary px-7 py-3 text-[14px] font-semibold text-white rounded-full shadow-sakura transition-all">
+          下一步
+          <i data-lucide="chevron-right" class="inline w-4 h-4 align-[-3px]"></i>
+        </button>
+      </div>
+    </div>
+
+    <p id="msg" class="hidden text-center text-[14px] font-medium mt-6 px-4 py-3 rounded-xl"></p>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+
+    // ─── Auth guard ────────────────────────────────────────────────────────
+    const user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
+    const token = localStorage.getItem('xiyu_token') || '';
+    if (!user || !token) location.href = '/app/auth.html';
+
+    const _origFetch = window.fetch;
+    window.fetch = function(url, init = {}) {
+      const isApi = typeof url === 'string' && url.startsWith('/api/');
+      if (isApi) init.headers = { ...(init.headers || {}), Authorization: `Bearer ${token}` };
+      return _origFetch(url, init).then(res => {
+        if (isApi && res.status === 401) {
+          localStorage.removeItem('xiyu_token'); localStorage.removeItem('xiyu_user');
+          location.href = '/app/auth.html';
+        }
+        return res;
+      });
+    };
+    const params = new URLSearchParams(location.search);
+    const isEditMode = params.get('edit') === 'true';
+    const editCompanionId = params.get('id');
+    if (isEditMode) {
+      document.title = '调整她的人设 · 溪语AI';
+      document.getElementById('page-title').textContent = '调整她的人设';
+    }
+    document.getElementById('user-badge').classList.remove('hidden');
+    document.getElementById('user-badge').textContent = user.username;
+    document.getElementById('btn-logout').classList.remove('hidden');
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      localStorage.removeItem('xiyu_user');
+      localStorage.removeItem('xiyu_pending_companion');
+      location.href = '/app/auth.html';
+    });
+
+    // ─── Wizard state ──────────────────────────────────────────────────────
+    const state = {
+      // text fields read from inputs at submit
+      role_title: '邻家女孩',
+      clothing_style: '甜美',
+      personality_tags: ['温柔'],
+      speech_styles: ['自然口语'],
+      reply_length: '适中(3-4句)',
+      forbidden_topics: [],
+    };
+
+    let stepIdx = 1;
+    const totalSteps = 4;
+
+    // ─── Chip selection (single / multi) ───────────────────────────────────
+    function bindChips(root = document) {
+      root.querySelectorAll('[data-single]').forEach(group => {
+        const key = group.dataset.single;
+        // Pre-select state value
+        group.querySelectorAll('.chip').forEach(c => {
+          if (c.dataset.val === state[key]) c.classList.add('selected');
+        });
+        group.addEventListener('click', (e) => {
+          const chip = e.target.closest('.chip'); if (!chip) return;
+          group.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+          chip.classList.add('selected');
+          state[key] = chip.dataset.val;
+        });
+      });
+      root.querySelectorAll('[data-multi]').forEach(group => {
+        const key = group.dataset.multi;
+        const max = Number(group.dataset.max || 99);
+        group.querySelectorAll('.chip').forEach(c => {
+          if ((state[key] || []).includes(c.dataset.val)) c.classList.add('selected');
+        });
+        group.addEventListener('click', (e) => {
+          const chip = e.target.closest('.chip'); if (!chip) return;
+          const v = chip.dataset.val;
+          state[key] = state[key] || [];
+          if (chip.classList.contains('selected')) {
+            chip.classList.remove('selected');
+            state[key] = state[key].filter(x => x !== v);
+          } else {
+            if (state[key].length >= max) return;
+            chip.classList.add('selected');
+            state[key].push(v);
+          }
+        });
+      });
+    }
+    bindChips();
+
+    function refreshChipSelection() {
+      document.querySelectorAll('[data-single]').forEach(group => {
+        const key = group.dataset.single;
+        group.querySelectorAll('.chip').forEach(c => {
+          c.classList.toggle('selected', c.dataset.val === state[key]);
+        });
+      });
+      document.querySelectorAll('[data-multi]').forEach(group => {
+        const key = group.dataset.multi;
+        const vals = state[key] || [];
+        group.querySelectorAll('.chip').forEach(c => {
+          c.classList.toggle('selected', vals.includes(c.dataset.val));
+        });
+      });
+    }
+
+    // ─── Sliders ───────────────────────────────────────────────────────────
+    function bindSlider(name, labelId) {
+      const sl = document.querySelector(`input[name="${name}"]`);
+      const lb = document.getElementById(labelId);
+      const upd = () => {
+        sl.style.setProperty('--val', ((sl.value - sl.min) / (sl.max - sl.min) * 100) + '%');
+        if (lb) lb.textContent = sl.value;
+      };
+      sl.addEventListener('input', upd);
+      upd();
+    }
+    bindSlider('introvert_level', 'introvert-val');
+    bindSlider('use_emoji_level', 'emoji-val');
+
+    // ─── Step nav ──────────────────────────────────────────────────────────
+    const dots = document.querySelectorAll('.step-dot');
+    const stepNum = document.getElementById('step-num');
+    const btnBack = document.getElementById('btn-back');
+    const btnNext = document.getElementById('btn-next');
+
+    function showStep(n) {
+      document.querySelectorAll('[data-step]').forEach(s => s.classList.toggle('hidden', Number(s.dataset.step) !== n));
+      dots.forEach((d, i) => {
+        d.classList.toggle('active', i === n - 1);
+        d.classList.toggle('done', i < n - 1);
+      });
+      stepNum.textContent = n;
+      btnBack.classList.toggle('hidden', n === 1);
+      btnNext.innerHTML = n === totalSteps
+        ? (isEditMode
+            ? '保存修改 <i data-lucide="check" class="inline w-4 h-4 align-[-3px]"></i>'
+            : '保存并绑定微信 <i data-lucide="check" class="inline w-4 h-4 align-[-3px]"></i>')
+        : '下一步 <i data-lucide="chevron-right" class="inline w-4 h-4 align-[-3px]"></i>';
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    btnBack.addEventListener('click', () => { if (stepIdx > 1) showStep(--stepIdx); });
+    btnNext.addEventListener('click', async () => {
+      if (stepIdx < totalSteps) {
+        showStep(++stepIdx);
+      } else {
+        await submitAll();
+      }
+    });
+
+    // ─── Submit ────────────────────────────────────────────────────────────
+    function collectAllInputs() {
+      const inp = (n) => document.querySelector(`[name="${n}"]`);
+      const val = (n, fb) => { const e = inp(n); return e ? (e.type === 'number' ? Number(e.value) : e.value.trim() || fb) : fb; };
+      const bool = (n) => { const e = inp(n); return e ? e.checked : false; };
+
+      const hobbiesRaw = val('hobbies', '');
+      const hobbies = typeof hobbiesRaw === 'string'
+        ? hobbiesRaw.split(/[，,、\s]+/).map(s => s.trim()).filter(Boolean).slice(0, 10)
+        : [];
+
+      return {
+        ...state,
+        name:             val('name', '溪语'),
+        age:              val('age', 22),
+        height:           val('height', 165),
+        introvert_level:  Number(inp('introvert_level')?.value || 5),
+        use_emoji_level:  Number(inp('use_emoji_level')?.value || 5),
+        use_kaomoji:      bool('use_kaomoji'),
+        call_user_as:     val('call_user_as', '你'),
+        user_call_her_as: val('user_call_her_as', null),
+        how_met:          val('how_met', null),
+        shared_memory:    val('shared_memory', null),
+        persona_prompt:   val('persona_prompt', ''),
+        hobbies:          hobbies,
+      };
+    }
+
+    function showMsg(text, kind = 'info') {
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      el.className = 'text-center text-[14px] font-medium mt-6 px-4 py-3 rounded-xl ' +
+        (kind === 'error' ? 'bg-red-50 text-red-500' :
+         kind === 'success' ? 'bg-emerald-50 text-emerald-600' :
+         'bg-sakura-soft text-sakura-deep');
+    }
+
+    async function submitAll() {
+      const config = collectAllInputs();
+
+      if (isEditMode) {
+        if (!editCompanionId) {
+          showMsg('缺少 companion_id，无法保存修改', 'error');
+          return;
+        }
+
+        btnNext.disabled = true;
+        btnNext.innerHTML = '<i data-lucide="loader-2" class="inline w-4 h-4 spinner align-[-3px]"></i> 保存中...';
+        lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+
+        try {
+          const res = await fetch('/api/companions/' + encodeURIComponent(editCompanionId), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+          });
+          const payload = await res.json();
+          if (!res.ok || !payload.ok) throw new Error(payload.error || '保存失败');
+
+          localStorage.setItem('xiyu_companion_id', String(editCompanionId));
+          localStorage.setItem('xiyu_companion_summary', JSON.stringify(payload.data));
+          localStorage.removeItem('xiyu_pending_companion');
+          showMsg('人设已更新，即将返回控制台...', 'success');
+          setTimeout(() => { location.href = '/app/dashboard.html'; }, 600);
+        } catch (e) {
+          btnNext.disabled = false;
+          showStep(stepIdx);
+          showMsg(e.message || '保存失败，请稍后再试', 'error');
+        }
+        return;
+      }
+
+      // Save to localStorage as pending companion (will POST after wechat bind)
+      localStorage.setItem('xiyu_pending_companion', JSON.stringify(config));
+
+      btnNext.disabled = true;
+      btnNext.innerHTML = '<i data-lucide="loader-2" class="inline w-4 h-4 spinner align-[-3px]"></i> 保存中...';
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+
+      showMsg('配置已保存，即将进入微信绑定...', 'success');
+
+      setTimeout(() => { location.href = '/app/bind.html'; }, 600);
+    }
+
+    function populateForm(config) {
+      if (!config) return;
+      // Pre-fill state from draft for chip selectors
+      Object.assign(state, config);
+      // Re-bind chips to reflect state
+      refreshChipSelection();
+      // Pre-fill text inputs
+      ['name','age','height','call_user_as','user_call_her_as','how_met','shared_memory','persona_prompt'].forEach(k => {
+        const e = document.querySelector(`[name="${k}"]`);
+        if (e && config[k] !== undefined && config[k] !== null) e.value = config[k];
+      });
+      // hobbies 数组 → 文本
+      const hobbiesEl = document.querySelector('[name="hobbies"]');
+      if (hobbiesEl && Array.isArray(config.hobbies)) hobbiesEl.value = config.hobbies.join(', ');
+      // Sliders
+      ['introvert_level','use_emoji_level'].forEach(k => {
+        const e = document.querySelector(`[name="${k}"]`);
+        if (e && config[k] !== undefined) { e.value = config[k]; e.dispatchEvent(new Event('input')); }
+      });
+      // Bool
+      const k = document.querySelector('[name="use_kaomoji"]');
+      if (k && config.use_kaomoji !== undefined) k.checked = !!config.use_kaomoji;
+    }
+
+    async function loadEditConfig() {
+      if (!editCompanionId) {
+        showMsg('缺少 companion_id，无法加载人设', 'error');
+        return;
+      }
+
+      try {
+        showMsg('正在加载已有配置...');
+        const res = await fetch('/api/companions/' + encodeURIComponent(editCompanionId));
+        const payload = await res.json();
+        if (!res.ok || !payload.ok) throw new Error(payload.error || '加载失败');
+        populateForm(payload.data);
+        document.getElementById('msg').classList.add('hidden');
+      } catch (e) {
+        showMsg(e.message || '加载失败，请稍后再试', 'error');
+      }
+    }
+
+    if (isEditMode) {
+      loadEditConfig();
+    } else {
+      // Restore previous draft if any
+      const draft = JSON.parse(localStorage.getItem('xiyu_pending_companion') || 'null');
+      populateForm(draft);
+    }
+  </script>
+</body>
+</html>

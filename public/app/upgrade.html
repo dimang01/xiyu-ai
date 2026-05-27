@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>内测期免费 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+          ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA' },
+        fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+        boxShadow: {
+          sakura: '0 4px 24px rgba(255, 182, 217, 0.15)',
+          'sakura-lg':'0 16px 48px rgba(255, 143, 184, 0.22)',
+          card: '0 12px 48px rgba(0,0,0,0.06)',
+        },
+        letterSpacing: { tightest: '-0.04em' },
+      } },
+    };
+  </script>
+  <style> html { -webkit-font-smoothing: antialiased; } </style>
+</head>
+<body class="min-h-screen bg-cloud font-sans text-ink antialiased">
+  <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
+    <div class="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/app/dashboard.html" class="flex items-center gap-2.5">
+        <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
+        <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+      </a>
+      <a href="/app/dashboard.html" class="text-[13px] font-medium text-mute hover:text-ink transition-colors">返回控制台</a>
+    </div>
+  </header>
+
+  <main class="max-w-2xl mx-auto px-6 py-16 lg:py-24 text-center">
+    <div class="inline-flex w-16 h-16 rounded-3xl bg-gradient-to-br from-sakura to-sakura-deep items-center justify-center shadow-sakura-lg mb-7">
+      <i data-lucide="gift" class="w-8 h-8 text-white"></i>
+    </div>
+    <h1 class="text-[36px] sm:text-[44px] font-bold tracking-tightest leading-tight">内测期免费</h1>
+    <p class="mt-4 text-[15px] sm:text-[17px] text-mute font-medium leading-relaxed">
+      溪语 AI 目前处于小范围内测阶段，<br class="hidden sm:block" />
+      所有功能对所有用户<strong class="text-ink">完全免费</strong>。
+    </p>
+
+    <div class="mt-10 bg-white rounded-3xl shadow-card p-7 sm:p-8 text-left">
+      <h2 class="text-[16px] font-bold mb-4 flex items-center gap-2">
+        <i data-lucide="sparkles" class="w-5 h-5 text-sakura-deep"></i>
+        内测期间你可以无限制使用
+      </h2>
+      <ul class="space-y-3 text-[14px] font-medium leading-relaxed">
+        <li class="flex items-start gap-3"><i data-lucide="infinity" class="w-5 h-5 mt-0.5 text-sakura-deep flex-shrink-0"></i>无限聊天条数</li>
+        <li class="flex items-start gap-3"><i data-lucide="brain" class="w-5 h-5 mt-0.5 text-sakura-deep flex-shrink-0"></i>长期记忆 · 每日 / 每周 / 每月总结</li>
+        <li class="flex items-start gap-3"><i data-lucide="bell" class="w-5 h-5 mt-0.5 text-sakura-deep flex-shrink-0"></i>主动找你聊天 + 23:00 晚安</li>
+        <li class="flex items-start gap-3"><i data-lucide="image" class="w-5 h-5 mt-0.5 text-sakura-deep flex-shrink-0"></i>图片识别 · 语音识别</li>
+        <li class="flex items-start gap-3"><i data-lucide="smile" class="w-5 h-5 mt-0.5 text-sakura-deep flex-shrink-0"></i>表情包回复</li>
+      </ul>
+    </div>
+
+    <div class="mt-6 bg-sakura-soft/70 rounded-3xl p-6 text-left">
+      <p class="text-[13px] text-ink font-medium leading-relaxed">
+        正式付费方案上线时，我们会提前 <strong>邮件通知</strong>。<br />
+        内测期间积累的记忆和数据完整保留，不会因为方案切换而清空。
+      </p>
+    </div>
+
+    <a href="/app/dashboard.html" class="inline-flex items-center gap-2 mt-10 px-8 py-3.5 text-[14px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:scale-[1.03] transition-all">
+      回到我和她的世界
+      <i data-lucide="arrow-right" class="w-4 h-4"></i>
+    </a>
+
+    <p class="mt-10 text-[12px] text-mute font-medium">
+      有反馈？发邮件到 <a href="mailto:xiyuai@proton.me" class="text-sakura-deep hover:underline">xiyuai@proton.me</a>
+    </p>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });</script>
+</body>
+</html>

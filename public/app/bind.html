@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>绑定微信 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+          ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA' },
+        fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+        boxShadow: { sakura: '0 4px 24px rgba(255, 182, 217, 0.15)', card: '0 12px 48px rgba(0,0,0,0.06)' },
+        letterSpacing: { tightest: '-0.04em' },
+      } },
+    };
+  </script>
+
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    .btn-primary { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 16px 48px rgba(255,143,184,.32); transform: translateY(-1px); }
+    .btn-primary:disabled { opacity:.6; cursor: not-allowed; }
+    .qr-frame {
+      background: linear-gradient(135deg, #FFE8F2 0%, #FFFFFF 60%);
+      border: 1px solid #FFE8F2;
+    }
+    .corner {
+      position: absolute; width: 20px; height: 20px; border-color: #FF8FB8; border-style: solid; border-width: 0;
+    }
+    .corner.tl { top:8px; left:8px; border-top-width:3px; border-left-width:3px; border-radius: 6px 0 0 0; }
+    .corner.tr { top:8px; right:8px; border-top-width:3px; border-right-width:3px; border-radius: 0 6px 0 0; }
+    .corner.bl { bottom:8px; left:8px; border-bottom-width:3px; border-left-width:3px; border-radius: 0 0 0 6px; }
+    .corner.br { bottom:8px; right:8px; border-bottom-width:3px; border-right-width:3px; border-radius: 0 0 6px 0; }
+    .scan-line {
+      position: absolute; left: 14px; right: 14px; height: 2px;
+      background: linear-gradient(90deg, transparent, #FF8FB8, transparent);
+      animation: scan 2.4s ease-in-out infinite;
+    }
+    @keyframes scan {
+      0% { top: 14px; opacity: 0; }
+      10% { opacity: 1; }
+      50% { top: calc(100% - 16px); opacity: 1; }
+      90% { opacity: 1; }
+      100% { top: 14px; opacity: 0; }
+    }
+    .spinner { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .success-check {
+      stroke-dasharray: 48;
+      stroke-dashoffset: 48;
+      animation: draw-check .55s ease-out forwards .15s;
+    }
+    .success-circle {
+      transform-origin: center;
+      animation: pop-success .45s cubic-bezier(.16,1,.3,1) forwards;
+    }
+    @keyframes draw-check { to { stroke-dashoffset: 0; } }
+    @keyframes pop-success {
+      0% { transform: scale(.78); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-cloud font-sans text-ink antialiased">
+
+  <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
+    <div class="max-w-3xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5">
+        <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
+        <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+      </a>
+      <a id="back-link" href="/app/create.html" class="text-[13px] font-medium text-mute hover:text-ink transition-colors">
+        <i data-lucide="chevron-left" class="inline w-4 h-4 align-[-3px]"></i> 返回修改
+      </a>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-6 py-10 lg:py-16">
+
+    <div class="text-center mb-10">
+      <p id="step-label" class="text-[14px] font-semibold text-sakura-deep tracking-wider mb-3">最后一步</p>
+      <h1 id="page-title" class="text-[32px] sm:text-[42px] font-bold tracking-tightest leading-tight">把她接到微信</h1>
+      <p id="page-subtitle" class="mt-3 text-[15px] text-mute font-medium max-w-md mx-auto">用微信扫码并在手机上点「确认登录」，页面会自动跳转，扫码完成后微信里会自动出现「溪语AI」联系人。</p>
+      <p id="rebind-notice" class="hidden mt-4 text-[13px] font-medium text-sakura-deep bg-sakura-soft rounded-2xl px-4 py-3 max-w-md mx-auto">
+        重新绑定成功后，原微信绑定将被替换。
+      </p>
+    </div>
+
+    <div class="bg-white rounded-3xl shadow-card p-7 sm:p-12 grid md:grid-cols-2 gap-10 items-center">
+
+      <!-- QR Frame -->
+      <div class="flex justify-center">
+        <div class="qr-frame relative w-[260px] h-[260px] rounded-3xl flex items-center justify-center p-6">
+          <span class="corner tl"></span><span class="corner tr"></span>
+          <span class="corner bl"></span><span class="corner br"></span>
+          <span class="scan-line"></span>
+
+          <img id="qr-img" alt="溪语AI 微信二维码" class="hidden w-[196px] h-[196px] rounded-2xl bg-white object-contain shadow-sakura" />
+          <div id="qr-success" class="hidden text-center">
+            <div class="success-circle w-24 h-24 mx-auto rounded-full bg-emerald-50 flex items-center justify-center shadow-sakura">
+              <svg class="w-14 h-14 text-emerald-500" viewBox="0 0 52 52" fill="none" aria-hidden="true">
+                <path class="success-check" d="M15 27.5L23 35L38 18" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <p class="mt-4 text-[13px] font-semibold text-emerald-600">绑定成功！正在跳转...</p>
+          </div>
+          <div id="qr-loading" class="text-center">
+            <div class="w-20 h-20 mx-auto rounded-2xl bg-white shadow-sakura flex items-center justify-center mb-4">
+              <img src="/logo-512.webp" alt="" class="w-12 h-12 rounded-xl" />
+            </div>
+            <p id="qr-status" class="text-[12px] text-mute font-medium leading-relaxed">
+              二维码生成中<br/>
+              请稍候...
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Instructions -->
+      <div>
+        <h2 class="text-[20px] font-bold tracking-tight mb-5">添加好友步骤</h2>
+        <ol class="space-y-4">
+          <li class="flex items-start gap-3">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-sakura-soft text-sakura-deep text-[13px] font-bold flex items-center justify-center">1</span>
+            <div>
+            <p class="text-[14px] font-semibold leading-tight">打开微信</p>
+            <p class="text-[13px] text-mute font-medium mt-1">扫描左侧二维码添加「溪语AI」</p>
+            </div>
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-sakura-soft text-sakura-deep text-[13px] font-bold flex items-center justify-center">2</span>
+            <div>
+              <p class="text-[14px] font-semibold leading-tight">在手机上点「确认登录」</p>
+              <p class="text-[13px] text-mute font-medium mt-1">微信弹窗确认后绑定完成，无需发消息</p>
+            </div>
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-sakura-soft text-sakura-deep text-[13px] font-bold flex items-center justify-center">3</span>
+            <div>
+              <p class="text-[14px] font-semibold leading-tight">页面自动跳转</p>
+              <p class="text-[13px] text-mute font-medium mt-1">微信里会自动出现「溪语AI」联系人，可直接聊天</p>
+            </div>
+          </li>
+        </ol>
+
+        <button id="btn-confirm" class="btn-primary w-full mt-7 py-3.5 text-[14px] font-semibold text-white rounded-full shadow-sakura transition-all">
+          刷新二维码
+        </button>
+      </div>
+    </div>
+
+    <p id="msg" class="hidden text-center text-[14px] font-medium mt-6 px-4 py-3 rounded-xl max-w-lg mx-auto"></p>
+
+    <!-- Help notice -->
+    <div class="mt-8 p-5 bg-white border border-line rounded-2xl flex items-start gap-3">
+      <i data-lucide="info" class="w-5 h-5 text-sakura-deep flex-shrink-0 mt-0.5"></i>
+      <div class="flex-1">
+        <p class="text-[13px] font-semibold mb-1">关于微信绑定</p>
+        <p class="text-[13px] text-mute font-medium leading-relaxed">
+          页面会等待你的微信第一条消息，并自动把它绑定到当前 Web 账号。
+        </p>
+        <p id="bind-code-hint" class="hidden mt-3 text-[12px] text-mute font-medium leading-relaxed">
+          应急绑定码（一般无需用到）：
+          <span id="bind-code" class="inline-block ml-1 px-2 py-0.5 rounded-md bg-sakura-soft text-sakura-deep font-mono font-bold tracking-wider"></span>
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+
+    const user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
+    const token = localStorage.getItem('xiyu_token') || '';
+    if (!user || !token) location.href = '/app/auth.html';
+
+    const _origFetch = window.fetch;
+    window.fetch = function(url, init = {}) {
+      const isApi = typeof url === 'string' && url.startsWith('/api/');
+      if (isApi) {
+        init.headers = { ...(init.headers || {}), Authorization: `Bearer ${token}` };
+      }
+      return _origFetch(url, init).then(res => {
+        if (isApi && res.status === 401) {
+          localStorage.removeItem('xiyu_token');
+          localStorage.removeItem('xiyu_user');
+          location.href = '/app/auth.html';
+        }
+        return res;
+      });
+    };
+
+    const params = new URLSearchParams(location.search);
+    const isRebind = params.get('rebind') === 'true';
+    const draft = JSON.parse(localStorage.getItem('xiyu_pending_companion') || 'null');
+    if (!isRebind && !draft) location.href = '/app/create.html';
+
+    if (isRebind) {
+      document.getElementById('back-link').href = '/app/dashboard.html';
+      document.getElementById('back-link').innerHTML = '<i data-lucide="chevron-left" class="inline w-4 h-4 align-[-3px]"></i> 返回控制台';
+      document.getElementById('step-label').textContent = '重新绑定微信';
+      document.getElementById('page-title').textContent = '重新绑定微信';
+      document.getElementById('page-subtitle').textContent = '用新微信扫码添加好友，发送任意消息后会替换当前 Web 账号的微信身份。';
+      document.getElementById('rebind-notice').classList.remove('hidden');
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    }
+
+    function showMsg(text, kind = 'info') {
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      el.className = 'text-center text-[14px] font-medium mt-6 px-4 py-3 rounded-xl max-w-lg mx-auto ' +
+        (kind === 'error' ? 'bg-red-50 text-red-500' :
+         kind === 'success' ? 'bg-emerald-50 text-emerald-600' :
+         'bg-sakura-soft text-sakura-deep');
+    }
+
+    let sessionId = null;
+    let expiresAtMs = 0;
+    let statusTimer = null;
+    let countdownTimer = null;
+    let completed = false;
+
+    function setQrState(text, loading = true) {
+      document.getElementById('qr-status').innerHTML = text;
+      document.getElementById('qr-loading').classList.toggle('hidden', !loading);
+      document.getElementById('qr-success').classList.add('hidden');
+      document.querySelector('.scan-line').classList.toggle('hidden', !loading);
+    }
+
+    function setSuccessState() {
+      document.getElementById('qr-img').classList.add('hidden');
+      document.getElementById('qr-loading').classList.add('hidden');
+      document.getElementById('qr-success').classList.remove('hidden');
+      document.querySelector('.scan-line').classList.add('hidden');
+      showMsg('绑定成功！正在跳转...', 'success');
+    }
+
+    function goDashboardAfterSuccess() {
+      const target = isRebind ? '/app/dashboard.html?rebind=true' : '/app/dashboard.html';
+      setTimeout(() => { location.href = target; }, 2000);
+    }
+
+    function persistBindSuccess(binding) {
+      if (isRebind) return saveRebindResult(binding, { redirect: false });
+      return savePendingCompanion(binding, { redirect: false });
+    }
+
+    function setButtonLoading(text) {
+      const btn = document.getElementById('btn-confirm');
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader-2" class="inline w-4 h-4 spinner align-[-3px]"></i> ${text}`;
+      lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    }
+
+    function resetButton() {
+      const btn = document.getElementById('btn-confirm');
+      btn.disabled = false;
+      btn.textContent = '刷新二维码';
+    }
+
+    function normalizeCompanionConfig(raw) {
+      const source = raw && typeof raw === 'object' ? raw : {};
+      const data = { ...source };
+      const first = (...keys) => {
+        for (const key of keys) {
+          const value = source[key];
+          if (value !== undefined && value !== null && value !== '') return value;
+        }
+        return undefined;
+      };
+
+      const roleTitle = first('role_title', 'identity', 'persona_tag', 'persona');
+      if (roleTitle !== undefined && data.role_title === undefined) data.role_title = roleTitle;
+
+      const prompt = first('persona_prompt', 'extra_persona', 'extraPersona');
+      if (prompt !== undefined && data.persona_prompt === undefined) data.persona_prompt = prompt;
+
+      const personality = first('personality_tags', 'personality');
+      if (personality !== undefined && data.personality_tags === undefined) {
+        data.personality_tags = Array.isArray(personality)
+          ? personality
+          : String(personality).split(/[，,\s]+/).map(s => s.trim()).filter(Boolean);
+      }
+
+      const background = first('backstory', 'background');
+      if (background !== undefined && data.backstory === undefined) data.backstory = background;
+
+      const affection = first('affection_level', 'affection');
+      if (affection !== undefined && data.affection_level === undefined) data.affection_level = Number(affection);
+
+      const mood = first('current_mood', 'mood');
+      if (mood !== undefined && data.current_mood === undefined) data.current_mood = mood;
+
+      const scene = first('current_scene', 'scene');
+      if (scene !== undefined && data.current_scene === undefined) data.current_scene = scene;
+
+      const chatMode = first('chat_mode_active', 'chat_mode');
+      if (chatMode !== undefined && data.chat_mode_active === undefined) data.chat_mode_active = chatMode;
+
+      delete data.identity;
+      delete data.persona_tag;
+      delete data.persona;
+      delete data.extra_persona;
+      delete data.extraPersona;
+      delete data.personality;
+      delete data.background;
+      delete data.affection;
+      delete data.mood;
+      delete data.scene;
+      delete data.chat_mode;
+
+      return data;
+    }
+
+    async function fetchCompanionId(wechatUserId, botId) {
+      const url = '/api/companions/user/' + encodeURIComponent(wechatUserId)
+        + (botId ? '?bot_id=' + encodeURIComponent(botId) : '');
+      const r = await fetch(url);
+      // 404 / 无 companion 时返回 null 而不是抛错，让上层走"创建"分支
+      if (r.status === 404) return null;
+      let data = {};
+      try { data = await r.json(); } catch { return null; }
+      if (!r.ok || !data.ok || !data.data?.id) return null;
+      return data.data.id;
+    }
+
+    async function savePendingCompanion(binding, { redirect = true } = {}) {
+      const wechatUserId = binding.wechat_user_id;
+      const botId = binding.bot_id || binding.binding?.bot_id || null;
+
+      let companionId = binding.companion_id
+        || binding.binding?.companion_id
+        || (wechatUserId ? await fetchCompanionId(wechatUserId, botId) : null);
+
+      if (!companionId && wechatUserId) {
+        const payload = {
+          wechat_user_id: wechatUserId,
+          ...normalizeCompanionConfig(draft || {}),
+        };
+        if (botId) payload.bot_id = botId;
+        const cr = await fetch('/api/companions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const cd = await cr.json().catch(() => ({}));
+        if (!cr.ok || !cd.ok || !cd.data?.id) {
+          throw new Error(cd.error || cd.message || '人设创建失败');
+        }
+        companionId = cd.data.id;
+      }
+
+      if (!companionId) throw new Error('绑定成功但未返回 companion_id');
+
+      // 只有有 draft 时再 PUT 更新（避免空 body 报错）
+      let summary = null;
+      if (draft && Object.keys(draft).length > 0) {
+        const body = normalizeCompanionConfig(draft);
+        if (Object.keys(body).length > 0) {
+          const r = await fetch('/api/companions/' + encodeURIComponent(companionId), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (r.ok && data.ok) summary = data.data;
+        }
+      }
+      try {
+        const sr = await fetch('/api/companions/' + encodeURIComponent(companionId) + '/summary');
+        const sd = await sr.json();
+        if (sr.ok && sd.ok) summary = sd.data;
+      } catch {}
+
+      localStorage.setItem('xiyu_companion_id', String(companionId));
+      if (summary) localStorage.setItem('xiyu_companion_summary', JSON.stringify(summary));
+      localStorage.removeItem('xiyu_pending_companion');
+      setSuccessState();
+      if (redirect) goDashboardAfterSuccess();
+    }
+
+    async function saveRebindResult(binding, { redirect = true } = {}) {
+      const data = binding.data || binding;
+      const companionId = data.companion_id ?? binding.companion_id ?? null;
+      const wechatUserId = data.wechat_user_id || binding.wechat_user_id || '';
+
+      if (wechatUserId) {
+        localStorage.setItem('xiyu_wechat_user_id', wechatUserId);
+        sessionStorage.setItem('xiyu_wechat_user_id', wechatUserId);
+      }
+
+      if (companionId) {
+        localStorage.setItem('xiyu_companion_id', String(companionId));
+        sessionStorage.setItem('xiyu_companion_id', String(companionId));
+        try {
+          const sr = await fetch('/api/companions/' + encodeURIComponent(companionId) + '/summary');
+          const sd = await sr.json();
+          if (sr.ok && sd.ok) {
+            localStorage.setItem('xiyu_companion_summary', JSON.stringify(sd.data));
+            sessionStorage.setItem('xiyu_companion_summary', JSON.stringify(sd.data));
+          }
+        } catch {}
+      } else {
+        localStorage.removeItem('xiyu_companion_id');
+        localStorage.removeItem('xiyu_companion_summary');
+        sessionStorage.removeItem('xiyu_companion_id');
+        sessionStorage.removeItem('xiyu_companion_summary');
+      }
+
+      localStorage.removeItem('xiyu_pending_companion');
+      sessionStorage.removeItem('xiyu_pending_companion');
+      setSuccessState();
+      if (redirect) goDashboardAfterSuccess();
+    }
+
+    async function pollStatus() {
+      if (!sessionId || completed) return;
+      try {
+        const statusUrl = '/api/wechat/bind-session/' + encodeURIComponent(sessionId)
+          + (isRebind ? '?rebind=true' : '');
+        const r = await fetch(statusUrl, {
+          cache: 'no-store',
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.message || data.error || '绑定状态查询失败');
+        const payload = data.data || {};
+        const status = data.data?.status || 'pending';
+
+        if (status === 'scanned') {
+          showMsg('已收到绑定请求，请稍候...', 'info');
+          statusTimer = setTimeout(pollStatus, 3000);
+          return;
+        }
+        if (status === 'expired') {
+          clearTimeout(statusTimer);
+          statusTimer = null;
+          setQrState('等待已超时<br/>请刷新二维码');
+          resetButton();
+          return;
+        }
+        if (data.data?.status !== 'success') {
+          statusTimer = setTimeout(pollStatus, 3000);
+          return;
+        }
+
+        completed = true;
+        clearTimeout(statusTimer);
+        clearInterval(countdownTimer);
+        setButtonLoading('正在创建人设...');
+        setSuccessState();
+        const binding = {
+          wechat_user_id: payload.wechat_user_id,
+          companion_id: payload.companion_id,
+          bot_id: payload.bot_id || null,
+        };
+        try {
+          await persistBindSuccess(binding);
+        } catch (e) {
+          console.error('绑定成功后创建人设失败:', e);
+          showMsg('绑定成功但人设保存失败：' + (e.message || '未知错误') + '，将跳转控制台后再试', 'error');
+        }
+        goDashboardAfterSuccess();
+      } catch (e) {
+        showMsg(e.message || '绑定状态查询失败', 'error');
+        resetButton();
+        if (!completed && sessionId) statusTimer = setTimeout(pollStatus, 3000);
+      }
+    }
+
+    function updateCountdown() {
+      if (!expiresAtMs) return;
+      const seconds = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+      if (seconds <= 0) {
+        clearInterval(countdownTimer);
+        document.getElementById('qr-img').classList.add('hidden');
+        setQrState('二维码已过期，正在自动刷新...');
+        // 自动重拉
+        if (!completed) loadQr();
+        return;
+      }
+    }
+
+    async function loadQr() {
+      clearTimeout(statusTimer);
+      clearInterval(countdownTimer);
+      statusTimer = null;
+      countdownTimer = null;
+      completed = false;
+      sessionId = null;
+      expiresAtMs = 0;
+      document.getElementById('qr-img').classList.add('hidden');
+      setQrState('二维码生成中<br/>请稍候...');
+      setButtonLoading('生成中...');
+
+      try {
+        const r = await fetch('/api/wechat/bind-session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': String(user.id),
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            user_id: user.id,
+            rebind: isRebind,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) {
+          throw new Error(data.message || data.error || '二维码生成失败');
+        }
+
+        const payload = data.data || data;
+        sessionId = payload.session_id;
+        expiresAtMs = Date.now() + Number(payload.expires_in || 300) * 1000;
+        const src = payload.qr_base64 || payload.qr_url;
+        if (!sessionId || !src) throw new Error('二维码返回格式无法识别');
+
+        const bindCodeEl = document.getElementById('bind-code');
+        const bindCodeHint = document.getElementById('bind-code-hint');
+        if (payload.bind_code && bindCodeEl && bindCodeHint) {
+          bindCodeEl.textContent = payload.bind_code;
+          bindCodeHint.classList.remove('hidden');
+        }
+
+        const img = document.getElementById('qr-img');
+        img.src = src;
+        img.classList.remove('hidden');
+        setQrState('', false);
+        showMsg('用微信扫码添加「溪语AI」为好友，添加后发任意消息即可自动绑定', 'info');
+        resetButton();
+        updateCountdown();
+        countdownTimer = setInterval(updateCountdown, 1000);
+        pollStatus();
+      } catch (e) {
+        showMsg(e.message || '二维码生成失败', 'error');
+        setQrState('二维码生成失败<br/>请刷新重试');
+        resetButton();
+      }
+    }
+
+    document.getElementById('btn-confirm').addEventListener('click', loadQr);
+    window.addEventListener('beforeunload', () => {
+      clearTimeout(statusTimer);
+      clearInterval(countdownTimer);
+    });
+    loadQr();
+  </script>
+</body>
+</html>
