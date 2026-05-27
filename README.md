@@ -35,7 +35,7 @@ npm install
 cp .env.example .env
 # 用编辑器打开 .env，填入：
 #   CHAT_PROVIDER=deepseek           # 或 openai / anthropic / xai / zhipu / doubao / qwen / kimi / wenxin
-#   DEEPSEEK_API_KEY=sk-xxx          # 对应 provider 的 key
+#   DEEPSEEK_API_KEY=your_deepseek_api_key_here          # 对应 provider 的 key
 #   AUTH_SECRET=                     # 留空会自动生成
 
 # 4. 启动
