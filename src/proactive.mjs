@@ -25,6 +25,7 @@ import { safeOutboundReply } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults } from './emotion_state.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
+import { tryAchievement } from './achievements.mjs';
 
 // ─── Proactive Engine 版本选择 ────────────────────────────────────────────────
 // PROACTIVE_ENGINE=v2 启用 evaluateProactive() 决策层（推荐）
@@ -412,6 +413,9 @@ async function sendProactiveMessage(companion, kind, account) {
   // Record proactive sent for engine backoff tracking
   try { recordProactiveSent(companion.id); } catch {}
 
+  // 首次主动消息成就（静默）
+  tryAchievement(companion.id, 'first_proactive_message');
+
   log('info', `[Proactive] 已发送 companion=${companion.id} to=${companion.wechat_user_id} kind=${effectiveKind} segments=${segments.length} stickers=${totalStickers}`);
 }
 
@@ -552,6 +556,8 @@ async function sendScenePhoto(companion, ctx) {
     });
     markPhotoSent(companion.id, curActivity + ' / ' + caption);
     saveConversationTurn(companion.id, 'assistant', `[场景照片：${curActivity}] ${caption}`, '场景分享');
+    // 首次场景照成就（静默）
+    tryAchievement(companion.id, 'first_scene_photo');
     log('info', `[Proactive] ★ 场景照已发送 companion=${companion.id} activity="${curActivity}" caption="${caption}"`);
   } catch (e) {
     log('warn', `[Proactive] 发送场景照失败: ${e.message}`);

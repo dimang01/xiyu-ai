@@ -18,6 +18,7 @@ import {
   addOrMergeMemory,
 } from './memory_v2.mjs';
 import { saveMemory, getMemoriesV2 } from './db.mjs';
+import { processMemoryForGraph } from './event_graph.mjs';
 
 const CONFIDENCE_MIN = 0.7;
 const RECENT_TURNS_LIMIT = 300;
@@ -144,6 +145,11 @@ export async function applyReflectionMemoryUpdates(companionId, updates, options
           memoryWeight: m.memory_weight,
           memorySource: 'reflection',
         });
+        // 轻量事件图谱（静默，不阻塞）
+        // 传入 memory_layer 让守卫函数跳过 emotion 层
+        try {
+          processMemoryForGraph(companionId, m.content, null, { memory_layer: m.memory_layer });
+        } catch { /* 非阻塞 */ }
         inserted++;
       } else if (result.action === 'merged') {
         merged++;

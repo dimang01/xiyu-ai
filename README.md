@@ -93,6 +93,11 @@
 | 🧠 **Memory Reflection** | 每日/每周 AI 驱动结构化记忆反思，自动提炼对用户新认识并更新 Memory v2 |
 | 📈 **Emotion Trend** | Dashboard 显示近 7 天情绪曲线（好感 / 信任 / 安全感 / 精力）；`/api/companions/:id/emotion-trend` |
 | 🔍 **Prompt Debug Panel** | `/app/debug-prompt.html` — 开发者查看实时 prompt 拼接，分区显示 |
+| 📦 **角色导入/导出** *(P2A 实验性)* | 将角色人设导出为可移植 JSON，可备份 / 迁移 / 分享；导入时所有权归当前用户，敏感字段自动过滤 |
+| 🏅 **成就/里程碑** *(P2A 实验性)* | 轻量关系里程碑记录 — 10 个内置事件（初次对话 / 7 天在一起 / 关系阶段变化…），无付费诱导 |
+| 📱 **PWA 移动端安装** *(P2A)* | 可作为手机主屏 App 安装，API 和用户数据不会被 service worker 缓存 |
+| 🕸️ **事件图谱 foundation** *(P2A 实验性)* | 轻量 SQLite 实体/关系图，从记忆文本自动提取（规则驱动，无额外 LLM 调用） |
+| 💰 **Provider 定价配置** *(P2A)* | 可选的 `config/provider_pricing.json`（已 gitignore）用于 AI 用量面板估算成本，自行填写，不硬编码价格 |
 
 ---
 
@@ -686,6 +691,11 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 | 📱 **WeChat integration** | In-browser QR binding — backend requests the QR from iLink at runtime; **no `ILINK_*` env vars to pre-configure** (requires Tencent iLink/ClawBot approval on your WeChat account) |
 | 📬 **Email dev mode** | When Resend is not configured, verification codes are printed to the service log — first-time signup needs no email service |
 | 🩺 **`npm run doctor`** | One-command diagnostics for self-hosters: Node version, SQLite writability, API keys, iLink config, port, service health |
+| 📦 **Persona export/import** *(P2A, experimental)* | Export a companion's persona as a portable JSON file (`GET /api/companions/:id/export`); import to a new companion (`POST /api/companions/import`). Account credentials, tokens, and user data are never included. |
+| 🏅 **Achievements/milestones** *(P2A, experimental)* | Quiet relationship milestone log — 10 built-in events (first chat, 7-day streak, relationship stage changes…). No pay-gating. |
+| 📱 **PWA / mobile install** *(P2A)* | Installable as a home-screen app via `manifest.webmanifest` + service worker. API routes and user data are never cached. |
+| 🕸️ **Event graph foundation** *(P2A, experimental)* | Lightweight SQLite entity/relation graph auto-populated from memories (`GET /api/companions/:id/event-graph`). Rule-based, no additional LLM calls. |
+| 💰 **Provider pricing config** *(P2A)* | Optional `config/provider_pricing.json` (gitignored) for cost estimation in AI usage dashboard. Copy from `config/provider_pricing.example.json` and fill in your prices. |
 
 ---
 
@@ -1114,6 +1124,8 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 ### 🧪 Known Limitations
 
 **P0 Core Companion Experience** — implementation started. See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for full status.
+
+**P2A User Experience Polish** (experimental) — persona export/import, achievements/milestones, PWA, event graph foundation, provider pricing config. These features are additive and do not modify core architecture. See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for details.
 
 | Limitation | Tracker |
 |---|---|

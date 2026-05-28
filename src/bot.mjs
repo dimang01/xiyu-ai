@@ -27,6 +27,7 @@ import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply, inboundIsBlocked } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
+import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint } from './emotion_state.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
 
@@ -602,9 +603,21 @@ async function sendStickerAndRecord(ctx, toUser, picked, contextToken) {
 async function postProcess(companion, userMsg, botReply) {
   // 同步：好感度 + 心情更新（规则驱动，不调 AI）
   const changed = syncUpdateCompanionState(companion, userMsg, botReply);
+
+  // 关系阶段变化 → 触发对应成就（静默，不影响主流程）
   if (changed.relationship_stage !== companion.relationship_stage) {
     log('info', `[Bot] 关系升级 ${companion.relationship_stage} → ${changed.relationship_stage} (好感度=${changed.affection_level})`);
+    const stageAchievementMap = {
+      '朋友':   'relationship_stage_friend',
+      '暧昧':   'relationship_stage_flirting',
+      '恋人':   'relationship_stage_lover',
+    };
+    const key = stageAchievementMap[changed.relationship_stage];
+    if (key) tryAchievement(companion.id, key);
   }
+
+  // 首次聊天成就（静默）
+  tryAchievement(companion.id, 'first_chat');
 
   // 异步：记忆提取
   if (companion.memory_enabled) {

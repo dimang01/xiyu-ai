@@ -1,0 +1,35 @@
+{
+  "_comment": "Copy to provider_pricing.json and fill in actual prices. This file is an example only — prices change frequently, do not rely on any values here.",
+  "deepseek": {
+    "chat": {
+      "input_per_1m_tokens": 0,
+      "output_per_1m_tokens": 0,
+      "currency": "USD"
+    }
+  },
+  "openai": {
+    "chat": {
+      "input_per_1m_tokens": 0,
+      "output_per_1m_tokens": 0,
+      "currency": "USD"
+    },
+    "image": {
+      "per_image": 0,
+      "currency": "USD"
+    }
+  },
+  "anthropic": {
+    "chat": {
+      "input_per_1m_tokens": 0,
+      "output_per_1m_tokens": 0,
+      "currency": "USD"
+    }
+  },
+  "zhipu": {
+    "chat": {
+      "input_per_1m_tokens": 0,
+      "output_per_1m_tokens": 0,
+      "currency": "CNY"
+    }
+  }
+}

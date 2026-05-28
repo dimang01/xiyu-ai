@@ -126,6 +126,7 @@
     .nav-link::after { content:''; position:absolute; left:0; right:0; bottom:-6px; height:2px; background:#FFB6D9; transform:scaleX(0); transform-origin:center; transition: transform .3s ease; }
     .nav-link:hover::after { transform: scaleX(1); }
   </style>
+  <link rel="manifest" href="/manifest.webmanifest" />
 </head>
 
 <body class="bg-white text-ink font-sans antialiased selection:bg-sakura/30 selection:text-ink">
@@ -721,6 +722,13 @@
         });
       } catch { /* ignore */ }
     })();
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>

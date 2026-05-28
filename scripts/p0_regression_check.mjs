@@ -198,6 +198,10 @@ try {
     { ep: '/api/companions/1/context',       method: 'GET'  },
     { ep: '/api/companions/1/user-profile',  method: 'GET'  },
     { ep: '/api/companions/1/affection',     method: 'PUT'  },
+    // P2A endpoints — event graph, achievements, persona export
+    { ep: '/api/companions/1/event-graph',   method: 'GET'  },
+    { ep: '/api/companions/1/achievements',  method: 'GET'  },
+    { ep: '/api/companions/1/export',        method: 'GET'  },
   ];
   for (const { ep, method } of authEndpoints) {
     try {
@@ -218,6 +222,48 @@ try {
     ? '服务器未运行，跳过 HTTP 检查'
     : e.message;
   check('HTTP 检查 (服务器已启动时运行)', false, serverMsg);
+}
+
+// ─── 12. event_graph.mjs security static checks ──────────────────────────────
+check('src/event_graph.mjs 存在', fileExists('src/event_graph.mjs'));
+
+try {
+  const eg = await import(path.join(ROOT, 'src/event_graph.mjs'));
+  check('event_graph 导出 shouldProcessMemoryForGraph',      typeof eg.shouldProcessMemoryForGraph === 'function');
+  check('event_graph 导出 extractSimpleEntitiesFromMemory',  typeof eg.extractSimpleEntitiesFromMemory === 'function');
+  check('event_graph 导出 processMemoryForGraph',            typeof eg.processMemoryForGraph === 'function');
+
+  // Functional tests for shouldProcessMemoryForGraph
+  check('shouldProcessMemoryForGraph 拦截 sensitive_flag=1',
+    eg.shouldProcessMemoryForGraph({ sensitive_flag: 1 }) === false);
+  check('shouldProcessMemoryForGraph 拦截 do_not_mention=1',
+    eg.shouldProcessMemoryForGraph({ do_not_mention: 1 }) === false);
+  check('shouldProcessMemoryForGraph 拦截 memory_layer=emotion',
+    eg.shouldProcessMemoryForGraph({ memory_layer: 'emotion' }) === false);
+  check('shouldProcessMemoryForGraph 放行普通记忆',
+    eg.shouldProcessMemoryForGraph({ memory_layer: 'event', sensitive_flag: 0, do_not_mention: 0, memory_status: 'active' }) === true);
+} catch (e) {
+  check('event_graph.mjs import 成功', false, e.message);
+}
+
+// Source-level audit: verify guard fields are referenced inside processMemoryForGraph
+try {
+  const { readFileSync } = await import('node:fs');
+  const egSrc = readFileSync(path.join(ROOT, 'src/event_graph.mjs'), 'utf-8');
+
+  // shouldProcessMemoryForGraph must reference sensitive_flag and do_not_mention
+  check('event_graph.mjs 源码包含 sensitive_flag 判断',
+    egSrc.includes('sensitive_flag'));
+  check('event_graph.mjs 源码包含 do_not_mention 判断',
+    egSrc.includes('do_not_mention'));
+  // processMemoryForGraph must call shouldProcessMemoryForGraph
+  check('processMemoryForGraph 调用 shouldProcessMemoryForGraph',
+    egSrc.includes('shouldProcessMemoryForGraph'));
+  // processMemoryForGraph signature must accept memoryMeta param
+  check('processMemoryForGraph 接受 memoryMeta 参数',
+    /processMemoryForGraph\s*\([^)]*memoryMeta/.test(egSrc));
+} catch (e) {
+  check('event_graph.mjs 源码审计', false, e.message);
 }
 
 // ─── Print results ────────────────────────────────────────────────────────────
