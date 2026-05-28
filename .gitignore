@@ -40,3 +40,25 @@ Thumbs.db
 _backup_*
 backups/
 *.tar.gz
+
+# ─── explicit sensitive runtime data ────────────────────────────────────────
+data/bot.db*
+data/user_memories/
+data/uploads/
+data/*.sqlite
+data/*.sqlite3
+
+# ─── production / private backup archives ──────────────────────────────────
+_backup_billing_v1/
+*.tar
+*.zip
+
+# ─── generated private media ───────────────────────────────────────────────
+public/avatars/scenes/
+public/assets/scenes/
+public/uploads/
+public/generated/
+
+# ─── local WeChat / iLink credentials (kept here for visibility) ───────────
+# (also covered by line 8 above)
+.weixin-credentials.json

@@ -169,11 +169,10 @@ ${occupationHint}
   }
 }`;
 
-  const raw = await extractStructuredInfo(sys, '生成今天的日程 JSON');
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error('AI 未返回 JSON');
-  let parsed;
-  try { parsed = JSON.parse(m[0]); } catch { throw new Error('JSON 解析失败'); }
+  // 给足 max_tokens — 中文日程 8-12 项 + 情绪段，400 token 常被截断
+  const raw = await extractStructuredInfo(sys, '生成今天的日程 JSON', { maxTokens: 1500 });
+  const parsed = parseLooseJson(raw);
+  if (!parsed) throw new Error('AI 未返回可解析的 JSON');
   const items = Array.isArray(parsed.items)
     ? parsed.items
         .filter(it => it.time && it.activity)
@@ -193,6 +192,51 @@ ${occupationHint}
     : null;
   saveDailySchedule(comp.id, dateKey, items, parsed.mood_arc || null, moodSegments);
   log('info', `[DailySchedule] companion=${comp.id} ${comp.name} ✓ ${items.length} 段 ${isWeekend ? '周末' : '工作日'} segments=${moodSegments ? '3' : '0'}`);
+}
+
+// 鲁棒 JSON 提取：剥 ```json``` 围栏；若末尾被 max_tokens 截断，按 items 数组就近闭合
+function parseLooseJson(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  let s = raw.trim();
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  const start = s.indexOf('{');
+  if (start < 0) return null;
+  s = s.slice(start);
+  try { return JSON.parse(s); } catch { /* fallthrough */ }
+  // 截断兜底：截到最后一个 } 后补 ]} 闭合 items 数组
+  const itemsKey = s.indexOf('"items"');
+  if (itemsKey >= 0) {
+    const lastItemEnd = s.lastIndexOf('}');
+    if (lastItemEnd > itemsKey) {
+      const partial = s.slice(0, lastItemEnd + 1) + ']}';
+      try { return JSON.parse(partial); } catch { /* fallthrough */ }
+    }
+  }
+  return null;
+}
+
+// 自愈：按需为单个 companion 补当天的日程（proactive 发现缺失时调用）
+// 内置 30 分钟级 debounce 避免持续失败时反复重试
+const _ensureScheduleAttempts = new Map(); // key: `${companionId}:${dateKey}` -> lastAttemptMs
+export async function ensureScheduleForCompanion(companionId, dateKey) {
+  if (getDailySchedule(companionId, dateKey)) return true;
+  const key = `${companionId}:${dateKey}`;
+  const last = _ensureScheduleAttempts.get(key) || 0;
+  if (Date.now() - last < 30 * 60_000) return false;
+  _ensureScheduleAttempts.set(key, Date.now());
+  const db = getDb();
+  const comp = db.prepare(`SELECT id, name, age, role_title, personality_tags, hobbies FROM companions WHERE id = ?`).get(companionId);
+  if (!comp) return false;
+  const weekdayNum = new Date(dateKey + 'T12:00:00+08:00').getDay();
+  const weekdayLabel = WEEKDAY_LABELS[weekdayNum];
+  try {
+    await generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum);
+    log('info', `[DailySchedule] 自愈补建 ${dateKey} companion=${companionId} ✓`);
+    return true;
+  } catch (e) {
+    log('warn', `[DailySchedule] 自愈补建失败 companion=${companionId}: ${e.message}`);
+    return false;
+  }
 }
 
 function ageOccupationHint(age, isWeekend, roleTitle) {

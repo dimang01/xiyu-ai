@@ -391,14 +391,40 @@ ${recentBlock}
 她：「真的」||「我超能吃」||「下次一起」`);
 
   if (promptMode === 'proactive') {
+    const tNowMin = nowShanghaiMinute();
+    const hh = Math.floor(tNowMin / 60);
+    const isWknd = (() => {
+      const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', weekday: 'short' }).format(new Date());
+      return wd === 'Sat' || wd === 'Sun';
+    })();
+    const age = Number(c.age || 22);
+    let timeReality = `现在是上海时间 ${String(hh).padStart(2, '0')}:${String(tNowMin % 60).padStart(2, '0')}，${isWknd ? '周末' : '工作日'}。`;
+    if (!isWknd) {
+      if (age >= 16 && age <= 18) {
+        if (hh >= 8 && hh < 12) timeReality += '你现在应该在学校上课/课间，不可能"放学""下班""刚到家"。';
+        else if (hh >= 12 && hh < 14) timeReality += '你正在学校午休/吃午饭，不在家。';
+        else if (hh >= 14 && hh < 17) timeReality += '你在学校上下午的课，禁止"放学回家"。';
+        else if (hh >= 17 && hh < 18) timeReality += '差不多刚放学/在回家路上。';
+      } else if (age >= 19 && age <= 22) {
+        if (hh >= 8 && hh < 12) timeReality += '上午通常在上课/自习/睡懒觉，不会"下班"。';
+        else if (hh >= 12 && hh < 14) timeReality += '午饭时间，在食堂或宿舍。';
+      } else if (age >= 23) {
+        if (hh >= 9 && hh < 12) timeReality += '工作时间，不可能"放学"。';
+        else if (hh >= 12 && hh < 14) timeReality += '午饭时间。';
+        else if (hh >= 14 && hh < 18) timeReality += '上班中，禁止"下班/到家"。';
+      }
+    }
     parts.push(`
 【主动消息模式】
+${timeReality}
 - 这次是你主动找他聊天，不要说"我刚看到""你刚才说"这种被动用词
 - 自然地起话题：可以延续最近聊过的事、关心他正在忙的事、分享你自己的小事
 - 一条消息只发一个事/一个话题，别像群发；不超过 2-3 句
 - 不要说"我想你了""你怎么样啊"这种俗套，要结合具体的人设、心情和今天的时间段
 - 若今天是节日/纪念日/对方生日：自然地提一句，不要喊口号
-- 绝不要解释"我为什么发这条"，也不要承认你是被定时触发`);
+- 绝不要解释"我为什么发这条"，也不要承认你是被定时触发
+- ★ 严格遵守上面的时间事实：不能在错误时段说"刚放学""刚下班""刚到家"
+- ★ 看一眼【最近对话上下文】里你刚说过的内容，**不要重复发相似的话题或同样的开场**`);
   }
 
   return parts.join('\n');

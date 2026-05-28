@@ -62,6 +62,7 @@ import {
 import { rateLimit } from './ratelimit.mjs';
 import {
   getIlinkStatusSnapshot, getBotQrcode, getQrcodeStatus, DEFAULT_BASE_URL,
+  getWechatConfigStatus,
 } from './ilink.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { buildImageReactionText, computeRelationshipStage, extractImageMemories } from './memory.mjs';
@@ -2421,6 +2422,7 @@ export function startApiServer() {
   app.use(express.static(PUBLIC_DIR));
 
   // 健康检查 + 当前激活的 AI provider（开源版本提供，便于排查"为什么没回复"）
+  // wechat 字段只暴露 configured + source，绝不输出 token / botId
   app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,
@@ -2432,6 +2434,7 @@ export function startApiServer() {
         asr: getActiveAsrProvider(),
         embedding: getActiveEmbeddingProvider(),
       },
+      wechat: getWechatConfigStatus(),
       time: new Date().toISOString(),
     });
   });

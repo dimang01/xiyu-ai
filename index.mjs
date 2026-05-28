@@ -181,17 +181,36 @@ async function bootstrap() {
     });
   }
 
-  // legacy credentials fallback：当 .weixin-credentials.json 里的 botId 不在 DB 里时，把它当 anonymous account 加进池
-  const legacy = readLegacyCredentials();
-  if (legacy?.botId && legacy?.token && !pool.has(ctxKey(legacy.botId))) {
-    log('info', `[Main] 加载 legacy credentials bot=${shortBot(legacy.botId)} (admin/dev session)`);
-    registerBotAccount({
-      token: legacy.token,
-      botId: legacy.botId,
-      userId: legacy.userId,
-      baseUrl: legacy.baseUrl,
-      accountId: null,
-    });
+  // ── iLink 凭据加载（优先级：env > .weixin-credentials.json） ────────────
+  // env 配置：ILINK_BASE_URL / ILINK_BOT_TOKEN / ILINK_BOT_ID / ILINK_USER_ID
+  // 若 env 没配，则尝试读取 ./.weixin-credentials.json（由 `npm run ilink:login` 生成）
+  // 两者都没有时，服务仍会启动，仅微信功能 disabled
+  if (process.env.ILINK_BOT_TOKEN && process.env.ILINK_BOT_ID) {
+    const envBotId = String(process.env.ILINK_BOT_ID).trim();
+    if (!pool.has(ctxKey(envBotId))) {
+      log('info', `[Main] 加载 env iLink 凭据 bot=${shortBot(envBotId)} (source=env)`);
+      registerBotAccount({
+        token: process.env.ILINK_BOT_TOKEN,
+        botId: envBotId,
+        userId: process.env.ILINK_USER_ID || '',
+        baseUrl: process.env.ILINK_BASE_URL || DEFAULT_BASE_URL,
+        accountId: null,
+      });
+    }
+  } else {
+    const legacy = readLegacyCredentials();
+    if (legacy?.botId && legacy?.token && !pool.has(ctxKey(legacy.botId))) {
+      log('info', `[Main] 加载 iLink 凭据文件 bot=${shortBot(legacy.botId)} (source=credentials_file)`);
+      registerBotAccount({
+        token: legacy.token,
+        botId: legacy.botId,
+        userId: legacy.userId,
+        baseUrl: legacy.baseUrl,
+        accountId: null,
+      });
+    } else {
+      log('info', '[Main] 未检测到 iLink 凭据（env 或 .weixin-credentials.json）。微信功能 disabled。可运行 `npm run ilink:login` 接入。');
+    }
   }
 
   log('info', `[Main] bot pool size=${pool.size}`);

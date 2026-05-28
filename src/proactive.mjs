@@ -18,7 +18,7 @@ import path from 'node:path';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem } from './ilink.mjs';
-import { buildLongTermDigest } from './plan_tasks.mjs';
+import { buildLongTermDigest, ensureScheduleForCompanion } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply } from './moderation.mjs';
@@ -68,6 +68,13 @@ async function tick(now = new Date()) {
 
       const planInfo = getUserPlan(companion.user_id);
       const isPro = !!planInfo?.isPro;
+      // 自愈：若 DB 里没有今天的日程（cron 失败或刚绑定），按需触发一次生成
+      // ensureScheduleForCompanion 内置 30 分钟级 debounce 防止持续失败时反复重试
+      if (!getDailySchedule(companion.id, dateKey)) {
+        ensureScheduleForCompanion(companion.id, dateKey).catch(err =>
+          log('warn', `[Proactive] ensureSchedule 异常 companion=${companion.id}: ${err.message}`)
+        );
+      }
       const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, isPro, companion);
       const dueItems = schedule.items.filter(item => !item.sent && item.minute <= minuteNow);
       for (const item of dueItems) {
@@ -292,6 +299,33 @@ async function sendProactiveMessage(companion, kind, account) {
   }, { accountId: proactiveBinding?.account_id || null });
   reply = safeOutboundReply(reply);
 
+  // ★ 撞车检测：若与最近 5 条 assistant 内容相似度 ≥ 0.6（char 3-gram Jaccard），重生一次
+  const recentAssistantTexts = recentTurns
+    .filter(t => t.role === 'assistant' && t.content)
+    .slice(-5)
+    .map(t => String(t.content));
+  const collision = findCollision(reply, recentAssistantTexts);
+  if (collision) {
+    log('info', `[Proactive] 撞车检测：与最近一条相似度=${collision.sim.toFixed(2)} 重生 companion=${companion.id}`);
+    const antiRepeat = `${userMessage}
+
+【★ 反重复约束】你最近刚说过类似的话：「${collision.text.slice(0, 50)}」。**严格禁止**重复这条的话题/开场/具体事物。换一个完全不同的话题：可以问他、聊你新发生的小事、聊心情，但不能再提同样的东西。`;
+    let retry = await generateReply(systemPrompt, history, antiRepeat, {
+      temperature: Math.min((companion.temperature || 0.8) + 0.15, 1.1),
+      max_tokens: Math.min(companion.max_tokens || 300, 300),
+      top_p: companion.top_p,
+    }, { accountId: proactiveBinding?.account_id || null });
+    retry = safeOutboundReply(retry);
+    const retryCollision = findCollision(retry, recentAssistantTexts);
+    if (!retryCollision) {
+      reply = retry;
+    } else {
+      // 重生后仍撞车 — 放弃本次主动消息，避免骚扰
+      log('warn', `[Proactive] 重生后仍撞车，放弃本次主动 companion=${companion.id}`);
+      return;
+    }
+  }
+
   // 像真人：按 || 拆多条短消息
   const segments = splitReplySegments(reply);
   let totalStickers = 0;
@@ -492,6 +526,39 @@ async function sendScenePhoto(companion, ctx) {
   } catch (e) {
     log('warn', `[Proactive] 发送场景照失败: ${e.message}`);
   }
+}
+
+// 撞车检测：把回复和最近 assistant 内容比相似度（char 3-gram Jaccard），
+// 返回相似度最高的一条（若超过阈值）
+function findCollision(reply, recentTexts, threshold = 0.6) {
+  if (!reply || !recentTexts?.length) return null;
+  const a = _normalizeForSim(reply);
+  if (a.length < 6) return null;
+  const aGrams = _ngramSet(a, 3);
+  let best = null;
+  for (const t of recentTexts) {
+    const b = _normalizeForSim(t);
+    if (b.length < 6) continue;
+    const bGrams = _ngramSet(b, 3);
+    const sim = _jaccard(aGrams, bGrams);
+    if (sim >= threshold && (!best || sim > best.sim)) best = { text: t, sim };
+  }
+  return best;
+}
+function _normalizeForSim(s) {
+  return String(s).replace(/\|\|/g, ' ').replace(/\[[^\]]*\]/g, '').replace(/\s+/g, '').toLowerCase();
+}
+function _ngramSet(s, n) {
+  const set = new Set();
+  for (let i = 0; i <= s.length - n; i++) set.add(s.slice(i, i + n));
+  return set;
+}
+function _jaccard(a, b) {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
 }
 
 // 与 bot.mjs 同款拆分逻辑（重复但避免循环依赖）

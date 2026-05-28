@@ -8,7 +8,8 @@
   "scripts": {
     "start": "node index.mjs",
     "dev": "node --watch index.mjs",
-    "setup": "bash scripts/setup.sh"
+    "setup": "bash scripts/setup.sh",
+    "ilink:login": "node scripts/ilink_login.mjs"
   },
   "keywords": [
     "ai-companion",

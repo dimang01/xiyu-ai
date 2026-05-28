@@ -43,9 +43,10 @@ else check "no literal API keys" 0 "$(echo "$SECRETS" | head -5)"
 fi
 
 echo "==> 3) production paths/domains"
+# .gitignore 里的 _backup_billing_v1/ 是防御性忽略规则（防止误提交），不是泄漏 — 一并排除
 PROD=$(grep -RInE "/opt/zhaohy-wechat-poc|/var/www/zhaohy\.xyz|xiyuai\.cc|zhaohy\.xyz|_backup_billing_v1" \
   . --exclude-dir=node_modules --exclude-dir=.git --exclude='*.md' \
-  --exclude='opensource_check.sh' 2>/dev/null || true)
+  --exclude='opensource_check.sh' --exclude='.gitignore' 2>/dev/null || true)
 if [ -z "$PROD" ]; then check "no production paths/domains" 1
 else check "no production paths/domains" 0 "$(echo "$PROD" | head -5)"
 fi

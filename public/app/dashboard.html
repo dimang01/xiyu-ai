@@ -748,13 +748,18 @@
 
     // ─── 她现在（实时状态）────────────────────────────────────────────
     async function loadNowCard(companionId) {
+      const sceneEl = document.getElementById('c-scene');
       try {
         const r = await fetch('/api/companions/' + companionId + '/today');
         const d = await r.json();
-        if (!r.ok || !d.ok) return;
+        if (!r.ok || !d.ok) {
+          if (sceneEl) sceneEl.textContent = '今天日程加载中…';
+          return;
+        }
         const x = d.data;
         if (!x.has_schedule) {
-          // 还没有日程（今天的还没生成或者刚创建），先隐藏
+          // 还没生成今天的日程：profile 顶给一个可读 fallback，下方 now-card 不展示
+          if (sceneEl) sceneEl.textContent = '今天的日程还在生成中…';
           return;
         }
         const card = document.getElementById('now-card');
@@ -762,8 +767,7 @@
         const actText = x.current_activity ? x.current_activity.activity : '正在等今天的日程开始...';
         document.getElementById('now-activity').textContent = actText;
         // 同步 profile 顶部的"她在做"
-        const sceneEl = document.getElementById('c-scene');
-        if (sceneEl) sceneEl.textContent = x.current_activity ? x.current_activity.activity : '—';
+        if (sceneEl) sceneEl.textContent = x.current_activity ? x.current_activity.activity : '今天还没开始活动';
         document.getElementById('now-mood').textContent = x.segment_mood || x.mood_arc || '';
         document.getElementById('now-next').textContent = x.next_activity
           ? `${x.next_activity.time} · ${x.next_activity.activity}`
@@ -771,6 +775,7 @@
         card.classList.remove('hidden');
       } catch (e) {
         console.warn('today:', e.message);
+        if (sceneEl) sceneEl.textContent = '今天日程加载失败';
       }
     }
 

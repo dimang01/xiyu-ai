@@ -7,7 +7,9 @@ import Database from 'better-sqlite3';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const ENV_PATH = path.join(ROOT, '.env');
 const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'data', 'bot.db');
-const SERVICE = 'zhaohy-wechat.service';
+// systemd service name — override via env var XIYU_SERVICE_NAME for your deployment.
+// Defaults to a generic name; this script gracefully degrades when not running under systemd.
+const SERVICE = process.env.XIYU_SERVICE_NAME || 'xiyu-ai.service';
 
 function readEnvFile(file) {
   const env = {};
@@ -60,7 +62,8 @@ function serviceActive(journal) {
 }
 
 function serviceEnvPath() {
-  const unit = safeExec('systemctl', ['cat', SERVICE]) || safeExec('cat', ['/etc/systemd/system/zhaohy-wechat.service']);
+  const unit = safeExec('systemctl', ['cat', SERVICE])
+    || safeExec('cat', [`/etc/systemd/system/${SERVICE}`]);
   const match = unit.match(/^EnvironmentFile=(.+)$/m);
   return match?.[1]?.trim() || null;
 }

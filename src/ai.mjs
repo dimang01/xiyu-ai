@@ -233,13 +233,13 @@ export async function generateReply(personaPrompt, history, userMessage, params 
 }
 
 export async function extractStructuredInfo(systemPrompt, userContent, ctx = {}) {
-  const { accountId = null } = ctx;
+  const { accountId = null, maxTokens = 400, temperature = 0.1 } = ctx;
   try {
     const { text, usage } = await chatComplete({
       system: systemPrompt,
       messages: [{ role: 'user', content: userContent }],
-      temperature: 0.1,
-      max_tokens: 400,
+      temperature,
+      max_tokens: maxTokens,
       top_p: 0.9,
     });
     if (accountId && usage) {

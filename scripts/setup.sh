@@ -50,5 +50,13 @@ fi
 cyan "==> 创建数据目录"
 mkdir -p data logs public/avatars
 
+echo
+echo "Optional WeChat iLink login:"
+echo "  npm run ilink:login"
+echo
+echo "This will print a QR code in your terminal. Scan it with WeChat to connect your bot."
+echo "（可选，不扫码也能启动 — 微信功能会处于 disabled 状态。）"
+echo
+
 green "==> 启动服务  (http://localhost:${API_PORT:-3000})"
 exec node index.mjs

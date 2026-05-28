@@ -479,27 +479,43 @@ export function parseMessage(msg, defaultBotId = null) {
   };
 }
 
-// ─── legacy credentials ─────────────────────────────────────────────────────
-
+// ─── legacy / file credentials ──────────────────────────────────────────────
+//
+// 兼容两种字段命名（旧版 dashboard / 新版 ilink_login.mjs）：
+//   { botToken, botId, userId, baseUrl, savedAt|loginAt|createdAt }
+//   { bot_token, ilink_bot_id, ilink_user_id, baseurl, created_at }
 export function readLegacyCredentials() {
   if (!existsSync(CREDENTIALS_PATH)) return null;
   try {
     const raw = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf-8'));
     if (!raw || typeof raw !== 'object') return null;
-    const token = raw.botToken || raw.token;
-    const botId = raw.botId;
+    const token = raw.bot_token || raw.botToken || raw.token;
+    const botId = raw.ilink_bot_id || raw.botId;
     if (!token || !botId) return null;
     return {
       token,
       botId,
-      userId: raw.userId || '',
-      baseUrl: (raw.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, ''),
-      savedAt: raw.savedAt || raw.loginAt || raw.createdAt || null,
+      userId: raw.ilink_user_id || raw.userId || '',
+      baseUrl: (raw.baseurl || raw.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, ''),
+      savedAt: raw.created_at || raw.savedAt || raw.loginAt || raw.createdAt || null,
     };
   } catch (err) {
     log('warn', `[iLink] readLegacyCredentials parse failed: ${err.message}`);
     return null;
   }
+}
+
+// 检测 WeChat iLink 配置来源（不泄露 token / botId 全量）
+//   优先级：env (ILINK_BOT_TOKEN+ILINK_BOT_ID) > credentials file > 未配置
+export function getWechatConfigStatus() {
+  if (process.env.ILINK_BOT_TOKEN && process.env.ILINK_BOT_ID) {
+    return { configured: true, source: 'env' };
+  }
+  if (existsSync(CREDENTIALS_PATH)) {
+    const c = readLegacyCredentials();
+    if (c) return { configured: true, source: 'credentials_file' };
+  }
+  return { configured: false };
 }
 
 // ─── status snapshot ────────────────────────────────────────────────────────
