@@ -28,6 +28,7 @@ import { applyMemoryDecayBatch } from './memory_v2.mjs';
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
+import { tryAchievement } from './achievements.mjs';
 
 const TZ = 'Asia/Shanghai';
 const TICK_MS = 60_000;
@@ -374,6 +375,22 @@ async function runDaily(todayKey) {
 
   const cleaned = cleanupPlanMemories();
   log('info', `[PlanTasks] daily cleanup freeDaily=${cleaned.freeDaily} proDaily=${cleaned.proDaily} proWeekly=${cleaned.proWeekly}`);
+
+  // 每日懒检查：7 天 / 30 天在一起成就
+  checkDaysTogetherAchievements(companions);
+}
+
+function checkDaysTogetherAchievements(companions) {
+  const now = Date.now();
+  for (const companion of companions) {
+    try {
+      if (!companion.created_at) continue;
+      const created = new Date(String(companion.created_at).replace(' ', 'T') + (String(companion.created_at).includes('Z') ? '' : 'Z'));
+      const days = Math.floor((now - created.getTime()) / 86400_000);
+      if (days >= 7)  tryAchievement(companion.id, 'seven_days_together');
+      if (days >= 30) tryAchievement(companion.id, 'thirty_days_together');
+    } catch { /* 非阻塞 */ }
+  }
 }
 
 // ─── 周日 02:30（仅 Pro） ───────────────────────────────────────────────────

@@ -15,6 +15,8 @@ import {
   saveStageMilestone,
 } from './db.mjs';
 import { extractStructuredInfo, embedText } from './ai.mjs';
+import { tryAchievement } from './achievements.mjs';
+import { processMemoryForGraph } from './event_graph.mjs';
 
 // ─── 关系阶段阈值 ─────────────────────────────────────────────────────────────
 export function computeRelationshipStage(affection) {
@@ -311,6 +313,15 @@ export async function extractAndSaveMemories(companionId, userId, userMsg, botRe
     saveMemories(candidates);
     const pinnedCount = candidates.filter(m => m.importance >= 7).length;
     log('info', `[Memory] +${candidates.length} 记忆 (pinned=${pinnedCount}, with_embedding=${candidates.filter(m=>m.embedding).length}) companion=${companionId}`);
+
+    // 首次记忆保存成就（静默）
+    tryAchievement(companionId, 'first_memory_saved');
+
+    // 轻量事件图谱：从新增记忆文本提取实体（静默，不阻塞）
+    for (const m of candidates) {
+      try { processMemoryForGraph(companionId, m.content, null); } catch { /* 非阻塞 */ }
+    }
+
     return candidates.length;
   } catch (e) {
     log('warn', `[Memory] 记忆提取失败: ${e.message}`);

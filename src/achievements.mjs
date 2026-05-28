@@ -8,6 +8,23 @@
  */
 
 import { getDb } from './db.mjs';
+import { log } from './logger.mjs';
+
+/**
+ * Safe (non-throwing) achievement unlock. Designed to be fire-and-forget
+ * in hot paths — failure never propagates to the caller.
+ */
+export function tryAchievement(companionId, event, context = {}) {
+  try {
+    const result = checkAndUnlockAchievements(companionId, event, context);
+    if (result) {
+      log('info', `[Achievement] ★ ${event} companion=${companionId}`);
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 const ACHIEVEMENT_DEFINITIONS = [
   {

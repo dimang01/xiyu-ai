@@ -102,6 +102,16 @@
     <span id="pageInfo" class="text-xs text-mute"></span>
     <button id="btnNext" class="text-xs text-mute border border-line px-3 py-1.5 rounded-lg hover:border-sakura disabled:opacity-30" disabled>下一页 →</button>
   </div>
+
+  <!-- 关系图谱预览 -->
+  <section id="graph-preview-section" class="hidden mt-8 border-t border-line pt-6">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-[13px] font-bold text-ink">关系图谱预览</span>
+      <span class="text-[11px] text-mute">（自动从记忆提取，规则驱动）</span>
+    </div>
+    <ul id="graph-preview-list" class="space-y-1.5 text-[12px] text-ink/80"></ul>
+    <p id="graph-preview-empty" class="hidden text-[12px] text-mute py-2">暂无图谱数据，保存更多记忆后会自动提取</p>
+  </section>
 </main>
 
 <!-- Add / Edit Modal -->
@@ -187,6 +197,7 @@ async function init() {
   companionId = cInfo.data.companion_id;
   document.getElementById('statsBar').classList.remove('hidden');
   loadMemories();
+  loadEventGraphPreview(companionId);
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────
@@ -428,6 +439,38 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function escAttr(s) { return escHtml(s).replace(/'/g,'&#039;'); }
+
+// ─── 关系图谱预览 ──────────────────────────────────────────────────────────
+async function loadEventGraphPreview(cId) {
+  try {
+    const d = await apiFetch(`/api/companions/${cId}/event-graph?limit=30`);
+    if (!d?.data) return;
+    const { entities, relations } = d.data;
+    const section = document.getElementById('graph-preview-section');
+    const listEl  = document.getElementById('graph-preview-list');
+    const emptyEl = document.getElementById('graph-preview-empty');
+    section.classList.remove('hidden');
+    if (!relations.length && !entities.length) {
+      emptyEl.classList.remove('hidden');
+      return;
+    }
+    // Build entity id→name map
+    const nameMap = Object.fromEntries((entities || []).map(e => [e.id, e.name]));
+    const relLabel = { likes:'喜欢', dislikes:'不喜欢', visited:'去过', mentioned:'提到',
+                       promised_reminder:'答应提醒', owns:'拥有', knows:'认识', related_to:'关联' };
+    listEl.innerHTML = relations.slice(0, 20).map(r => {
+      const src = nameMap[r.source_entity_id] || `#${r.source_entity_id}`;
+      const tgt = nameMap[r.target_entity_id] || `#${r.target_entity_id}`;
+      const rel = relLabel[r.relation_type] || r.relation_type;
+      return `<li class="flex items-center gap-1.5 text-[12px]">
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-sakura flex-shrink-0"></span>
+        <span class="font-medium">${escHtml(src)}</span>
+        <span class="text-mute">${escHtml(rel)}</span>
+        <span class="font-medium">${escHtml(tgt)}</span>
+      </li>`;
+    }).join('');
+  } catch { /* 非阻塞 */ }
+}
 
 // ─── Boot ─────────────────────────────────────────────────────────────────
 init();

@@ -87,8 +87,8 @@ import {
   buildCompanionExport, validateCompanionImport, importCompanionForUser,
   MAX_IMPORT_BYTES,
 } from './persona_export.mjs';
-import { checkAndUnlockAchievements, getCompanionAchievements } from './achievements.mjs';
-import { getCompanionEventGraph } from './event_graph.mjs';
+import { checkAndUnlockAchievements, getCompanionAchievements, tryAchievement } from './achievements.mjs';
+import { getCompanionEventGraph, processMemoryForGraph } from './event_graph.mjs';
 import { loadProviderPricing, estimateProviderCost } from './provider_costs.mjs';
 
 // 异步生成元认知（不阻塞主响应）。所有 category 数组扁平化为 facts 列表存表
@@ -2327,6 +2327,10 @@ router.post('/companions/:id/memories', requireAuth, (req, res) => {
   const row = db.prepare('SELECT id FROM companion_memories WHERE companion_id = ? ORDER BY id DESC LIMIT 1').get(id);
   if (row) patchMemory(row.id, id, { memory_layer: layer, memory_weight: weight, memory_source: source, memory_status: 'active' });
   log('info', `[API] 手动添加记忆 companion=${id} layer=${layer}`);
+  // 首次记忆保存成就（静默）
+  tryAchievement(id, 'first_memory_saved');
+  // 轻量事件图谱（静默）
+  try { processMemoryForGraph(id, content, row?.id ?? null); } catch { /* 非阻塞 */ }
   return ok(res, { companion_id: id, memory_layer: layer, content, memory_weight: weight }, 201);
 });
 
@@ -2388,6 +2392,8 @@ router.post('/companions/:id/memories/:memoryId/pin', requireAuth, (req, res) =>
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
   const c = requireOwnedCompanion(req, res, id); if (!c) return;
   patchMemory(mid, id, { pinned: 1 });
+  // 首次置顶记忆成就（静默）
+  tryAchievement(id, 'first_pinned_memory');
   return ok(res, { pinned: true, memory_id: mid });
 });
 
