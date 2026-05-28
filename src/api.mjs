@@ -1549,14 +1549,14 @@ router.get('/companions/user/:uid', requireAuth, (req, res) => {
 // GET /api/companions/:id/summary
 router.get('/companions/:id/summary', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   return ok(res, companionSummary(c));
 });
 
 // GET /api/companions/:id/persona — 看她的人生背景
 router.get('/companions/:id/persona', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const facts = getPersonaFacts(id);
   // 按 category 分组
   const grouped = {};
@@ -1570,7 +1570,7 @@ router.get('/companions/:id/persona', requireAuth, (req, res) => {
 // GET /api/companions/:id/avatar/suggest — 从预生成池里匹配 top 4
 router.get('/companions/:id/avatar/suggest', requireAuth, async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const stats = countAvatarPresets();
   if (stats.enabled === 0) {
     return err(res, '预设池为空，请先跑 scripts/gen_avatar_presets.mjs', 503);
@@ -1596,7 +1596,7 @@ router.get('/companions/:id/avatar/suggest', requireAuth, async (req, res) => {
 // POST /api/companions/:id/avatar/select-preset — 选用预设头像
 router.post('/companions/:id/avatar/select-preset', requireAuth, async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const fileName = typeof req.body?.file_name === 'string' ? req.body.file_name.trim() : '';
   if (!fileName || !/^[a-zA-Z0-9_\-.]+\.webp$/.test(fileName)) return err(res, 'file_name 无效');
   // 验证文件存在
@@ -1611,7 +1611,7 @@ router.post('/companions/:id/avatar/select-preset', requireAuth, async (req, res
 // POST /api/companions/:id/avatar/generate — 用 AI 自动生成 4 张候选头像
 router.post('/companions/:id/avatar/generate', requireAuth, async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   try {
     const { prompt, urls } = await generateAvatarCandidates(c, 4);
     if (urls.length === 0) return err(res, '生成失败，请稍后重试', 502);
@@ -1626,7 +1626,7 @@ router.post('/companions/:id/avatar/generate', requireAuth, async (req, res) => 
 // POST /api/companions/:id/avatar/from-url — 从 URL 下载图片并保存为头像
 router.post('/companions/:id/avatar/from-url', requireAuth, async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const url = typeof req.body?.url === 'string' ? req.body.url : '';
   if (!/^https?:\/\//.test(url)) return err(res, 'url 无效');
   try {
@@ -1670,7 +1670,7 @@ router.post('/companions/:id/avatar/from-url', requireAuth, async (req, res) => 
 // POST /api/companions/:id/avatar — 上传头像（base64），自动转 512x512 webp
 router.post('/companions/:id/avatar', requireAuth, async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const dataUrl = typeof req.body?.image_base64 === 'string' ? req.body.image_base64 : '';
   if (dataUrl.length < 100) return err(res, '缺少图片数据');
 
@@ -1722,7 +1722,7 @@ router.post('/companions/:id/avatar', requireAuth, async (req, res) => {
 // POST /api/companions/:id/persona/regenerate — 重新生成人生背景
 router.post('/companions/:id/persona/regenerate', requireAuth, async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   // 同步生成（让前端能 spinner 一下）
   try {
     const data = await generatePersonaFacts(c);
@@ -1782,7 +1782,7 @@ router.post('/companions/:id/playground-chat',
   rateLimit({ scope: 'playground-chat', maxPerWindow: 30, windowMs: 60_000, message: '聊太快了，等一会儿再发' }),
   async (req, res) => {
     const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-    const c = requireCompanion(res, id); if (!c) return;
+    const c = requireOwnedCompanion(req, res, id); if (!c) return;
     const text = String(req.body?.text ?? req.body?.message ?? '').trim();
     if (!text) return err(res, '消息不能为空');
     if (text.length > 2000) return err(res, '消息过长（>2000 字）');
@@ -1800,7 +1800,7 @@ router.post('/companions/:id/playground-chat',
 // GET /api/companions/:id/today — 她今天的日程 + 当前情绪段 + 此刻状态
 router.get('/companions/:id/today', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const todayKey = shanghaiDateKey();
   const sched = getDailySchedule(id, todayKey);
   // 计算上海当前分钟
@@ -1846,7 +1846,7 @@ router.get('/companions/:id/today', requireAuth, (req, res) => {
 // GET /api/companions/:id/timeline — 我们的故事
 router.get('/companions/:id/timeline', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c = requireCompanion(res, id); if (!c) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
   const data = getCompanionTimeline(id, limit);
   if (!data) return err(res, 'companion 不存在', 404);
@@ -1856,7 +1856,7 @@ router.get('/companions/:id/timeline', requireAuth, (req, res) => {
 // GET /api/companions/:id/prompt
 router.get('/companions/:id/prompt', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const userProfile = getUserProfile(c.user_id, id);
   const memories    = recallMemories(id, c.user_id, '', 10);
   const recentTurns = getConversationContext(id, 10);
@@ -1867,7 +1867,7 @@ router.get('/companions/:id/prompt', requireAuth, (req, res) => {
 // GET /api/companions/:id/context
 router.get('/companions/:id/context', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const lim = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
   const turns = getConversationContext(id, lim);
   return ok(res, { companion_id: id, total: turns.length, turns });
@@ -1876,7 +1876,7 @@ router.get('/companions/:id/context', requireAuth, (req, res) => {
 // DELETE /api/companions/:id/context
 router.delete('/companions/:id/context', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const deleted = clearConversationContext(id);
   log('info', `[API] 清空最近上下文 companion=${id} deleted=${deleted}`);
   return ok(res, { companion_id: id, cleared: true, deleted });
@@ -1885,7 +1885,7 @@ router.delete('/companions/:id/context', requireAuth, (req, res) => {
 // GET /api/companions/:id
 router.get('/companions/:id', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   return ok(res, c);
 });
 
@@ -1996,8 +1996,7 @@ router.post('/companions', requireAuth, (req, res) => {
 // PUT /api/companions/:id
 router.put('/companions/:id', requireAuth, (req, res) => {
   const id   = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const existing = getCompanionById(id);
-  if (!existing) return err(res, 'companion 不存在', 404);
+  const existing = requireOwnedCompanion(req, res, id); if (!existing) return;
   let guarded;
   try {
     guarded = applyCompanionAgeGuard(req.body || {}, existing);
@@ -2021,10 +2020,7 @@ router.put('/companions/:id', requireAuth, (req, res) => {
 router.delete('/companions/:id', requireAuth, (req, res) => {
   const id = intId(req.params.id);
   if (!id) return res.status(400).json({ ok: false, message: 'id 无效' });
-  const accountId = intId(req.query.user_id ?? req.query.account_id ?? req.get('x-user-id') ?? req.body?.user_id ?? req.body?.account_id);
-  if (!accountId) return res.status(401).json({ ok: false, message: '缺少 user_id' });
-  const account = getUserAccountById(accountId);
-  if (!account) return res.status(401).json({ ok: false, message: '用户不存在' });
+  const accountId = req.authUser.id;
 
   try {
     const result = deleteCompanionForAccount(accountId, id);
@@ -2045,7 +2041,7 @@ router.delete('/companions/:id', requireAuth, (req, res) => {
 // GET /api/companions/:id/status
 router.get('/companions/:id/status', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const db = getDb();
   const memCount = db.prepare('SELECT COUNT(*) as n FROM companion_memories WHERE companion_id = ?').get(id)?.n ?? 0;
   return ok(res, {
@@ -2066,7 +2062,7 @@ router.get('/companions/:id/status', requireAuth, (req, res) => {
 // PUT /api/companions/:id/mood
 router.put('/companions/:id/mood', requireAuth, (req, res) => {
   const id  = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c   = requireCompanion(res, id); if (!c) return;
+  const c   = requireOwnedCompanion(req, res, id); if (!c) return;
   const { mood } = req.body || {};
   const allowed = ['开心','平静','委屈','想念','兴奋'];
   if (!mood || !allowed.includes(mood)) return err(res, `mood 必须是：${allowed.join('/')}`);
@@ -2078,7 +2074,7 @@ router.put('/companions/:id/mood', requireAuth, (req, res) => {
 // PUT /api/companions/:id/scene
 router.put('/companions/:id/scene', requireAuth, (req, res) => {
   const id    = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c     = requireCompanion(res, id); if (!c) return;
+  const c     = requireOwnedCompanion(req, res, id); if (!c) return;
   const { scene } = req.body || {};
   if (!scene) return err(res, '缺少 scene 字段');
   const history = [...(c.scene_history || []), { scene: c.current_scene, time: new Date().toISOString() }].slice(-10);
@@ -2090,7 +2086,7 @@ router.put('/companions/:id/scene', requireAuth, (req, res) => {
 // PUT /api/companions/:id/affection
 router.put('/companions/:id/affection', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const { delta, set } = req.body || {};
   let newVal;
   if (set !== undefined) {
@@ -2109,7 +2105,7 @@ router.put('/companions/:id/affection', requireAuth, (req, res) => {
 // PUT /api/companions/:id/chat-mode
 router.put('/companions/:id/chat-mode', requireAuth, (req, res) => {
   const id   = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c    = requireCompanion(res, id); if (!c) return;
+  const c    = requireOwnedCompanion(req, res, id); if (!c) return;
   const { mode } = req.body || {};
   const allowed = ['日常聊天','角色扮演','睡前故事','早安问候','情感倾诉'];
   if (!mode || !allowed.includes(mode)) return err(res, `mode 必须是：${allowed.join('/')}`);
@@ -2130,7 +2126,7 @@ router.get('/gifts/catalog', (_req, res) => {
 // GET /api/companions/:id/gifts
 router.get('/companions/:id/gifts', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const lim = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
   const gifts = getCompanionGifts(id, lim);
   return ok(res, { companion_id: id, total: gifts.length, gifts });
@@ -2139,7 +2135,7 @@ router.get('/companions/:id/gifts', requireAuth, (req, res) => {
 // POST /api/companions/:id/gifts
 router.post('/companions/:id/gifts', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const giftId = typeof req.body?.gift_id === 'string' ? req.body.gift_id.trim() : '';
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
   const gift = getGiftById(giftId);
@@ -2174,7 +2170,7 @@ router.post('/companions/:id/gifts', requireAuth, (req, res) => {
 // POST /api/companions/:id/image-reaction
 router.post('/companions/:id/image-reaction', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const imageUrl = typeof req.body?.image_url === 'string' ? req.body.image_url.trim() : '';
   const imageDescription = typeof req.body?.image_description === 'string' ? req.body.image_description.trim() : '';
   const userMessage = typeof req.body?.user_message === 'string' ? req.body.user_message.trim() : '';
@@ -2215,7 +2211,7 @@ router.post('/companions/:id/image-reaction', requireAuth, (req, res) => {
 // GET /api/companions/:id/reminders
 router.get('/companions/:id/reminders', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const reminders = getReminders(id, req.query.limit);
   return ok(res, { companion_id: id, total: reminders.length, reminders });
 });
@@ -2223,7 +2219,7 @@ router.get('/companions/:id/reminders', requireAuth, (req, res) => {
 // GET /api/companions/:id/reminders/due
 router.get('/companions/:id/reminders/due', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const today = typeof req.query.date === 'string' ? req.query.date.trim() : undefined;
   if (today !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(today)) return err(res, 'date 必须是 YYYY-MM-DD');
   const reminders = getDueReminders(id, today);
@@ -2238,7 +2234,7 @@ router.get('/companions/:id/reminders/due', requireAuth, (req, res) => {
 // POST /api/companions/:id/reminders
 router.post('/companions/:id/reminders', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   try {
     const reminder = createReminder(id, req.body || {});
     log('info', `[API] 新增提醒 companion=${id} reminder=${reminder.id}`);
@@ -2254,7 +2250,7 @@ router.post('/companions/:id/reminders', requireAuth, (req, res) => {
 router.put('/companions/:id/reminders/:rid', requireAuth, (req, res) => {
   const id  = intId(req.params.id);  if (!id)  return err(res, 'id 无效');
   const rid = intId(req.params.rid); if (!rid) return err(res, 'reminder id 无效');
-  const c   = requireCompanion(res, id); if (!c) return;
+  const c   = requireOwnedCompanion(req, res, id); if (!c) return;
   try {
     const reminder = updateReminder(id, rid, req.body || {});
     return ok(res, reminder);
@@ -2270,7 +2266,7 @@ router.put('/companions/:id/reminders/:rid', requireAuth, (req, res) => {
 router.delete('/companions/:id/reminders/:rid', requireAuth, (req, res) => {
   const id  = intId(req.params.id);  if (!id)  return err(res, 'id 无效');
   const rid = intId(req.params.rid); if (!rid) return err(res, 'reminder id 无效');
-  const c   = requireCompanion(res, id); if (!c) return;
+  const c   = requireOwnedCompanion(req, res, id); if (!c) return;
   const deleted = deleteReminder(id, rid);
   if (!deleted) return err(res, 'reminder 不存在', 404);
   return ok(res, { companion_id: id, reminder_id: rid, deleted: true });
