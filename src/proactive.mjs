@@ -23,6 +23,8 @@ import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stic
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply } from './moderation.mjs';
 import { log } from './logger.mjs';
+import { buildEmotionPromptHint, getEmotionStateWithDefaults } from './emotion_state.mjs';
+import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
 
 const TZ = 'Asia/Shanghai';
 // 早安/晚安基准时间，实际每天有 ±30min 随机波动让 AI 更像真人
@@ -251,7 +253,8 @@ async function sendProactiveMessage(companion, kind, account) {
   const proactiveDailySchedule = proactiveDailyRaw ? { ...proactiveDailyRaw, date_key: proactiveTodayKey } : null;
   const proactiveRecent = getRecentSchedules(companion.id, proactiveTodayKey, 3);
   const proactivePersonaFacts = getPersonaFacts(companion.id);
-  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts })}${stickerHint}
+  const emotionHint = buildEmotionPromptHint(getEmotionStateWithDefaults(companion.id));
+  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts })}${stickerHint}${emotionHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
@@ -382,6 +385,9 @@ async function sendProactiveMessage(companion, kind, account) {
       log('warn', `[Proactive] 告白后处理失败: ${e.message}`);
     }
   }
+  // Record proactive sent for engine backoff tracking
+  try { recordProactiveSent(companion.id); } catch {}
+
   log('info', `[Proactive] 已发送 companion=${companion.id} to=${companion.wechat_user_id} kind=${effectiveKind} segments=${segments.length} stickers=${totalStickers}`);
 }
 

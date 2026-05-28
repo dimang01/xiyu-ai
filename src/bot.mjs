@@ -26,6 +26,9 @@ import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stic
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply, inboundIsBlocked } from './moderation.mjs';
 import { log } from './logger.mjs';
+import { applyPersonaGuard } from './persona_guard.mjs';
+import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint } from './emotion_state.mjs';
+import { recordUserReplied } from './proactive_engine.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
@@ -327,9 +330,14 @@ export async function handleMessage(rawMsg, botContext = {}) {
     const dailySchedule = dailyRaw ? { ...dailyRaw, date_key: todayKey } : null;
     const recentSchedules = getRecentSchedules(companion.id, todayKey, 3);
     const personaFacts = getPersonaFacts(companion.id);
+    // ── Emotion State Machine ─────────────────────────────────────────────────
+    let emotionState = getEmotionStateWithDefaults(companion.id);
+    emotionState = updateEmotionFromUserMessage(companion.id, emotionState, userText, { companion });
+
     const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();
     const stickerHint = buildStickerPromptHint(stickerEnabled);
-    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts }) + stickerHint;
+    const emotionHint = buildEmotionPromptHint(emotionState);
+    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts }) + stickerHint + emotionHint;
     // 关系阶段刚升级 → 这条回复要自然体现这种变化
     const celebration = consumePendingCelebration(companion.id);
     if (celebration) {
@@ -402,18 +410,15 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
     // ── 生成 AI 回复 ─────────────────────────────────────────────────────────
     let reply;
+    const genReplyOnce = () => generateReply(
+      systemPrompt,
+      history,
+      userText,
+      { temperature: companion.temperature, max_tokens: companion.max_tokens, top_p: companion.top_p },
+      { accountId: binding.account_id || null },
+    );
     try {
-      reply = await generateReply(
-        systemPrompt,
-        history,
-        userText,
-        {
-          temperature: companion.temperature,
-          max_tokens:  companion.max_tokens,
-          top_p:       companion.top_p,
-        },
-        { accountId: binding.account_id || null },
-      );
+      reply = await genReplyOnce();
       log('info', `[Bot] AI reply generated user_id=${companion.user_id} companion_id=${companion.id}`);
     } catch (err) {
       log('error', `[Bot] AI reply failed user_id=${companion.user_id} companion_id=${companion.id}: ${err.message}`);
@@ -422,6 +427,23 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
     // ── 出站审核：AI 回复过黑名单 ───────────────────────────────────────────
     reply = safeOutboundReply(reply);
+
+    // ── Persona Guard ─────────────────────────────────────────────────────────
+    try {
+      const guarded = await applyPersonaGuard(reply, { companion, userMsg: userText }, genReplyOnce);
+      if (guarded.guarded) {
+        log('info', `[PersonaGuard] guarded companion=${companion.id} reason=${guarded.reason}`);
+        reply = guarded.reply;
+      }
+    } catch (e) {
+      log('warn', `[PersonaGuard] error: ${e.message}`);
+    }
+
+    // ── Record user replied (proactive engine) ────────────────────────────────
+    try { recordUserReplied(companion.id); } catch {}
+
+    // ── Update emotion after reply ────────────────────────────────────────────
+    try { updateEmotionFromAssistantReply(companion.id, emotionState, reply, { companion }); } catch {}
 
     // ── 像真人一样：把回复按 || 拆成多条短消息，逐条发送 ─────────────────
     // 每条之间：typing indicator + 短停顿，模拟"先发一条再打下一条"

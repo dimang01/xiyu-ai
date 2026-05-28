@@ -10,7 +10,8 @@
     "dev": "node --watch index.mjs",
     "setup": "node scripts/setup-wizard.mjs",
     "setup:full": "bash scripts/setup.sh",
-    "ilink:login": "node scripts/ilink_login.mjs"
+    "ilink:login": "node scripts/ilink_login.mjs",
+    "doctor": "node scripts/doctor.mjs"
   },
   "keywords": [
     "ai-companion",
