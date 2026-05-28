@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>聊天测试 · 溪语 AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: {
+        sakura: '#FFB6D9', 'sakura-soft': '#FFE8F2', 'sakura-deep': '#FF8FB8',
+        ink: '#1D1D1F', mute: '#86868B', line: '#F0F0F2', cloud: '#FAFAFA',
+      },
+      fontFamily: {
+        sans: ['"PingFang SC"','"HarmonyOS Sans SC"','"Microsoft YaHei"','system-ui','-apple-system','sans-serif'],
+      },
+    }}};
+  </script>
+  <style>
+    body { background: linear-gradient(180deg, #FFF7FB 0%, #FFFFFF 100%); }
+    .card { background: #fff; border: 1px solid #F0F0F2; border-radius: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .bubble-them { background: #fff; border: 1px solid #F0F0F2; border-radius: 4px 16px 16px 16px; padding: 10px 14px; max-width: 80%; word-wrap: break-word; }
+    .bubble-me { background: #FF8FB8; color: #fff; border-radius: 16px 4px 16px 16px; padding: 10px 14px; max-width: 80%; word-wrap: break-word; }
+    .typing-dots span { display: inline-block; width: 6px; height: 6px; background: #FFB6D9; border-radius: 50%; margin: 0 2px; animation: typing 1.4s infinite; }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+    .pill { background: #FFE8F2; color: #FF8FB8; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+  </style>
+</head>
+<body class="font-sans text-ink min-h-screen">
+
+  <!-- Top bar -->
+  <header class="sticky top-0 z-10 bg-white/85 backdrop-blur border-b border-line">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/app/dashboard.html" class="text-mute hover:text-ink text-[20px] leading-none">‹</a>
+      <img id="c-avatar" src="/logo.png" alt="" class="w-10 h-10 rounded-full" />
+      <div class="flex-1 min-w-0">
+        <p id="c-name" class="text-[15px] font-bold truncate">—</p>
+        <p class="text-[11px] text-mute flex items-center gap-2">
+          <span id="c-stage" class="pill">陌生</span>
+          <span id="c-affection">— / 100</span>
+          <span id="c-mood" class="text-sakura-deep">—</span>
+        </p>
+      </div>
+      <a href="/app/dashboard.html" class="text-[12px] text-mute hover:text-ink whitespace-nowrap">控制台</a>
+    </div>
+  </header>
+
+  <!-- Banner: 解释这是浏览器测试，不是微信 -->
+  <div class="max-w-3xl mx-auto px-4 pt-4">
+    <div class="card p-3 text-[12px] text-mute flex items-start gap-2">
+      <span class="text-sakura-deep">🧪</span>
+      <span>这是浏览器内的 playground — 跑的是和微信入站消息**完全相同**的 AI 管线（人设、记忆、心情、好感度都生效），只是不发到微信。适合还没拿到 iLink 准入或者想快速调试人设的时候用。</span>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <main id="msgs" class="max-w-3xl mx-auto px-4 py-5 space-y-3 pb-32"></main>
+
+  <!-- Input -->
+  <footer class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur border-t border-line z-10">
+    <form id="chat-form" class="max-w-3xl mx-auto px-4 py-3 flex items-end gap-2">
+      <textarea id="chat-input" rows="1" placeholder="说点什么…(Enter 发送 / Shift+Enter 换行)"
+        class="flex-1 resize-none bg-cloud border border-line rounded-2xl px-4 py-2.5 text-[14px] focus:outline-none focus:border-sakura placeholder:text-mute"
+        maxlength="2000"></textarea>
+      <button type="submit" id="send-btn"
+        class="flex-shrink-0 px-5 py-2.5 bg-gradient-to-r from-sakura to-sakura-deep text-white text-[13px] font-semibold rounded-full disabled:opacity-50 disabled:cursor-not-allowed">
+        发送
+      </button>
+    </form>
+  </footer>
+
+  <script>
+    // ─── auth ──────────────────────────────────────────────────────────────
+    const userRaw = localStorage.getItem('xiyu_user');
+    const token = localStorage.getItem('xiyu_token');
+    if (!userRaw || !token) { location.href = '/app/auth.html'; }
+
+    function authHeaders() {
+      return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    }
+
+    const companionId = Number(localStorage.getItem('xiyu_companion_id'));
+    if (!companionId) { location.href = '/app/dashboard.html'; }
+
+    // ─── companion 头部 ────────────────────────────────────────────────────
+    async function loadCompanion() {
+      try {
+        const r = await fetch('/api/companions/' + companionId, { headers: authHeaders() });
+        const d = await r.json();
+        if (!r.ok || !d.ok) return;
+        const c = d.data || {};
+        document.getElementById('c-name').textContent = c.name || '—';
+        document.getElementById('c-avatar').src = c.avatar_url || '/logo.png';
+        updateState({
+          mood: c.current_mood,
+          affection_level: c.affection_level,
+          relationship_stage: c.relationship_stage,
+        });
+      } catch {}
+    }
+
+    function updateState(state) {
+      if (!state) return;
+      if (state.mood) document.getElementById('c-mood').textContent = state.mood;
+      if (state.affection_level != null) document.getElementById('c-affection').textContent = state.affection_level + ' / 100';
+      if (state.relationship_stage) document.getElementById('c-stage').textContent = state.relationship_stage;
+    }
+
+    // ─── 渲染消息 ──────────────────────────────────────────────────────────
+    const msgs = document.getElementById('msgs');
+    function appendUser(text) {
+      const row = document.createElement('div');
+      row.className = 'flex justify-end';
+      const b = document.createElement('div');
+      b.className = 'bubble-me whitespace-pre-wrap text-[14px]';
+      b.textContent = text;
+      row.appendChild(b);
+      msgs.appendChild(row);
+      scrollEnd();
+    }
+    function appendThem(text) {
+      if (!text) return;
+      const row = document.createElement('div');
+      row.className = 'flex justify-start';
+      const b = document.createElement('div');
+      b.className = 'bubble-them whitespace-pre-wrap text-[14px]';
+      b.textContent = text;
+      row.appendChild(b);
+      msgs.appendChild(row);
+      scrollEnd();
+    }
+    function appendSticker(s) {
+      const row = document.createElement('div');
+      row.className = 'flex justify-start';
+      const wrap = document.createElement('div');
+      wrap.className = 'bubble-them text-[12px] text-mute';
+      if (s.url) {
+        const img = document.createElement('img');
+        img.src = s.url;
+        img.alt = s.tag || 'sticker';
+        img.style.cssText = 'max-width:120px;border-radius:8px;display:block;';
+        wrap.appendChild(img);
+      } else {
+        wrap.textContent = '[表情: ' + (s.tag || '?') + ']';
+      }
+      row.appendChild(wrap);
+      msgs.appendChild(row);
+      scrollEnd();
+    }
+    function showTyping() {
+      const row = document.createElement('div');
+      row.id = 'typing-row';
+      row.className = 'flex justify-start';
+      const b = document.createElement('div');
+      b.className = 'bubble-them';
+      b.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+      row.appendChild(b);
+      msgs.appendChild(row);
+      scrollEnd();
+    }
+    function hideTyping() {
+      document.getElementById('typing-row')?.remove();
+    }
+    function scrollEnd() {
+      requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+    }
+    function appendSystem(text) {
+      const row = document.createElement('div');
+      row.className = 'flex justify-center';
+      const b = document.createElement('div');
+      b.className = 'text-[11px] text-mute py-1 px-3 bg-cloud rounded-full';
+      b.textContent = text;
+      row.appendChild(b);
+      msgs.appendChild(row);
+      scrollEnd();
+    }
+
+    // ─── 加载最近对话历史 ─────────────────────────────────────────────────
+    async function loadHistory() {
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/context?limit=20', { headers: authHeaders() });
+        const d = await r.json();
+        if (!r.ok || !d.ok) return;
+        const turns = d.data?.turns || d.data || [];
+        for (const t of turns) {
+          if (t.role === 'user') appendUser(t.content);
+          else if (t.role === 'assistant') {
+            // 历史 assistant 内容可能含 || 分段，拆开展示更自然
+            const segs = String(t.content || '').split(/\s*(?:\|\||｜｜)\s*/g).map(s => s.trim()).filter(Boolean);
+            if (segs.length) for (const s of segs) appendThem(s);
+            else appendThem(t.content);
+          }
+        }
+        if (turns.length === 0) appendSystem('打个招呼，开始聊天吧');
+      } catch {}
+    }
+
+    // ─── 发送 ──────────────────────────────────────────────────────────────
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+    });
+
+    let busy = false;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (busy) return;
+      const text = input.value.trim();
+      if (!text) return;
+      busy = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = '发送中…';
+      appendUser(text);
+      input.value = '';
+      input.style.height = 'auto';
+      showTyping();
+
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/playground-chat', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ text }),
+        });
+        const d = await r.json();
+        hideTyping();
+        if (!r.ok || !d.ok) throw new Error(d.message || d.error || '请求失败');
+        const segs = d.data?.segments || [];
+        // 逐条展示，模拟"先发一条再发下一条"
+        for (let i = 0; i < segs.length; i++) {
+          const seg = segs[i];
+          if (i > 0) {
+            // 段间小停顿
+            await new Promise(rr => setTimeout(rr, 350 + Math.random() * 500));
+          }
+          if (seg.text) appendThem(seg.text);
+          for (const s of seg.stickers || []) appendSticker(s);
+        }
+        updateState(d.data?.state);
+      } catch (err) {
+        hideTyping();
+        appendSystem('❌ ' + err.message);
+      } finally {
+        busy = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = '发送';
+        input.focus();
+      }
+    });
+
+    // ─── go ────────────────────────────────────────────────────────────────
+    loadCompanion().then(() => loadHistory());
+  </script>
+</body>
+</html>

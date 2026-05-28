@@ -64,6 +64,7 @@ import {
   getIlinkStatusSnapshot, getBotQrcode, getQrcodeStatus, DEFAULT_BASE_URL,
   getWechatConfigStatus,
 } from './ilink.mjs';
+import { getEmailMode } from './email.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { buildImageReactionText, computeRelationshipStage, extractImageMemories } from './memory.mjs';
 import { generatePersonaFacts, generateAvatarCandidates, embedText } from './ai.mjs';
@@ -1695,6 +1696,28 @@ router.post('/companions/:id/persona/regenerate', requireAuth, async (req, res) 
   }
 });
 
+// POST /api/companions/:id/playground-chat — 浏览器端跟 companion 聊天（不走微信）
+// 让未拿到腾讯 iLink/ClawBot 准入的用户也能完整体验 AI 人设、记忆、关系演进
+router.post('/companions/:id/playground-chat',
+  requireAuth,
+  rateLimit({ scope: 'playground-chat', maxPerWindow: 30, windowMs: 60_000, message: '聊太快了，等一会儿再发' }),
+  async (req, res) => {
+    const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+    const c = requireCompanion(res, id); if (!c) return;
+    const text = String(req.body?.text ?? req.body?.message ?? '').trim();
+    if (!text) return err(res, '消息不能为空');
+    if (text.length > 2000) return err(res, '消息过长（>2000 字）');
+    try {
+      const { playgroundChat } = await import('./playground.mjs');
+      const result = await playgroundChat(c, text);
+      return ok(res, result);
+    } catch (e) {
+      log('error', `[API] playground-chat companion=${id}: ${e.message}`);
+      return err(res, e.message || 'AI 生成失败', 500);
+    }
+  }
+);
+
 // GET /api/companions/:id/today — 她今天的日程 + 当前情绪段 + 此刻状态
 router.get('/companions/:id/today', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
@@ -2462,6 +2485,7 @@ export function startApiServer() {
         embedding: getActiveEmbeddingProvider(),
       },
       wechat: getWechatConfigStatus(),
+      email: { mode: getEmailMode() },  // resend | dev_stdout
       time: new Date().toISOString(),
     });
   });

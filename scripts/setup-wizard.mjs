@@ -167,7 +167,16 @@ async function runInteractive() {
   console.log('');
   console.log('下一步：');
   console.log('  npm start              启动服务');
-  console.log('  npm run ilink:login    （可选）扫码接入微信');
+  console.log('');
+  console.log('🌸  关于邮件验证码：');
+  console.log('  未配 RESEND_API_KEY 时自动启用 dev_stdout 模式 —');
+  console.log('  验证码会直接打到服务日志，不真发邮件。');
+  console.log('  这意味着你可以立刻注册第一个账号，无需任何邮件服务。');
+  console.log('');
+  console.log('🌸  关于微信接入：');
+  console.log('  登录后端 → 注册 → 创建角色 → /app/bind.html 网页扫码即可。');
+  console.log('  完全无需预填 ILINK_* 环境变量。');
+  console.log('  无 iLink 准入资格也能用 /app/playground.html 在网页里测试聊天。');
   console.log('');
 
   rl.close();

@@ -19,7 +19,46 @@ function normalizeFrom(value) {
   return `${match[1].trim()} <${match[2].trim()}>`;
 }
 
+/**
+ * Email 工作模式：
+ *   - "resend"     ：通过 Resend HTTP API 发送（需要 RESEND_API_KEY + RESEND_FROM）
+ *   - "dev_stdout" ：不发邮件，把验证码醒目地打到服务日志（开发 / 自托管首次启动用）
+ *
+ * 解析优先级（最高 → 最低）：
+ *   1. 环境变量 EMAIL_MODE 显式指定（resend / dev_stdout）
+ *   2. EMAIL_DEV_MODE=1 → dev_stdout
+ *   3. RESEND_API_KEY 与 RESEND_FROM 都已配置 → resend
+ *   4. 否则 → dev_stdout（fallback，不阻塞首次部署）
+ */
+export function getEmailMode() {
+  const explicit = String(process.env.EMAIL_MODE || '').toLowerCase().trim();
+  if (explicit === 'resend' || explicit === 'dev_stdout') return explicit;
+  if (String(process.env.EMAIL_DEV_MODE || '').trim() === '1') return 'dev_stdout';
+  if (process.env.RESEND_API_KEY && process.env.RESEND_FROM) return 'resend';
+  return 'dev_stdout';
+}
+
+function logDevCode(email, code) {
+  const banner = '═'.repeat(60);
+  // 直接 console.log 而不是 log()，确保即便日志级别被调高也能看见
+  console.log(`\n${banner}`);
+  console.log(`📬  [EMAIL_DEV_MODE] 验证码（未真发邮件，请勿用于生产）`);
+  console.log(`    收件人：${email}`);
+  console.log(`    验证码：    ${code}`);
+  console.log(`    5 分钟内有效。`);
+  console.log(`    若要改为真实发邮件，请在 .env 配置 RESEND_API_KEY + RESEND_FROM`);
+  console.log(`${banner}\n`);
+}
+
 export async function sendVerificationEmail(email, code) {
+  const mode = getEmailMode();
+
+  if (mode === 'dev_stdout') {
+    logDevCode(email, code);
+    log('info', `[Email] dev_stdout 模式：验证码已打印到服务日志（recipient=${email}）`);
+    return;
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     throw new Error('RESEND_API_KEY is not configured');
