@@ -2330,7 +2330,11 @@ router.post('/companions/:id/memories', requireAuth, (req, res) => {
   // 首次记忆保存成就（静默）
   tryAchievement(id, 'first_memory_saved');
   // 轻量事件图谱（静默）
-  try { processMemoryForGraph(id, content, row?.id ?? null); } catch { /* 非阻塞 */ }
+  // 传入 memory_layer meta 作为快速短路；memoryId 存在时 processMemoryForGraph
+  // 还会再做一次 DB 查询校验 sensitive_flag / do_not_mention
+  try {
+    processMemoryForGraph(id, content, row?.id ?? null, { memory_layer: layer });
+  } catch { /* 非阻塞 */ }
   return ok(res, { companion_id: id, memory_layer: layer, content, memory_weight: weight }, 201);
 });
 

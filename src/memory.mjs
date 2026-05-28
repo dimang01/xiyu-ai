@@ -318,8 +318,11 @@ export async function extractAndSaveMemories(companionId, userId, userMsg, botRe
     tryAchievement(companionId, 'first_memory_saved');
 
     // 轻量事件图谱：从新增记忆文本提取实体（静默，不阻塞）
+    // 传入 memoryMeta 让守卫函数跳过 emotion 类型，无需额外 DB 查询
     for (const m of candidates) {
-      try { processMemoryForGraph(companionId, m.content, null); } catch { /* 非阻塞 */ }
+      try {
+        processMemoryForGraph(companionId, m.content, null, { memoryType: m.memoryType });
+      } catch { /* 非阻塞 */ }
     }
 
     return candidates.length;

@@ -146,7 +146,10 @@ export async function applyReflectionMemoryUpdates(companionId, updates, options
           memorySource: 'reflection',
         });
         // 轻量事件图谱（静默，不阻塞）
-        try { processMemoryForGraph(companionId, m.content, null); } catch { /* 非阻塞 */ }
+        // 传入 memory_layer 让守卫函数跳过 emotion 层
+        try {
+          processMemoryForGraph(companionId, m.content, null, { memory_layer: m.memory_layer });
+        } catch { /* 非阻塞 */ }
         inserted++;
       } else if (result.action === 'merged') {
         merged++;

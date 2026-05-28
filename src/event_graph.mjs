@@ -154,12 +154,54 @@ export function getCompanionEventGraph(companionId, options = {}) {
 }
 
 /**
+ * Guard: returns true only if this memory is safe to process into the event graph.
+ *
+ * A memory is skipped when any of the following is true:
+ *   - sensitive_flag is set
+ *   - do_not_mention is set
+ *   - memory_status is not 'active'
+ *   - memory layer / type is 'emotion' (too personal for entity extraction)
+ *
+ * Accepts any object that may carry these fields (DB row, inline meta, or candidate object).
+ */
+export function shouldProcessMemoryForGraph(memory) {
+  if (!memory) return false;
+  if (memory.sensitive_flag) return false;
+  if (memory.do_not_mention) return false;
+  if (memory.memory_status && memory.memory_status !== 'active') return false;
+  // Check layer from various field names used by different callers
+  const layer = memory.memory_layer ?? memory.memoryLayer ?? memory.memory_type ?? memory.memoryType ?? '';
+  if (layer === 'emotion') return false;
+  return true;
+}
+
+/**
  * Process a newly saved memory: extract entities and relations, store them.
+ *
  * @param {number} companionId
  * @param {string} memoryText
- * @param {number|null} memoryId
+ * @param {number|null} memoryId   - if provided, the DB row is consulted for sensitive flags
+ * @param {object|null} memoryMeta - optional inline meta (memory_layer, memoryType, etc.)
+ *                                   checked BEFORE DB lookup — fast path for callers that
+ *                                   already know the layer/type
  */
-export function processMemoryForGraph(companionId, memoryText, memoryId = null) {
+export function processMemoryForGraph(companionId, memoryText, memoryId = null, memoryMeta = null) {
+  // Fast-path guard using caller-supplied meta (no DB hit needed)
+  if (memoryMeta && !shouldProcessMemoryForGraph(memoryMeta)) return;
+
+  // DB-level guard: verify sensitive_flag / do_not_mention / status from the stored row
+  if (memoryId) {
+    try {
+      const dbRow = getDb().prepare(
+        `SELECT sensitive_flag, do_not_mention, memory_status, memory_layer
+         FROM companion_memories WHERE id = ? AND companion_id = ?`
+      ).get(memoryId, companionId);
+      if (!dbRow || !shouldProcessMemoryForGraph(dbRow)) return;
+    } catch {
+      return; // cannot verify — skip to be safe
+    }
+  }
+
   const extractions = extractSimpleEntitiesFromMemory(memoryText);
   if (!extractions.length) return;
 
