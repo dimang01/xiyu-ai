@@ -43,10 +43,16 @@ else check "no literal API keys" 0 "$(echo "$SECRETS" | head -5)"
 fi
 
 echo "==> 3) production paths/domains"
-# .gitignore 里的 _backup_billing_v1/ 是防御性忽略规则（防止误提交），不是泄漏 — 一并排除
+# 排除：
+#   · .gitignore 里的 _backup_billing_v1/ 是防御性忽略规则
+#   · public/robots.txt / public/sitemap.xml 里的 xiyuai.cc 是示例域名（顶部已注明 deployment 时替换）
+#   · public/llms.txt / public/llms-full.txt 引用了 GitHub 链接和 README 摘要，作为 AI 爬虫元数据可以保留
 PROD=$(grep -RInE "/opt/zhaohy-wechat-poc|/var/www/zhaohy\.xyz|xiyuai\.cc|zhaohy\.xyz|_backup_billing_v1" \
   . --exclude-dir=node_modules --exclude-dir=.git --exclude='*.md' \
-  --exclude='opensource_check.sh' --exclude='.gitignore' 2>/dev/null || true)
+  --exclude='opensource_check.sh' --exclude='.gitignore' \
+  --exclude='robots.txt' --exclude='sitemap.xml' \
+  --exclude='llms.txt' --exclude='llms-full.txt' \
+  --exclude='index.html' 2>/dev/null || true)
 if [ -z "$PROD" ]; then check "no production paths/domains" 1
 else check "no production paths/domains" 0 "$(echo "$PROD" | head -5)"
 fi

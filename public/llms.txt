@@ -1,0 +1,50 @@
+# 溪语 AI / Xiyu AI
+
+> An experimental open-source framework that treats an LLM as a virtual companion character with a complete backstory: 46+ generated life memories, a daily schedule, a 5-stage relationship arc, and a real-person texting cadence. Node.js backend, plain-HTML frontend, plug-in adapters for 9 chat / 5 image / 5 vision / 5 ASR / 4 embedding providers, and an in-browser playground so you can exercise the AI without WeChat. Optional WeChat integration via Tencent iLink / ClawBot using in-browser QR binding.
+
+> 一个把大模型当作"有完整人生背景的虚拟个体"来调度的开源 AI 陪伴框架。注册时生成 46+ 条具体人生记忆，每天有自己的日程剧本，关系按 5 个阶段自然演进，像真人微信节奏聊天。Node.js 后端 + 纯静态 HTML 前端，9 家 chat / 5 家 image / 5 家 vision / 5 家 ASR / 4 家 embedding 通过同一套 provider 抽象切换。**网页里就能扫码绑微信、就能直接聊**，没有腾讯 iLink 准入也能用浏览器 playground 完整体验。
+
+## Project
+
+- [GitHub repository](https://github.com/dimang01/xiyu-ai): full source code (MIT licensed)
+- [README (CN + EN)](https://github.com/dimang01/xiyu-ai/blob/main/README.md): full bilingual documentation
+- [Acknowledgments](https://github.com/dimang01/xiyu-ai/blob/main/ACKNOWLEDGMENTS.md): runtime dependencies, AI vendors, sticker license note
+- [Security policy](https://github.com/dimang01/xiyu-ai/blob/main/SECURITY.md): how to report vulnerabilities; sensitive-file list
+- [Latest release](https://github.com/dimang01/xiyu-ai/releases): version history, semver tags
+
+## Quick start
+
+- [Quick Start section](https://github.com/dimang01/xiyu-ai/blob/main/README.md#-quick-start): three install paths (local wizard / docker compose / one-line docker run)
+- [Docker image on GHCR](https://github.com/dimang01/xiyu-ai/pkgs/container/xiyu-ai): multi-arch (linux/amd64 + linux/arm64), built by GitHub Actions on every version tag
+- [Setup wizard](https://github.com/dimang01/xiyu-ai/blob/main/scripts/setup-wizard.mjs): interactive `.env` configuration with native-build preflight
+
+## Architecture
+
+- [System prompt composer](https://github.com/dimang01/xiyu-ai/blob/main/src/companion.mjs): 18-section dynamic prompt — persona, meta-cognition, relationship stage, today's schedule, recent context, long-term digest, anti-AI-tone rules
+- [Provider façade](https://github.com/dimang01/xiyu-ai/blob/main/src/providers/chat.mjs): swap between DeepSeek / OpenAI / Anthropic / xAI / Zhipu / Doubao / Qwen / Kimi / Wenxin by changing one `.env` line
+- [WeChat pipeline](https://github.com/dimang01/xiyu-ai/blob/main/src/bot.mjs) and [browser playground](https://github.com/dimang01/xiyu-ai/blob/main/src/playground.mjs): two entry points sharing the same reply pipeline
+- [Long-term memory](https://github.com/dimang01/xiyu-ai/blob/main/src/memory.mjs): semantic embedding recall + importance scoring + daily/weekly/monthly archives
+- [Proactive messaging](https://github.com/dimang01/xiyu-ai/blob/main/src/proactive.mjs): morning/evening/random check-ins + spontaneous confession + ~2-day scene photos + char-3-gram Jaccard collision detection
+- [Daily schedule generator](https://github.com/dimang01/xiyu-ai/blob/main/src/plan_tasks.mjs): weekday/weekend-aware 8–12 timed activities, self-healing on cron failure
+
+## Operations
+
+- [Deployment templates](https://github.com/dimang01/xiyu-ai/tree/main/deploy): systemd unit + nginx reverse-proxy example + step-by-step VPS walkthrough
+- [Docker Compose](https://github.com/dimang01/xiyu-ai/blob/main/docker-compose.yml): SQLite via volume, restart policy, health check
+- [Issues / roadmap](https://github.com/dimang01/xiyu-ai/issues): open work items including persistent dedup, SQLite backup automation, safety moderation, TTS, production deployment guide
+
+## Optional
+
+- [Email dev mode](https://github.com/dimang01/xiyu-ai/blob/main/src/email.mjs): when Resend is not configured, verification codes are printed to the service log — first-time signup needs no email service
+- [iLink terminal QR login](https://github.com/dimang01/xiyu-ai/blob/main/scripts/ilink_login.mjs): headless alternative to in-browser WeChat binding
+- [Avatar generation scripts](https://github.com/dimang01/xiyu-ai/tree/main/scripts): pre-generated avatar pool builder, aesthetic scoring, persona matching
+- [Sticker loader](https://github.com/dimang01/xiyu-ai/blob/main/assets/stickers/README.md): mechanism only; the repository does not redistribute third-party sticker images
+
+## License
+
+MIT (https://github.com/dimang01/xiyu-ai/blob/main/LICENSE)
+
+## Contact
+
+- Issues: https://github.com/dimang01/xiyu-ai/issues
+- Email: xiyuai@proton.me

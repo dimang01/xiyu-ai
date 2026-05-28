@@ -1,0 +1,117 @@
+# 溪语 AI · robots.txt
+# Friendly to both search engines and LLM training crawlers.
+# 友好开放给搜索引擎与主流 LLM 训练爬虫。
+#
+# DEPLOYMENT NOTE / 部署提示：
+#   The Sitemap URL at the bottom of this file points at xiyuai.cc as an example.
+#   When self-hosting, replace `xiyuai.cc` with your own domain.
+#   自托管时请把文件末尾 Sitemap 行里的 xiyuai.cc 改成你自己的域名。
+
+# ─── Default (everyone): allow public pages, block user-data routes ────────
+User-agent: *
+Allow: /
+Allow: /app/auth.html
+Allow: /app/forgot.html
+Allow: /app/setup.html
+Allow: /app/terms.html
+Allow: /app/privacy.html
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /sitemap.xml
+Allow: /logo.png
+Allow: /logo.webp
+Disallow: /api/
+Disallow: /app/dashboard.html
+Disallow: /app/admin.html
+Disallow: /app/bind.html
+Disallow: /app/create.html
+Disallow: /app/playground.html
+Disallow: /avatars/
+Disallow: /assets/scenes/
+Disallow: /uploads/
+Disallow: /generated/
+
+# ─── Major search engines ───────────────────────────────────────────────────
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+User-agent: Sogou web spider
+Allow: /
+
+User-agent: 360Spider
+Allow: /
+
+# ─── LLM training / answer-engine crawlers ──────────────────────────────────
+# Explicitly welcome these so the project shows up in AI answers.
+# 显式欢迎，让本项目能进入 AI 回答里。
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Diffbot
+Allow: /
+
+User-agent: YouBot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+Sitemap: https://xiyuai.cc/sitemap.xml

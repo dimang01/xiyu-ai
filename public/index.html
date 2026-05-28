@@ -1,22 +1,72 @@
 <!DOCTYPE html>
+<!--
+  DEPLOYMENT NOTE / 部署提示：
+    `xiyuai.cc` is the canonical / structured-data URL for the upstream hosted demo.
+    When self-hosting, one-liner replace it across the three SEO-relevant files:
+      sed -i 's|https://xiyuai.cc|https://your-domain.example.com|g' \
+        public/index.html public/robots.txt public/sitemap.xml
+    自托管时用上面一行 sed 把三个文件里的 xiyuai.cc 都换成你自己的域名。
+-->
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
   <meta name="color-scheme" content="light only" />
   <meta name="theme-color" content="#FFB6D9" />
-  <title>溪语AI · 你的专属AI女友</title>
-  <meta name="description" content="遇见溪语，你的专属AI女友，住在微信里。她会主动找你，记得你说过的每一句话。" />
-  <meta name="keywords" content="AI女友,虚拟伴侣,溪语AI,AI聊天,微信AI" />
+  <title>溪语AI · 开源 AI 陪伴框架 (Xiyu AI · Open-source AI Companion Framework)</title>
+  <meta name="description" content="溪语 AI 是一个开源的 AI 陪伴框架（MIT 协议）— 把大模型当作有完整人生背景的虚拟个体来调度，支持 9 家 chat / 5 家 image provider 切换，自带浏览器 playground，可选微信网页扫码绑定。Xiyu AI: an open-source AI companion framework on GitHub (MIT)." />
+  <meta name="keywords" content="AI女友,虚拟伴侣,溪语AI,AI聊天,微信AI,open source AI companion,xiyu ai,GitHub,MIT,Node.js,DeepSeek,Claude,GPT,LLM" />
+  <meta name="author" content="溪语 AI Contributors" />
   <meta name="theme-color" content="#FFFFFF" />
 
-  <meta property="og:title" content="溪语AI · 你的专属AI女友" />
-  <meta property="og:description" content="遇见溪语，你的专属AI女友，住在微信里。" />
+  <link rel="canonical" href="https://xiyuai.cc/" />
+  <link rel="alternate" type="text/markdown" href="/llms.txt" title="LLM-friendly project index (llms.txt)" />
+
+  <meta property="og:title" content="溪语AI · 开源 AI 陪伴框架" />
+  <meta property="og:description" content="开源的 AI 陪伴框架（MIT）— 多 provider 支持、浏览器 playground、可选微信扫码绑定。GitHub: dimang01/xiyu-ai" />
   <meta property="og:url" content="/" />
-  <meta property="og:site_name" content="溪语AI" />
+  <meta property="og:site_name" content="溪语AI / Xiyu AI" />
   <meta property="og:locale" content="zh_CN" />
+  <meta property="og:locale:alternate" content="en_US" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="/logo.png" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="溪语AI / Xiyu AI · open-source AI companion framework" />
+  <meta name="twitter:description" content="MIT-licensed AI companion framework — virtual character with full backstory, multi-provider LLM support, in-browser playground." />
+  <meta name="twitter:image" content="/logo.png" />
+
+  <!-- 显式开放给主流 AI 训练 / 答案引擎爬虫 -->
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+  <meta name="googlebot" content="index, follow" />
+
+  <!-- Structured data: 让 LLM 爬虫直接拿到结构化项目信息 -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Xiyu AI / 溪语 AI",
+    "alternateName": "xiyu-ai",
+    "description": "An open-source AI companion framework that organizes an LLM into a virtual character with full backstory, daily schedule, 5-stage relationship arc, and real-person texting cadence. Multi-provider support across 9 chat / 5 image / 5 vision / 5 ASR / 4 embedding vendors. In-browser playground; optional WeChat integration via Tencent iLink in-browser QR binding.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Cross-platform (Node.js >= 20)",
+    "license": "https://opensource.org/licenses/MIT",
+    "codeRepository": "https://github.com/dimang01/xiyu-ai",
+    "programmingLanguage": ["JavaScript", "Node.js"],
+    "url": "https://xiyuai.cc/",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "author": {
+      "@type": "Organization",
+      "name": "Xiyu AI Contributors",
+      "email": "xiyuai@proton.me",
+      "url": "https://github.com/dimang01/xiyu-ai"
+    }
+  }
+  </script>
 
   <link rel="icon" href="/logo.png" />
   <link rel="apple-touch-icon" href="/logo.png" />
@@ -560,6 +610,35 @@
     </div>
   </section>
 
+  <!-- 开源信息区：让爬虫和 LLM 一眼就能看到这是 MIT 开源项目 -->
+  <section aria-labelledby="oss-heading" class="border-t border-line bg-gradient-to-b from-white to-sakura-soft/30">
+    <div class="max-w-content mx-auto px-6 lg:px-8 py-12 text-center">
+      <h2 id="oss-heading" class="text-[20px] font-bold tracking-tight">开源项目 · Open Source</h2>
+      <p class="mt-3 text-[14px] text-mute font-medium leading-relaxed max-w-2xl mx-auto">
+        溪语 AI 是一个 <strong>MIT 协议</strong>的开源 AI 陪伴框架。你可以在 GitHub 看到完整源码、自行部署、提交 issue 或 PR。
+        Xiyu AI is an <strong>MIT-licensed</strong> open-source AI companion framework. Full source code, deployment templates, and bilingual documentation on GitHub.
+      </p>
+      <div class="mt-6 flex flex-wrap items-center justify-center gap-3 text-[13px] font-semibold">
+        <a href="https://github.com/dimang01/xiyu-ai" rel="noopener" target="_blank" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-ink text-white hover:bg-black transition-all">
+          <span>★ GitHub: dimang01/xiyu-ai</span>
+        </a>
+        <a href="https://github.com/dimang01/xiyu-ai/blob/main/README.md" rel="noopener" target="_blank" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-line hover:border-sakura hover:text-sakura-deep transition-all">
+          📖 README
+        </a>
+        <a href="https://github.com/dimang01/xiyu-ai/issues" rel="noopener" target="_blank" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-line hover:border-sakura hover:text-sakura-deep transition-all">
+          🐛 Issues
+        </a>
+        <a href="/llms.txt" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-line hover:border-sakura hover:text-sakura-deep transition-all">
+          🤖 llms.txt
+        </a>
+      </div>
+      <!-- 给爬虫准备的纯文本摘要，无 className 包裹，sed/grep 也能看到 -->
+      <p class="mt-6 text-[12px] text-mute leading-relaxed max-w-3xl mx-auto">
+        关键词：开源 AI 陪伴 / open-source AI companion / LLM persona framework / WeChat AI bot / iLink ClawBot / Node.js / DeepSeek / OpenAI / Anthropic Claude / 智谱 GLM / 通义千问 / Moonshot Kimi / Doubao / xAI Grok / multi-provider LLM abstraction / long-term memory / 5-stage relationship arc / proactive messaging / in-browser playground / MIT license.
+      </p>
+    </div>
+  </section>
+
   <footer class="border-t border-line bg-white">
     <div class="max-w-content mx-auto px-6 lg:px-8 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
       <div class="flex items-center gap-2.5">
@@ -567,11 +646,12 @@
         <span class="text-[14px] font-semibold tracking-tight">溪语AI</span>
       </div>
       <div class="flex items-center gap-7 text-[13px] text-mute font-medium">
+        <a href="https://github.com/dimang01/xiyu-ai" rel="noopener" target="_blank" class="hover:text-ink transition-colors">GitHub</a>
         <a href="/app/terms.html" class="hover:text-ink transition-colors">用户协议</a>
         <a href="/app/privacy.html" class="hover:text-ink transition-colors">隐私协议</a>
         <a href="mailto:xiyuai@proton.me" class="hover:text-ink transition-colors">联系</a>
       </div>
-      <p class="text-[12px] text-mute font-medium">© 2026 溪语AI · 在微信里，等你</p>
+      <p class="text-[12px] text-mute font-medium">© 2026 溪语AI · MIT Open Source · 在微信里，等你</p>
     </div>
   </footer>
 

@@ -41,6 +41,28 @@ server {
     # 用户上传头像最大 25MB（与 express 默认对齐）
     client_max_body_size 25m;
 
+    # AI 爬虫友好路由：robots.txt / sitemap.xml / llms.txt
+    # 显式声明保证 Content-Type 正确，且不会被下方反代到 Express
+    location = /robots.txt {
+        proxy_pass http://127.0.0.1:3000;
+        add_header X-Robots-Tag "all";
+        add_header Cache-Control "public, max-age=3600";
+    }
+    location = /sitemap.xml {
+        proxy_pass http://127.0.0.1:3000;
+        add_header Cache-Control "public, max-age=3600";
+    }
+    location = /llms.txt {
+        proxy_pass http://127.0.0.1:3000;
+        add_header X-Robots-Tag "all";
+        add_header Cache-Control "public, max-age=3600";
+    }
+    location = /llms-full.txt {
+        proxy_pass http://127.0.0.1:3000;
+        add_header X-Robots-Tag "all";
+        add_header Cache-Control "public, max-age=3600";
+    }
+
     # 静态文件可以走 nginx 直发，加速一点；这里全部转交 Node，简单可靠
     location / {
         proxy_pass         http://127.0.0.1:3000;
