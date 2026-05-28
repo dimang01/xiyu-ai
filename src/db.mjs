@@ -43,6 +43,7 @@ export function getDb() {
     migrateEmotionState();
     migrateProactiveEngineV2();
     migrateEmotionHistory();
+    migrateP2Tables();
   }
   return db;
 }
@@ -725,6 +726,55 @@ export function cleanupOldEmotionHistory(companionId) {
   const cutoff = new Date(Date.now() - 90 * 86400_000).toISOString();
   db.prepare(`DELETE FROM companion_emotion_history WHERE companion_id = ? AND created_at < ?`)
     .run(companionId, cutoff);
+}
+
+// ─── P2 Tables (achievements, event graph) ───────────────────────────────────
+function migrateP2Tables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_achievements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL,
+      achievement_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      unlocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      metadata_json TEXT,
+      UNIQUE(companion_id, achievement_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_achievements_companion
+      ON companion_achievements(companion_id, unlocked_at DESC);
+
+    CREATE TABLE IF NOT EXISTS memory_entities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL,
+      entity_type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      aliases_json TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_entities_companion
+      ON memory_entities(companion_id, updated_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_entities_uniq
+      ON memory_entities(companion_id, entity_type, name);
+
+    CREATE TABLE IF NOT EXISTS memory_relations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL,
+      source_entity_id INTEGER NOT NULL,
+      relation_type TEXT NOT NULL,
+      target_entity_id INTEGER NOT NULL,
+      evidence_memory_id INTEGER,
+      confidence REAL DEFAULT 0.5,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_relations_companion
+      ON memory_relations(companion_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_memory_relations_source
+      ON memory_relations(source_entity_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_relations_target
+      ON memory_relations(target_entity_id);
+  `);
 }
 
 function initAvatarPresets() {

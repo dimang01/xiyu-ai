@@ -77,17 +77,57 @@
 | **TTS** | Voice reply synthesis | Needs TTS provider integration |
 | **Safety Layer** | Content moderation for incoming + outgoing | Requires moderation API or local model |
 | **Production Guide** | Nginx config, SSL, process manager docs | Deployment docs |
-| **Cost Tracking** | `estimated_cost` per provider in usage dashboard | Needs pricing config per provider |
 
 ---
 
-## P2 · Platform — Planned
+## P2A · User Experience Polish — 🚧 Implementation Started (2026-05)
 
-- Plugin hooks (pre/post message)
+**Goal:** Additive UX enhancements and lightweight data capabilities. No core architecture rewrites.
+
+### ✅ Completed in P2A
+
+| Area | Feature | Status |
+|---|---|---|
+| **Persona Export** | `GET /api/companions/:id/export` — portable JSON export | ✅ Done |
+| **Persona Export** | `POST /api/companions/import` — import with ownership assignment | ✅ Done |
+| **Persona Export** | `src/persona_export.mjs` — build/validate/sanitize/import | ✅ Done |
+| **Persona Export** | Sensitive field exclusion (account_id, user_id, bot_token, email…) | ✅ Done |
+| **Persona Export** | Dashboard export/import buttons | ✅ Done |
+| **Achievements** | `companion_achievements` SQLite table | ✅ Done |
+| **Achievements** | `src/achievements.mjs` — 10 built-in milestone definitions | ✅ Done |
+| **Achievements** | `GET /api/companions/:id/achievements` | ✅ Done |
+| **Achievements** | Dashboard milestone card (recent 5) | ✅ Done |
+| **PWA** | `public/manifest.webmanifest` | ✅ Done |
+| **PWA** | `public/sw.js` — cache-first static, network-only API | ✅ Done |
+| **PWA** | SW registration in `index.html` + `dashboard.html` | ✅ Done |
+| **Event Graph** | `memory_entities` + `memory_relations` SQLite tables | ✅ Done |
+| **Event Graph** | `src/event_graph.mjs` — extract/upsert/query | ✅ Done |
+| **Event Graph** | `GET /api/companions/:id/event-graph` | ✅ Done |
+| **Provider Pricing** | `config/provider_pricing.example.json` | ✅ Done |
+| **Provider Pricing** | `src/provider_costs.mjs` — load/estimate | ✅ Done |
+| **Provider Pricing** | `config/provider_pricing.json` added to `.gitignore` | ✅ Done |
+| **Provider Pricing** | `estimated_cost` wired into `GET /api/me/ai-usage` | ✅ Done |
+
+### 🔲 P2A — Not in this iteration
+
+| Area | Feature | Notes |
+|---|---|---|
+| **Achievements** | Auto-trigger on chat/memory save events | Hook points identified, not wired yet |
+| **Event Graph** | Auto-process memories on save | Foundation in place; `processMemoryForGraph` ready to wire |
+| **Event Graph** | Frontend graph visualization | Low priority for MVP |
+| **Provider Pricing** | Admin dashboard cost breakdown | Post-P2A |
+
+---
+
+## Future · P2B and Beyond — Planned
+
+- Multi-language persona support
+- Local Ollama integration
+- TTS voice reply synthesis
+- Plugin hook system (pre/post message)
+- One-click cloud hosting templates
 - Webhook support for external integrations
 - REST API versioning
-- Companion memory import/export (JSON)
-- Multi-companion management UI
 
 ---
 

@@ -62,3 +62,6 @@ public/generated/
 # ─── local WeChat / iLink credentials (kept here for visibility) ───────────
 # (also covered by line 8 above)
 .weixin-credentials.json
+
+# ─── provider pricing config (private) ──────────────────────────────────────
+config/provider_pricing.json

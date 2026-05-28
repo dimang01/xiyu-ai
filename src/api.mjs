@@ -41,7 +41,17 @@
  * 用户画像:
  *   GET    /api/companions/:id/user-profile     获取用户画像
  *   PUT    /api/companions/:id/user-profile     更新用户画像
-  *
+ *
+ * P2A — 导入/导出:
+ *   GET    /api/companions/:id/export           导出角色 JSON (?include_memories=1)
+ *   POST   /api/companions/import               导入角色 JSON
+ *
+ * P2A — 成就/里程碑:
+ *   GET    /api/companions/:id/achievements     查看成就列表
+ *
+ * P2A — 事件图谱:
+ *   GET    /api/companions/:id/event-graph      获取轻量事件图谱
+ *
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
@@ -73,6 +83,13 @@ import { getActiveImageProvider } from './providers/image.mjs';
 import { getActiveVisionProvider } from './providers/vision.mjs';
 import { getActiveAsrProvider } from './providers/asr.mjs';
 import { getActiveEmbeddingProvider } from './providers/embedding.mjs';
+import {
+  buildCompanionExport, validateCompanionImport, importCompanionForUser,
+  MAX_IMPORT_BYTES,
+} from './persona_export.mjs';
+import { checkAndUnlockAchievements, getCompanionAchievements } from './achievements.mjs';
+import { getCompanionEventGraph } from './event_graph.mjs';
+import { loadProviderPricing, estimateProviderCost } from './provider_costs.mjs';
 
 // 异步生成元认知（不阻塞主响应）。所有 category 数组扁平化为 facts 列表存表
 async function asyncGeneratePersonaFacts(companion) {
@@ -2503,6 +2520,15 @@ router.get('/me/ai-usage', requireAuth, (req, res) => {
     return acc;
   }, { prompt_tokens: 0, completion_tokens: 0, message_count: 0 });
 
+  const pricing = loadProviderPricing();
+  const providerName = (process.env.CHAT_PROVIDER || 'unknown').toLowerCase();
+  const { estimated_cost, currency } = estimateProviderCost({
+    provider: providerName,
+    model_type: 'chat',
+    prompt_tokens: totals.prompt_tokens,
+    completion_tokens: totals.completion_tokens,
+  }, pricing);
+
   return ok(res, {
     days,
     totals: {
@@ -2510,10 +2536,98 @@ router.get('/me/ai-usage', requireAuth, (req, res) => {
       completion_tokens: totals.completion_tokens,
       total_tokens:      totals.prompt_tokens + totals.completion_tokens,
       message_count:     totals.message_count,
-      estimated_cost:    null,
+      estimated_cost,
+      currency,
     },
     by_day: history,
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2A: Persona Export / Import
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/export
+router.get('/companions/:id/export', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const includeMemories = req.query.include_memories === '1';
+    const payload = buildCompanionExport(id, { includeMemories });
+    noStore(res);
+    return ok(res, payload);
+  } catch (e) {
+    if (e.status === 404) return err(res, '角色不存在', 404);
+    log('error', `[API] export 失败 companion=${id}: ${e.message}`);
+    return err(res, '导出失败', 500);
+  }
+});
+
+// POST /api/companions/import
+router.post('/companions/import', requireAuth, async (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object') return err(res, '请求体无效');
+
+  // Size guard
+  const rawSize = Buffer.byteLength(JSON.stringify(body));
+  if (rawSize > MAX_IMPORT_BYTES) return err(res, `导入文件过大（最大 ${MAX_IMPORT_BYTES / 1024} KB）`, 413);
+
+  const validation = validateCompanionImport(body);
+  if (!validation.valid) return err(res, `导入格式无效: ${validation.error}`, 400);
+
+  const accountId = req.authUser.id;
+
+  // Resolve userId via wechat binding; fall back to using accountId as userId
+  // (same pattern used by getCompanionByAccountId which joins c.user_id = wa.account_id)
+  const binding = getWechatAccountByAccountId(accountId);
+  const userId = binding
+    ? (getDb().prepare('SELECT id FROM users WHERE wechat_user_id = ? LIMIT 1').get(binding.wechat_user_id)?.id ?? accountId)
+    : accountId;
+
+  const botId = binding?.bot_id || `imported_${accountId}_${Date.now()}`;
+
+  try {
+    const importMemories = req.query.include_memories === '1';
+    const result = await importCompanionForUser(userId, accountId, botId, body, { importMemories });
+    log('info', `[API] 导入角色 account=${accountId} new_companion=${result.companionId}`);
+    return ok(res, { companion_id: result.companionId });
+  } catch (e) {
+    log('error', `[API] import 失败 account=${accountId}: ${e.message}`);
+    return err(res, '导入失败', 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2A: Achievements / Milestones
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/achievements
+router.get('/companions/:id/achievements', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const achievements = getCompanionAchievements(id);
+  return ok(res, { achievements });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2A: Event Graph
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/event-graph
+router.get('/companions/:id/event-graph', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const options = {
+    limit: parseInt(req.query.limit, 10) || 100,
+    entityType: req.query.entity_type,
+  };
+  try {
+    const graph = getCompanionEventGraph(id, options);
+    return ok(res, graph);
+  } catch (e) {
+    log('error', `[API] event-graph 失败 companion=${id}: ${e.message}`);
+    return err(res, '获取事件图谱失败', 500);
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
