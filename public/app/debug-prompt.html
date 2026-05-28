@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <title>Prompt 调试 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+          ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA' },
+        fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'],
+                      mono: ['"SF Mono"','"JetBrains Mono"','"Fira Code"','"Consolas"','monospace'] },
+      }},
+    };
+  </script>
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    body { background: #FAFAFA; }
+    .card { background:#fff; border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,0.06); }
+    pre { white-space: pre-wrap; word-break: break-all; font-size: 13px; line-height: 1.6; }
+    .section-tab { cursor:pointer; padding:6px 14px; border-radius:999px; font-size:13px; transition: background .15s, color .15s; }
+    .section-tab.active { background:#FFB6D9; color:#fff; }
+    .section-tab:not(.active) { background:#F0F0F2; color:#555; }
+    .section-tab:hover:not(.active) { background:#FFE8F2; }
+  </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+
+<div class="max-w-4xl mx-auto px-4 py-8">
+
+  <!-- 头部 -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <a href="/app/dashboard.html" class="text-sm text-mute hover:text-sakura-deep mr-3">← 控制台</a>
+      <span class="text-xl font-semibold">Prompt 调试面板</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="companionLabel" class="text-sm text-mute"></span>
+      <button id="btnRefresh" onclick="loadPrompt()"
+        class="px-4 py-2 rounded-full bg-sakura text-white text-sm hover:bg-sakura-deep transition-colors">
+        刷新
+      </button>
+    </div>
+  </div>
+
+  <!-- 警告横幅 -->
+  <div class="mb-4 rounded-xl bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800">
+    ⚠️ 调试用途 — 包含角色设定和记忆摘要。不要截图分享，不要在公开频道发布。
+  </div>
+
+  <!-- 错误 / 加载状态 -->
+  <div id="msgArea" class="hidden mb-4 rounded-xl px-4 py-3 text-sm"></div>
+
+  <!-- 主内容 -->
+  <div id="mainContent" class="hidden">
+
+    <!-- 分区 Tab -->
+    <div class="card p-4 mb-4">
+      <div class="text-xs text-mute mb-2">分区查看</div>
+      <div id="tabBar" class="flex flex-wrap gap-2 mb-3"></div>
+      <div id="sectionContent">
+        <pre id="sectionPre" class="text-sm font-mono bg-gray-50 rounded-lg p-4 min-h-[80px]">选择分区查看内容</pre>
+      </div>
+    </div>
+
+    <!-- 完整 Prompt -->
+    <div class="card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs text-mute">完整 Prompt</div>
+        <button onclick="copyFull()" class="text-xs text-sakura-deep hover:underline">复制</button>
+      </div>
+      <pre id="fullPre" class="text-sm font-mono bg-gray-50 rounded-lg p-4 max-h-[500px] overflow-y-auto"></pre>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+const SECTION_LABELS = {
+  core_persona:       '核心身份',
+  relationship_stage: '关系阶段',
+  emotion_hint:       '情绪状态',
+  memory_recall:      '记忆召回',
+  daily_schedule:     '今日日程',
+  safety_rules:       '安全规则',
+  recent_context:     '最近对话',
+};
+
+let _sections = {};
+let _full = '';
+let _activeSectionKey = null;
+
+function getToken() { return localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || ''; }
+
+function getCompanionId() {
+  const p = new URLSearchParams(location.search);
+  return p.get('id') || localStorage.getItem('companion_id') || '';
+}
+
+function showMsg(msg, type = 'error') {
+  const el = document.getElementById('msgArea');
+  el.className = `mb-4 rounded-xl px-4 py-3 text-sm ${type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-200 text-blue-700'}`;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function hideMsg() { document.getElementById('msgArea').classList.add('hidden'); }
+
+async function loadPrompt() {
+  const cid = getCompanionId();
+  if (!cid) { showMsg('未找到 companion id，请先从控制台进入此页面。'); return; }
+
+  const token = getToken();
+  if (!token) { showMsg('未登录，请先登录后再访问。'); return; }
+
+  document.getElementById('btnRefresh').textContent = '加载中…';
+  document.getElementById('mainContent').classList.add('hidden');
+  hideMsg();
+
+  try {
+    const resp = await fetch(`/api/companions/${cid}/prompt-debug`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const json = await resp.json();
+    if (!resp.ok || !json.ok) {
+      showMsg(json.error || `请求失败 (${resp.status})`);
+      return;
+    }
+    _sections = json.data.sections || {};
+    _full     = json.data.full_prompt || '';
+
+    renderTabs();
+    document.getElementById('fullPre').textContent = _full;
+    document.getElementById('mainContent').classList.remove('hidden');
+    document.getElementById('companionLabel').textContent = `Companion #${cid}`;
+
+    if (!_activeSectionKey) selectTab(Object.keys(SECTION_LABELS)[0]);
+  } catch (e) {
+    showMsg('网络错误：' + e.message);
+  } finally {
+    document.getElementById('btnRefresh').textContent = '刷新';
+  }
+}
+
+function renderTabs() {
+  const bar = document.getElementById('tabBar');
+  bar.innerHTML = '';
+  for (const [key, label] of Object.entries(SECTION_LABELS)) {
+    const btn = document.createElement('button');
+    btn.className = `section-tab${_activeSectionKey === key ? ' active' : ''}`;
+    btn.textContent = label;
+    btn.onclick = () => selectTab(key);
+    btn.dataset.key = key;
+    bar.appendChild(btn);
+  }
+}
+
+function selectTab(key) {
+  _activeSectionKey = key;
+  document.querySelectorAll('.section-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.key === key);
+  });
+  const content = _sections[key] || '（此分区为空）';
+  document.getElementById('sectionPre').textContent = content;
+}
+
+async function copyFull() {
+  try {
+    await navigator.clipboard.writeText(_full);
+    const btn = event.target;
+    btn.textContent = '已复制 ✓';
+    setTimeout(() => btn.textContent = '复制', 2000);
+  } catch { alert('复制失败，请手动选择文本复制。'); }
+}
+
+// Auto-load on page ready
+loadPrompt();
+</script>
+</body>
+</html>

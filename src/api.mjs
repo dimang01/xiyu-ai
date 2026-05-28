@@ -132,7 +132,13 @@ import {
   bindWechatAccount, rebindWechatAccount, getWechatAccountByAccountId, getCompanionByAccountId,
   createPendingBindSession, getPendingBindSession,
   deleteCompanionForAccount,
+  getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, touchMemory,
+  isCompanionOwnedByAccount,
+  getEmotionState, upsertEmotionState,
+  getEmotionHistoryTrend,
 } from './db.mjs';
+import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, normalizeMemoryWeight } from './memory_v2.mjs';
+import { getEmotionTrend } from './emotion_state.mjs';
 
 // 由 index.mjs 注入：{ registerBotAccount, unregisterBotAccount, listBotPool }
 let botPoolHandle = null;
@@ -403,8 +409,38 @@ function requireCompanion(res, id) {
   return c;
 }
 
+function requireOwnedCompanion(req, res, id) {
+  const c = getCompanionById(id);
+  if (!c) { err(res, 'companion 不存在', 404); return null; }
+  if (!isCompanionOwnedByAccount(id, req.authUser.id)) {
+    err(res, '无权访问此 companion', 403);
+    return null;
+  }
+  return c;
+}
+
 function fallbackText(value, fallback = '') {
   return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+// Parse a system prompt string into named sections for the debug panel
+function parsePromptSections(prompt) {
+  const SECTION_PATTERNS = [
+    { key: 'core_persona',       re: /【你叫[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'relationship_stage', re: /【当前关系】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'emotion_hint',       re: /【当前情绪状态】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'memory_recall',      re: /【你记得的关于他的片段】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'daily_schedule',     re: /【你今天的安排】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'safety_rules',       re: /【重要规则】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'recent_context',     re: /【最近对话上下文】[\s\S]*?(?=\n【|\n★|\z)/m },
+  ];
+
+  const sections = {};
+  for (const { key, re } of SECTION_PATTERNS) {
+    const m = prompt.match(re);
+    sections[key] = m ? m[0].trim().slice(0, 1200) : '';
+  }
+  return sections;
 }
 
 function companionSummary(companion) {
@@ -2229,47 +2265,142 @@ router.delete('/companions/:id/reminders/:rid', requireAuth, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 长期记忆
+// 长期记忆 v2（Memory Control Panel）
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /api/companions/:id/memories
+// query: layer, status (default 'active'), q, limit, offset
 router.get('/companions/:id/memories', requireAuth, (req, res) => {
-  const id  = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c   = requireCompanion(res, id); if (!c) return;
-  const lim = Math.min(Number(req.query.limit) || 50, 200);
-  const list = getMemories(id, c.user_id, lim);
-  return ok(res, { total: list.length, memories: list });
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const layer  = req.query.layer  || null;
+  const status = req.query.status || 'active';
+  const q      = req.query.q     || null;
+  const limit  = Math.min(Number(req.query.limit)  || 50, 200);
+  const offset = Math.max(Number(req.query.offset) || 0,  0);
+  if (layer  && !MEMORY_LAYERS.includes(layer))   return err(res, `layer 必须是：${MEMORY_LAYERS.join('/')}`);
+  if (status && !['all', ...MEMORY_STATUSES].includes(status)) return err(res, `status 必须是：all/${MEMORY_STATUSES.join('/')}`);
+  const effectiveStatus = status === 'all' ? null : status;
+  const result = getMemoriesV2(id, { layer, status: effectiveStatus, q, limit, offset });
+  return ok(res, result);
 });
 
-// POST /api/companions/:id/memories
+// POST /api/companions/:id/memories — 手动添加
 router.post('/companions/:id/memories', requireAuth, (req, res) => {
-  const id   = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c    = requireCompanion(res, id); if (!c) return;
-  const { memory_type, content, importance = 5 } = req.body || {};
-  const types = ['fact','preference','event','emotion','image','daily_summary','weekly_summary','monthly_summary'];
-  if (!content)                   return err(res, '缺少 content');
-  if (!types.includes(memory_type)) return err(res, `memory_type 必须是：${types.join('/')}`);
-  saveMemory({ companionId: id, userId: c.user_id, memoryType: memory_type, content, importance });
-  log('info', `[API] 手动添加记忆 companion=${id} type=${memory_type}`);
-  return ok(res, { companion_id: id, memory_type, content, importance }, 201);
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const { content, memory_layer, memory_type, memory_weight, memory_source = 'user', importance = 5 } = req.body || {};
+  if (!content) return err(res, '缺少 content');
+  const layer  = normalizeMemoryLayer(memory_layer || memory_type || 'event');
+  const weight = normalizeMemoryWeight(memory_weight ?? 3);
+  const types  = ['fact','preference','event','emotion','image','daily_summary','weekly_summary','monthly_summary'];
+  const legacyType = types.includes(memory_type) ? memory_type : 'fact';
+  const source = MEMORY_SOURCES.includes(memory_source) ? memory_source : 'user';
+  saveMemory({ companionId: id, userId: c.user_id, memoryType: legacyType, content, importance });
+  // Apply v3 fields via patch on the last inserted row
+  const db = getDb();
+  const row = db.prepare('SELECT id FROM companion_memories WHERE companion_id = ? ORDER BY id DESC LIMIT 1').get(id);
+  if (row) patchMemory(row.id, id, { memory_layer: layer, memory_weight: weight, memory_source: source, memory_status: 'active' });
+  log('info', `[API] 手动添加记忆 companion=${id} layer=${layer}`);
+  return ok(res, { companion_id: id, memory_layer: layer, content, memory_weight: weight }, 201);
 });
 
-// DELETE /api/companions/:id/memories/:mid
-router.delete('/companions/:id/memories/:mid', requireAuth, (req, res) => {
-  const id  = intId(req.params.id);  if (!id)  return err(res, 'id 无效');
-  const mid = intId(req.params.mid); if (!mid) return err(res, 'memory id 无效');
-  requireCompanion(res, id); // validate exists
-  deleteMemory(mid, id);
+// PUT /api/companions/:id/memories/:memoryId — 编辑内容 / 属性
+router.put('/companions/:id/memories/:memoryId', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  const c   = requireOwnedCompanion(req, res, id); if (!c) return;
+  const allowed = ['content', 'memory_layer', 'memory_weight', 'importance', 'memory_source'];
+  const body = req.body || {};
+  const fields = {};
+  for (const key of allowed) {
+    if (body[key] !== undefined) {
+      if (key === 'memory_layer')  fields[key] = normalizeMemoryLayer(body[key]);
+      else if (key === 'memory_weight') fields[key] = normalizeMemoryWeight(body[key]);
+      else fields[key] = body[key];
+    }
+  }
+  if (Object.keys(fields).length === 0) return err(res, '无可更新字段');
+  patchMemory(mid, id, fields);
+  log('info', `[API] 更新记忆 companion=${id} mid=${mid}`);
+  return ok(res, { updated: true, memory_id: mid, fields });
+});
+
+// DELETE /api/companions/:id/memories/:memoryId — 软删除
+router.delete('/companions/:id/memories/:memoryId', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  softDeleteMemory(mid, id);
+  log('info', `[API] 软删除记忆 companion=${id} mid=${mid}`);
   return ok(res, { deleted: true, memory_id: mid });
 });
 
-// DELETE /api/companions/:id/memories
+// DELETE /api/companions/:id/memories — 清空（软删除 active 状态）
 router.delete('/companions/:id/memories', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
-  clearMemories(id, c.user_id);
-  log('info', `[API] 清空记忆 companion=${id}`);
-  return ok(res, { companion_id: id, cleared: true });
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const db = getDb();
+  const changes = db.prepare(
+    "UPDATE companion_memories SET memory_status='deleted', updated_at=datetime('now') WHERE companion_id = ? AND COALESCE(memory_status,'active') != 'deleted'"
+  ).run(id).changes;
+  log('info', `[API] 软清空记忆 companion=${id} changes=${changes}`);
+  return ok(res, { companion_id: id, cleared: true, changes });
+});
+
+// POST /api/companions/:id/memories/:memoryId/archive
+router.post('/companions/:id/memories/:memoryId/archive', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  archiveMemory(mid, id);
+  return ok(res, { archived: true, memory_id: mid });
+});
+
+// POST /api/companions/:id/memories/:memoryId/pin
+router.post('/companions/:id/memories/:memoryId/pin', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  patchMemory(mid, id, { pinned: 1 });
+  return ok(res, { pinned: true, memory_id: mid });
+});
+
+// POST /api/companions/:id/memories/:memoryId/unpin
+router.post('/companions/:id/memories/:memoryId/unpin', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  patchMemory(mid, id, { pinned: 0 });
+  return ok(res, { pinned: false, memory_id: mid });
+});
+
+// POST /api/companions/:id/memories/:memoryId/lock
+router.post('/companions/:id/memories/:memoryId/lock', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  patchMemory(mid, id, { locked: 1 });
+  return ok(res, { locked: true, memory_id: mid });
+});
+
+// POST /api/companions/:id/memories/:memoryId/unlock
+router.post('/companions/:id/memories/:memoryId/unlock', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  patchMemory(mid, id, { locked: 0 });
+  return ok(res, { locked: false, memory_id: mid });
+});
+
+// POST /api/companions/:id/memories/:memoryId/do-not-mention
+router.post('/companions/:id/memories/:memoryId/do-not-mention', requireAuth, (req, res) => {
+  const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
+  const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
+  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const flag = req.body?.flag !== false ? 1 : 0;
+  patchMemory(mid, id, { do_not_mention: flag });
+  return ok(res, { do_not_mention: !!flag, memory_id: mid });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2293,6 +2424,87 @@ router.put('/companions/:id/user-profile', requireAuth, (req, res) => {
   const profile = upsertUserProfile(c.user_id, id, data);
   log('info', `[API] 更新用户画像 companion=${id}`);
   return ok(res, profile);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 情绪趋势
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/emotion-trend?days=7
+router.get('/companions/:id/emotion-trend', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+  const points = getEmotionTrend(id, { days });
+  return ok(res, { days, points });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prompt Debug Panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/prompt-debug
+router.get('/companions/:id/prompt-debug', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+
+  // 普通用户只能查看自己的 companion prompt（已由 requireOwnedCompanion 保证）
+  try {
+    const memories      = recallMemories(id, c.user_id, '', 10);
+    const userProfile   = getUserProfile(c.user_id, id);
+    const recentTurns   = getConversationContext(id, 6);
+    const personaFacts  = getPersonaFacts(id);
+    const dateKey       = shanghaiDateKey();
+    const dailySchedule = getDailySchedule(id, dateKey);
+
+    const fullPrompt = buildSystemPrompt(c, {
+      memories, userProfile, recentTurns, personaFacts, dailySchedule,
+    });
+
+    // Parse the full prompt into labeled sections for the debug UI
+    const sections = parsePromptSections(fullPrompt);
+
+    return ok(res, {
+      sections,
+      full_prompt: fullPrompt,
+      redacted: true,
+      warning: '调试用途 — 包含角色设定和记忆摘要，请勿分享。',
+    });
+  } catch (e) {
+    log('error', `[API] prompt-debug 失败 companion=${id}: ${e.message}`);
+    return err(res, 'prompt-debug 生成失败', 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 用户 AI 用量（自查）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/me/ai-usage?days=7
+router.get('/me/ai-usage', requireAuth, (req, res) => {
+  noStore(res);
+  const accountId = req.authUser.id;
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+
+  const history = getAccountUsageHistory(accountId, days);
+  const totals = history.reduce((acc, row) => {
+    acc.prompt_tokens     += row.prompt_tokens     || 0;
+    acc.completion_tokens += row.completion_tokens || 0;
+    acc.message_count     += row.message_count     || 0;
+    return acc;
+  }, { prompt_tokens: 0, completion_tokens: 0, message_count: 0 });
+
+  return ok(res, {
+    days,
+    totals: {
+      prompt_tokens:     totals.prompt_tokens,
+      completion_tokens: totals.completion_tokens,
+      total_tokens:      totals.prompt_tokens + totals.completion_tokens,
+      message_count:     totals.message_count,
+      estimated_cost:    null,
+    },
+    by_day: history,
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2454,6 +2666,45 @@ router.get('/admin/stats/today', requireAdmin, (req, res) => {
     total_accounts: totalAccounts,
     banned_accounts: bannedAccounts,
     total_companions: totalCompanions,
+  });
+});
+
+// GET /api/admin/stats/ai-usage?days=7
+router.get('/admin/stats/ai-usage', requireAdmin, (req, res) => {
+  noStore(res);
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+  const db = getDb();
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+
+  const rows = db.prepare(`
+    SELECT account_id, day,
+           SUM(prompt_tokens) AS prompt_tokens,
+           SUM(completion_tokens) AS completion_tokens,
+           SUM(message_count) AS message_count
+    FROM ai_usage_daily
+    WHERE day >= ?
+    GROUP BY account_id, day
+    ORDER BY day DESC
+    LIMIT 500
+  `).all(since);
+
+  const totals = rows.reduce((acc, r) => {
+    acc.prompt_tokens     += r.prompt_tokens     || 0;
+    acc.completion_tokens += r.completion_tokens || 0;
+    acc.message_count     += r.message_count     || 0;
+    return acc;
+  }, { prompt_tokens: 0, completion_tokens: 0, message_count: 0 });
+
+  return ok(res, {
+    days,
+    totals: {
+      prompt_tokens:     totals.prompt_tokens,
+      completion_tokens: totals.completion_tokens,
+      total_tokens:      totals.prompt_tokens + totals.completion_tokens,
+      message_count:     totals.message_count,
+      estimated_cost:    null,
+    },
+    by_day: rows,
   });
 });
 

@@ -39,6 +39,10 @@ export function getDb() {
     migrateDailyScheduleV2();
     migrateConfessionFields();
     initAvatarPresets();
+    migrateMemoryV3();
+    migrateEmotionState();
+    migrateProactiveEngineV2();
+    migrateEmotionHistory();
   }
   return db;
 }
@@ -598,10 +602,129 @@ function migrateDailyScheduleV2() {
 }
 
 function migrateConfessionFields() {
-  addColIfMissing('companions', 'confessed_at', 'DATETIME');           // AI 主动表白时间
-  addColIfMissing('companions', 'user_confessed_at', 'DATETIME');      // 用户表白被接住时间
-  addColIfMissing('companions', 'last_photo_at', 'DATETIME');          // 上次主动发场景照片时间
-  addColIfMissing('companions', 'last_photo_caption', 'TEXT');         // 最近一张照片的描述
+  addColIfMissing('companions', 'confessed_at', 'DATETIME');
+  addColIfMissing('companions', 'user_confessed_at', 'DATETIME');
+  addColIfMissing('companions', 'last_photo_at', 'DATETIME');
+  addColIfMissing('companions', 'last_photo_caption', 'TEXT');
+}
+
+// ─── Memory v3：分层 / 权重 / 状态 / 遗忘曲线 ─────────────────────────────────
+function migrateMemoryV3() {
+  addColIfMissing('companion_memories', 'memory_layer',  "TEXT DEFAULT 'event'");
+  addColIfMissing('companion_memories', 'memory_weight', 'INTEGER DEFAULT 3');
+  addColIfMissing('companion_memories', 'memory_status', "TEXT DEFAULT 'active'");
+  addColIfMissing('companion_memories', 'memory_source', "TEXT DEFAULT 'auto'");
+  addColIfMissing('companion_memories', 'locked',        'INTEGER DEFAULT 0');
+  addColIfMissing('companion_memories', 'do_not_mention','INTEGER DEFAULT 0');
+  addColIfMissing('companion_memories', 'conflict_of',   'INTEGER');
+  addColIfMissing('companion_memories', 'last_used_at',  'TEXT');
+  addColIfMissing('companion_memories', 'use_count',     'INTEGER DEFAULT 0');
+  addColIfMissing('companion_memories', 'decay_score',   'REAL DEFAULT 1.0');
+  addColIfMissing('companion_memories', 'sensitive_flag','INTEGER DEFAULT 0');
+  addColIfMissing('companion_memories', 'updated_at',    'TEXT');
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_memories_companion_layer_status
+      ON companion_memories(companion_id, memory_layer, memory_status);
+    CREATE INDEX IF NOT EXISTS idx_memories_companion_weight
+      ON companion_memories(companion_id, memory_weight DESC);
+    CREATE INDEX IF NOT EXISTS idx_memories_companion_locked
+      ON companion_memories(companion_id, locked, pinned);
+    CREATE INDEX IF NOT EXISTS idx_memories_companion_last_used
+      ON companion_memories(companion_id, last_used_at DESC);
+  `);
+}
+
+// ─── Emotion State Machine ─────────────────────────────────────────────────────
+function migrateEmotionState() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_emotion_state (
+      companion_id INTEGER PRIMARY KEY REFERENCES companions(id) ON DELETE CASCADE,
+      affection    INTEGER DEFAULT 0,
+      trust        INTEGER DEFAULT 50,
+      dependency   INTEGER DEFAULT 30,
+      possessiveness INTEGER DEFAULT 20,
+      security     INTEGER DEFAULT 50,
+      energy       INTEGER DEFAULT 60,
+      mood         TEXT    DEFAULT 'neutral',
+      updated_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
+// ─── Proactive Engine v2 ───────────────────────────────────────────────────────
+function migrateProactiveEngineV2() {
+  addColIfMissing('companions', 'proactive_intensity',    "TEXT DEFAULT 'normal'");
+  addColIfMissing('companions', 'last_user_reply_at',     'TEXT');
+  addColIfMissing('companions', 'last_proactive_reply_at','TEXT');
+  addColIfMissing('companions', 'missing_score',          'REAL DEFAULT 0');
+}
+
+// ─── Emotion History ──────────────────────────────────────────────────────────
+function migrateEmotionHistory() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_emotion_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      affection    INTEGER,
+      trust        INTEGER,
+      dependency   INTEGER,
+      possessiveness INTEGER,
+      security     INTEGER,
+      energy       INTEGER,
+      mood         TEXT,
+      source       TEXT DEFAULT 'auto',
+      created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_emotion_history_companion_created
+      ON companion_emotion_history(companion_id, created_at DESC);
+  `);
+}
+
+export function insertEmotionHistory(companionId, state, source = 'auto') {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO companion_emotion_history
+      (companion_id, affection, trust, dependency, possessiveness, security, energy, mood, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    companionId,
+    state.affection   ?? null,
+    state.trust       ?? null,
+    state.dependency  ?? null,
+    state.possessiveness ?? null,
+    state.security    ?? null,
+    state.energy      ?? null,
+    state.mood        ?? null,
+    source,
+    new Date().toISOString(),
+  );
+}
+
+export function getEmotionHistoryTrend(companionId, days = 7) {
+  const db = getDb();
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  return db.prepare(`
+    SELECT id, companion_id, affection, trust, dependency, possessiveness, security, energy, mood, source, created_at
+    FROM companion_emotion_history
+    WHERE companion_id = ? AND created_at >= ?
+    ORDER BY created_at ASC
+  `).all(companionId, since);
+}
+
+export function getLastEmotionHistoryAt(companionId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT created_at FROM companion_emotion_history
+    WHERE companion_id = ? ORDER BY created_at DESC LIMIT 1
+  `).get(companionId);
+  return row?.created_at ?? null;
+}
+
+export function cleanupOldEmotionHistory(companionId) {
+  const db = getDb();
+  const cutoff = new Date(Date.now() - 90 * 86400_000).toISOString();
+  db.prepare(`DELETE FROM companion_emotion_history WHERE companion_id = ? AND created_at < ?`)
+    .run(companionId, cutoff);
 }
 
 function initAvatarPresets() {
@@ -2715,4 +2838,89 @@ export function grantProToAccount(accountId, days) {
 
 function toSqlTimestamp(date) {
   return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+// ─── Memory v3 accessors ──────────────────────────────────────────────────────
+
+export function getMemoriesV2(companionId, { layer, status = 'active', q, limit = 50, offset = 0 } = {}) {
+  const db = getDb();
+  const parts = ['companion_id = ?'];
+  const vals  = [companionId];
+  if (layer)  { parts.push('memory_layer = ?');  vals.push(layer); }
+  if (status) { parts.push('memory_status = ?'); vals.push(status); }
+  if (q)      { parts.push('content LIKE ?');    vals.push(`%${q}%`); }
+  const where = parts.join(' AND ');
+  const rows = db.prepare(`
+    SELECT id, memory_layer, memory_weight, memory_status, memory_source,
+           content, pinned, locked, do_not_mention, importance,
+           use_count, last_used_at, created_at, updated_at
+    FROM companion_memories
+    WHERE ${where}
+    ORDER BY COALESCE(memory_weight, 3) DESC, importance DESC, created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...vals, limit, offset);
+  const total = db.prepare(`SELECT COUNT(*) as n FROM companion_memories WHERE ${where}`).get(...vals).n;
+  return { memories: rows, total };
+}
+
+export function patchMemory(memoryId, companionId, fields) {
+  const db  = getDb();
+  const now = new Date().toISOString();
+  const sets = Object.keys(fields).map(k => `${k} = ?`).join(', ');
+  db.prepare(`UPDATE companion_memories SET ${sets}, updated_at = ? WHERE id = ? AND companion_id = ?`)
+    .run(...Object.values(fields), now, memoryId, companionId);
+}
+
+export function softDeleteMemory(memoryId, companionId) {
+  patchMemory(memoryId, companionId, { memory_status: 'deleted' });
+}
+
+export function archiveMemory(memoryId, companionId) {
+  patchMemory(memoryId, companionId, { memory_status: 'archived' });
+}
+
+export function touchMemory(memoryId, companionId) {
+  const db  = getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE companion_memories
+    SET last_used_at = ?, use_count = COALESCE(use_count, 0) + 1, updated_at = ?
+    WHERE id = ? AND companion_id = ?
+  `).run(now, now, memoryId, companionId);
+}
+
+export function isCompanionOwnedByAccount(companionId, accountId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT 1 FROM companions c
+    JOIN wechat_accounts wa ON
+      wa.companion_id = c.id OR
+      wa.wechat_user_id IN (SELECT wechat_user_id FROM users WHERE id = c.user_id)
+    WHERE c.id = ? AND wa.account_id = ? AND wa.is_active = 1
+    LIMIT 1
+  `).get(companionId, accountId);
+  return !!row;
+}
+
+// ─── Emotion State accessors ──────────────────────────────────────────────────
+
+export function getEmotionState(companionId) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM companion_emotion_state WHERE companion_id = ?').get(companionId) || null;
+}
+
+export function upsertEmotionState(companionId, fields) {
+  const db  = getDb();
+  const now = new Date().toISOString();
+  const existing = db.prepare('SELECT companion_id FROM companion_emotion_state WHERE companion_id = ?').get(companionId);
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO companion_emotion_state (companion_id, updated_at)
+      VALUES (?, ?)
+    `).run(companionId, now);
+  }
+  const sets = Object.keys(fields).map(k => `${k} = ?`).join(', ');
+  db.prepare(`UPDATE companion_emotion_state SET ${sets}, updated_at = ? WHERE companion_id = ?`)
+    .run(...Object.values(fields), now, companionId);
+  return db.prepare('SELECT * FROM companion_emotion_state WHERE companion_id = ?').get(companionId);
 }

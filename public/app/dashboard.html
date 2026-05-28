@@ -237,6 +237,14 @@
           </a>
         </div>
         <p id="wechat-fallback" class="hidden mt-3 text-center text-[13px] font-medium text-mute">请打开微信，找到溪语与她聊天；或用上面「网页聊天」</p>
+        <div class="mt-5">
+          <a href="/app/memories.html" class="flex items-center justify-between w-full px-4 py-2.5 border border-line rounded-xl hover:border-sakura hover:bg-sakura-soft/30 transition-all group">
+            <span class="flex items-center gap-2 text-[13px] font-medium text-ink group-hover:text-sakura-deep">
+              <i data-lucide="brain" class="inline w-4 h-4"></i> 记忆管理
+            </span>
+            <span class="text-[11px] text-mute">查看 / 编辑 / 归档</span>
+          </a>
+        </div>
         <div class="mt-7 pt-5 border-t border-line flex items-center justify-between gap-3">
           <a href="/app/bind.html?rebind=true" class="text-[12px] font-medium text-mute hover:text-ink transition-colors">
             重新绑定微信
@@ -373,6 +381,60 @@
         <div class="text-center text-mute text-[13px] py-8">加载中...</div>
       </div>
       </div><!-- /.relative wrapper -->
+    </section>
+
+    <!-- ─── 情绪趋势 & AI 用量 ───────────────────────────────────────────── -->
+    <section id="trend-section" class="hidden mt-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+      <!-- 情绪曲线 -->
+      <div class="card p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-[15px] font-bold">近 7 天情绪趋势</h3>
+          <span id="current-mood-pill" class="px-3 py-1 rounded-full text-[11px] font-semibold bg-sakura-soft text-sakura-deep">—</span>
+        </div>
+        <div id="emotion-chart" class="w-full overflow-x-auto">
+          <canvas id="emotion-canvas" height="140" class="w-full"></canvas>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2" id="emotion-legend"></div>
+        <p id="emotion-empty" class="hidden text-[12px] text-mute text-center py-6">暂无情绪历史数据，聊几天后再来看看</p>
+      </div>
+
+      <!-- AI 今日用量 -->
+      <div class="card p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-[15px] font-bold">AI 用量（近 7 天）</h3>
+          <span class="text-[11px] text-mute">tokens</span>
+        </div>
+        <div id="usage-body">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between text-[13px]">
+              <span class="text-mute">提示 tokens</span>
+              <span id="usage-prompt" class="font-semibold">—</span>
+            </div>
+            <div class="flex items-center justify-between text-[13px]">
+              <span class="text-mute">回复 tokens</span>
+              <span id="usage-completion" class="font-semibold">—</span>
+            </div>
+            <div class="flex items-center justify-between text-[13px]">
+              <span class="text-mute">消息条数</span>
+              <span id="usage-messages" class="font-semibold">—</span>
+            </div>
+            <div class="flex items-center justify-between text-[13px] pt-3 border-t border-line">
+              <span class="font-bold">合计 tokens</span>
+              <span id="usage-total" class="font-bold text-sakura-deep">—</span>
+            </div>
+          </div>
+          <div id="usage-bar-area" class="mt-4 space-y-1.5"></div>
+        </div>
+        <p id="usage-empty" class="hidden text-[12px] text-mute text-center py-6">暂无用量数据</p>
+        <!-- 开发者工具入口 -->
+        <div class="mt-4 pt-4 border-t border-line">
+          <a id="link-debug-prompt" href="#" class="text-[12px] text-mute hover:text-sakura-deep transition-colors flex items-center gap-1">
+            <i data-lucide="terminal" class="w-3.5 h-3.5"></i> Prompt 调试面板
+          </a>
+        </div>
+      </div>
+
     </section>
   </main>
 
@@ -743,6 +805,9 @@
       // 加载"她现在"实时状态
       loadNowCard(companionId);
 
+      // 加载情绪趋势 + AI 用量
+      loadTrendSection(companionId);
+
       // reveal in
       document.querySelectorAll('.reveal').forEach((el, i) => {
         setTimeout(() => el.classList.add('in'), 80 * i);
@@ -970,6 +1035,113 @@
         `;
       }).join('');
       container.innerHTML = rows;
+    }
+
+    // ─── 情绪趋势 ─────────────────────────────────────────────────────────────
+    async function loadTrendSection(companionId) {
+      try {
+        const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '';
+        const [emotionResp, usageResp] = await Promise.all([
+          fetch(`/api/companions/${companionId}/emotion-trend?days=7`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`/api/me/ai-usage?days=7`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+
+        const emotionData = emotionResp.ok ? (await emotionResp.json()).data : null;
+        const usageData   = usageResp.ok  ? (await usageResp.json()).data  : null;
+
+        document.getElementById('trend-section').classList.remove('hidden');
+        document.getElementById('link-debug-prompt').href = `/app/debug-prompt.html?id=${companionId}`;
+
+        // Emotion chart
+        if (emotionData && emotionData.points && emotionData.points.length > 0) {
+          document.getElementById('emotion-empty').classList.add('hidden');
+          renderEmotionChart(emotionData.points);
+          const lastPoint = emotionData.points[emotionData.points.length - 1];
+          document.getElementById('current-mood-pill').textContent = lastPoint.mood || '平静';
+        } else {
+          document.getElementById('emotion-canvas').style.display = 'none';
+          document.getElementById('emotion-empty').classList.remove('hidden');
+        }
+
+        // AI Usage
+        if (usageData && (usageData.totals.total_tokens > 0 || usageData.totals.message_count > 0)) {
+          document.getElementById('usage-empty').classList.add('hidden');
+          const t = usageData.totals;
+          document.getElementById('usage-prompt').textContent     = t.prompt_tokens.toLocaleString();
+          document.getElementById('usage-completion').textContent = t.completion_tokens.toLocaleString();
+          document.getElementById('usage-messages').textContent   = t.message_count.toLocaleString() + ' 条';
+          document.getElementById('usage-total').textContent      = t.total_tokens.toLocaleString();
+          renderUsageBars(usageData.by_day || []);
+        } else {
+          document.getElementById('usage-empty').classList.remove('hidden');
+          document.getElementById('usage-body').classList.add('hidden');
+        }
+      } catch (e) {
+        console.warn('[TrendSection]', e.message);
+      }
+    }
+
+    function renderEmotionChart(points) {
+      const canvas = document.getElementById('emotion-canvas');
+      if (!canvas) return;
+      const W = canvas.offsetWidth || 400;
+      canvas.width = W;
+      const H = 140;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, W, H);
+
+      const DIMS = [
+        { key: 'affection',  label: '好感',  color: '#FFB6D9' },
+        { key: 'trust',      label: '信任',  color: '#74B9FF' },
+        { key: 'security',   label: '安全感', color: '#55EFC4' },
+        { key: 'energy',     label: '精力',  color: '#FDCB6E' },
+      ];
+
+      const pad = { l: 8, r: 8, t: 12, b: 8 };
+      const chartW = W - pad.l - pad.r;
+      const chartH = H - pad.t - pad.b;
+      const n = points.length;
+      if (n < 2) return;
+
+      DIMS.forEach(({ key, color }) => {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        points.forEach((p, i) => {
+          const x = pad.l + (i / (n - 1)) * chartW;
+          const val = Math.min(100, Math.max(0, p[key] ?? 50));
+          const y = pad.t + chartH - (val / 100) * chartH;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      });
+
+      // Render legend
+      const legend = document.getElementById('emotion-legend');
+      legend.innerHTML = DIMS.map(d =>
+        `<span class="flex items-center gap-1 text-[11px] text-mute">
+           <span style="width:12px;height:3px;background:${d.color};display:inline-block;border-radius:99px"></span>
+           ${d.label}
+         </span>`
+      ).join('');
+    }
+
+    function renderUsageBars(byDay) {
+      const area = document.getElementById('usage-bar-area');
+      if (!area || !byDay.length) return;
+      const maxTokens = Math.max(...byDay.map(r => (r.total_tokens || 0)), 1);
+      const recent = byDay.slice(0, 7).reverse();
+      area.innerHTML = recent.map(r => {
+        const pct = Math.round(((r.total_tokens || 0) / maxTokens) * 100);
+        return `<div class="flex items-center gap-2 text-[11px]">
+          <span class="text-mute w-12 flex-shrink-0">${(r.day || '').slice(5)}</span>
+          <div class="flex-1 bg-line rounded-full h-2 overflow-hidden">
+            <div class="h-full rounded-full bg-gradient-to-r from-sakura to-sakura-deep" style="width:${pct}%"></div>
+          </div>
+          <span class="text-mute w-14 text-right">${(r.total_tokens || 0).toLocaleString()}</span>
+        </div>`;
+      }).join('');
     }
 
     function formatDateShort(s) {

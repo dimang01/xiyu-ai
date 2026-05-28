@@ -23,6 +23,13 @@ import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stic
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply } from './moderation.mjs';
 import { log } from './logger.mjs';
+import { buildEmotionPromptHint, getEmotionStateWithDefaults } from './emotion_state.mjs';
+import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
+
+// ─── Proactive Engine 版本选择 ────────────────────────────────────────────────
+// PROACTIVE_ENGINE=v2 启用 evaluateProactive() 决策层（推荐）
+// PROACTIVE_ENGINE=legacy 保留旧时间窗口调度器逻辑（兜底）
+const PROACTIVE_ENGINE_MODE = (process.env.PROACTIVE_ENGINE || 'v2').toLowerCase();
 
 const TZ = 'Asia/Shanghai';
 // 早安/晚安基准时间，实际每天有 ±30min 随机波动让 AI 更像真人
@@ -80,6 +87,25 @@ async function tick(now = new Date()) {
       for (const item of dueItems) {
         if (currentMinute(new Date()) > window.end) break;
         item.sent = true;
+
+        // v2 mode: ask evaluateProactive() before sending
+        if (PROACTIVE_ENGINE_MODE === 'v2') {
+          let v2Error = false;
+          let decision = null;
+          try {
+            decision = evaluateProactive(companion, {});
+          } catch (e) {
+            log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
+            v2Error = true;
+          }
+          // If v2 deliberately returned null (no error), suppress the send
+          if (!v2Error && decision === null) {
+            log('info', `[Proactive] v2 拒绝发送 companion=${companion.id} kind=${item.kind}`);
+            continue;
+          }
+          // v2Error → fall through to legacy send path
+        }
+
         await sendProactiveMessage(companion, item.kind, account);
       }
     }
@@ -251,7 +277,8 @@ async function sendProactiveMessage(companion, kind, account) {
   const proactiveDailySchedule = proactiveDailyRaw ? { ...proactiveDailyRaw, date_key: proactiveTodayKey } : null;
   const proactiveRecent = getRecentSchedules(companion.id, proactiveTodayKey, 3);
   const proactivePersonaFacts = getPersonaFacts(companion.id);
-  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts })}${stickerHint}
+  const emotionHint = buildEmotionPromptHint(getEmotionStateWithDefaults(companion.id));
+  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts })}${stickerHint}${emotionHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
@@ -382,6 +409,9 @@ async function sendProactiveMessage(companion, kind, account) {
       log('warn', `[Proactive] 告白后处理失败: ${e.message}`);
     }
   }
+  // Record proactive sent for engine backoff tracking
+  try { recordProactiveSent(companion.id); } catch {}
+
   log('info', `[Proactive] 已发送 companion=${companion.id} to=${companion.wechat_user_id} kind=${effectiveKind} segments=${segments.length} stickers=${totalStickers}`);
 }
 

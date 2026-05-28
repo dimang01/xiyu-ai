@@ -4,7 +4,7 @@ This file is the concatenated, plain-text form of the project's bilingual docume
 Source files: README.md, ACKNOWLEDGMENTS.md, SECURITY.md
 Repository:   https://github.com/dimang01/xiyu-ai
 License:      MIT
-Generated:    2026-05-28T09:53:26Z
+Generated:    2026-05-28T10:23:42Z
 
 ===============================================================================
 FILE: README.md
@@ -361,17 +361,63 @@ CHAT_MODEL=claude-sonnet-4-6
 
 ### 🛡️ 安全提醒
 
-- `.env` / `.admin-credentials` / `.weixin-credentials.json` / `data/bot.db*` / `data/user_memories/` 都已在 `.gitignore`，**永远不要 commit**
-- 管理员密码首次启动自动生成 20 位随机字符串，写入 `.admin-credentials`（mode 0600）—— 妥善保管
-- `/api/health` 输出当前 provider + 微信是否 configured + 邮件模式，但**不**输出 token / botId / 用户数据
-- 仓库里所有看起来像 `sk-xxx` / `your_xxx_api_key_here` 的字符都是占位符
-- 涉及未成年人或心理高风险用户场景请额外谨慎，见 [Issue #3 safety tracker](https://github.com/dimang01/xiyu-ai/issues/3)
+#### 凭据与敏感文件
+
+- `.env` / `.env.*` / `.auth-secret` / `.admin-secret` / `.admin-credentials` / `.weixin-credentials.json` / `data/bot.db*` / `data/user_memories/` 都已在 `.gitignore`。**永远不要 commit**；clone 后 `git status` 习惯性检查一遍
+- 管理员密码首次启动自动生成 20 位随机字符串，写入 `.admin-credentials`（mode 0600）。请妥善保管；忘记可删文件让服务重生
+- `AUTH_SECRET` 留空会自动生成到 `.auth-secret`，但**每次重启都会重生**导致 token 全部失效。生产请显式设置（≥32 字符随机串）
+- 任何形如 `sk-xxx` / `your_xxx_api_key_here` 的字符都是占位符，不是真实 key；上线前请用自己的密钥替换
+
+#### 服务行为
+
+- `/api/health` 只输出当前 provider 名称、微信是否 configured、邮件模式，**绝不输出** token / botId / 用户数据
+- iLink `bot_token` 不会被任何日志打印；扫码登录脚本也只显示 masked `bot_id` / `user_id`
+- 默认 CORS 关闭跨域；如需开放请在反代或代码里显式加白名单
+- 默认 rate limit（`src/ratelimit.mjs`）按个人用量设计，公开服务请放大或前置 WAF
+
+#### 数据与内容
+
+- SQLite 默认存在 `data/bot.db`，含**聊天历史、长期记忆、用户画像**。**自托管时这些数据完全在你机器上**；备份时记得加密或限定访问
+- 对话历史默认保留 60 天（`runHourlyCleanup`），可按需调整；删账号会清空对应 companion 全部数据
+- 涉及未成年人 / 心理高风险用户场景请额外谨慎，见 [Issue #3 safety tracker](https://github.com/dimang01/xiyu-ai/issues/3)
+
+#### 报告安全问题
+
+- 邮箱：`xiyuai@proton.me`
+- GitHub Security Advisories：https://github.com/dimang01/xiyu-ai/security/advisories/new
+- 详细见 [SECURITY.md](./SECURITY.md)
 
 ---
 
 ### ⚖️ 合规说明
 
-本项目不提供法律、隐私或内容安全合规保证。公开部署前，请根据你的所在地区和目标用户群体，自行完成隐私政策、用户协议、未成年人保护、AI 生成内容标识和内容安全审核。
+**本项目不提供任何法律、隐私或内容安全合规保证**。MIT 协议只覆盖代码本身，**不**等同于代码所产出内容、所引用的第三方服务、或运营行为的合规性。**公开部署是运营者自己的责任**。下面是常见维度的提示（不构成法律意见）：
+
+#### 你需要自己处理的事项
+
+| 维度 | 说明 |
+|---|---|
+| **隐私政策 / 用户协议** | 自行起草。仓库里的 `terms.html` / `privacy.html` 是空模板，**不能直接用**于真实运营 |
+| **AI 生成内容标识** | 中国大陆按《生成式人工智能服务管理暂行办法》要求对 AI 生成内容做显著标识；欧盟 AI Act / 各国相应法规也有标识要求 |
+| **未成年人保护** | 当前版本不内置年龄验证 / 内容分级，**不建议**面向未成年人开放。如需做，请自行加入年龄门控 + 未成年模式内容审核 |
+| **个人信息保护** | 涉及 PIPL（中国）/ GDPR（欧盟）/ CCPA（加州）等，需要明示收集目的、提供删除接口（仓库自带 `DELETE /api/me/account`，但口径、保存期限、跨境传输都要自定义） |
+| **内容安全审核** | 仓库当前没有 inbound / outbound 内容审核层（仅有简单黑名单）。对外开放前请接入云厂商的内容审核 API 或自建 moderation pipeline |
+| **危机话术 / 自伤倾向** | 当前不识别自伤、自杀等高风险输入。如要做面向真实用户的部署，请加入危机检测 + 提供专业救助渠道引导（建议参考各国心理援助热线） |
+| **第三方 provider ToS** | 每一家 LLM/图像 provider 都有自己的使用条款，包括是否允许虚拟人格、是否允许情感陪伴场景、商用授权范围。**切换 provider 前自行确认** |
+| **微信 / iLink 准入** | 接入腾讯 iLink ClawBot 需要其平台准入资格。其使用条款超出本仓库范围，请遵守腾讯方面的具体协议 |
+| **商业使用** | MIT 协议允许商用、修改、再分发，但**不豁免**上面任何一项合规义务；也不豁免你与第三方 provider 之间的协议 |
+
+#### 安全 / 合规的 baseline 建议
+
+- 在公开部署前给整个产品做一次内容安全红队（让人故意诱发高风险输出，看会不会破防）
+- 部署后留 logs，但对用户消息做脱敏 / 短期保留 / 限定访问
+- 在 UI 显眼位置标识"AI 生成"
+- 对未登录或匿名访客限制功能，鼓励实名 / 邮箱验证
+- 把"删除我的数据"做成一个浏览器里能点的按钮，而不是要发邮件申请
+
+#### 关于本仓库的"陪伴"定位
+
+本框架不预设角色性格 / NSFW 内容 / 越界互动。**注册角色的人设由部署方或终端用户决定**。仓库里所有人格模板（同班同学、心理咨询师等）都是中立示例。是否做向成年用户的情感陪伴 / 是否允许某些类型的角色，是你的产品决策与合规决策，请自负其责。
 
 ---
 
@@ -379,27 +425,55 @@ CHAT_MODEL=claude-sonnet-4-6
 
 如果不只是本地试玩：
 
+#### 网络与边界
+
 | 项 | 建议 |
 |---|---|
-| 反向代理 | nginx / Caddy 终结 TLS；Node 进程只监听 `127.0.0.1` |
-| 数据库 | WAL 已开；定期备份 `data/bot.db*`（参考 `scripts/backup-db.sh`） |
-| `AUTH_SECRET` | 显式设置；留空会每次重启重生 token 强制登出 |
-| 邮件 | 公开部署时把 `EMAIL_DEV_MODE` 关掉，配 `RESEND_API_KEY` + 真实 `RESEND_FROM` |
-| 限速 | `src/ratelimit.mjs` 默认面向个人，对外服务请放大或前置 WAF |
-| 成本监控 | chat / image provider 都有费用；`ai_usage_daily` 表是接监控的天然入口 |
-| 内容标识 | 按当地法规对 AI 生成内容做标注 |
+| 反向代理 | nginx / Caddy 终结 TLS；Node 进程只监听 `127.0.0.1`，不直接暴露公网 |
+| HTTP 头 | HSTS、X-Frame-Options、X-Content-Type-Options、Referrer-Policy 等在 nginx 里加上（`deploy/nginx.conf.example` 已带示例）|
+| DDoS / 异常流量 | 公开服务建议前置 Cloudflare / 阿里云 WAF，至少开 rate-limit；`src/ratelimit.mjs` 是 app 层的最后兜底，不能当 WAF 用 |
+| 凭据传输 | iLink / 邮件 / LLM provider 的 key 不要明文出现在 systemd 命令行；用 `EnvironmentFile` 指向 `chmod 600` 的 `.env` |
 
-**模板**：仓库里 `deploy/` 目录提供了开箱即用的部署模板：
+#### 数据持久化
+
+| 项 | 建议 |
+|---|---|
+| SQLite WAL | 默认已开，写性能 OK；不要在多个进程同时写同一个 db 文件 |
+| 备份 | 定期备份 `data/bot.db*` 整套三文件；`scripts/backup-db.sh` 是起点，生产建议接 restic / borgbackup 之类异地备份 |
+| 用户数据 | `data/user_memories/` 是 markdown 形式的人类可读归档，备份策略同上 |
+| 恢复 | 替换 `bot.db` 三件套需要先停服务（systemd `stop`），避免 WAL 不一致 |
+
+#### 凭据 / 邮件 / 限速
+
+| 项 | 建议 |
+|---|---|
+| `AUTH_SECRET` | 必须显式设置（≥32 字符随机串）；留空会每次重启重生 token 强制登出 |
+| 邮件 | 公开部署把 `EMAIL_DEV_MODE` 关掉，配真实 `RESEND_API_KEY` + 通过 DKIM/SPF 验证过的 `RESEND_FROM` |
+| 限速 | `src/ratelimit.mjs` 默认面向个人；对外服务请按"注册 / 验证码 / 聊天 / 图像生成"分别放大，并叠加 WAF |
+| 管理员后台 | `/app/admin.html` 建议放在反代后 + IP 白名单，或额外加 HTTP Basic Auth 二次保护 |
+
+#### 成本 / 监控 / 内容
+
+| 项 | 建议 |
+|---|---|
+| 成本监控 | chat / image / vision / ASR / embedding provider 都按 token 或张计费；`ai_usage_daily` 表是接监控的天然入口 |
+| 日志切割 | systemd 默认接 journald；如果直接 `>> server.log` 请用 logrotate |
+| 健康检查 | `/api/health` 适合接入 Uptime Kuma / Prometheus blackbox exporter |
+| AI 内容标识 | 按当地法规对所有 AI 生成内容（文字、图片）做显著标识 |
+
+#### 模板
+
+仓库里 `deploy/` 目录提供了开箱即用的部署模板：
 
 | 文件 | 用途 |
 |---|---|
-| [`deploy/xiyu-ai.service`](./deploy/xiyu-ai.service) | systemd unit |
-| [`deploy/nginx.conf.example`](./deploy/nginx.conf.example) | nginx 反代示例 |
-| [`deploy/README.md`](./deploy/README.md) | 从 0 → 上线的 step-by-step |
+| [`deploy/xiyu-ai.service`](./deploy/xiyu-ai.service) | systemd unit（已带安全加固：`NoNewPrivileges` / `PrivateTmp` / `ProtectSystem` / `ReadWritePaths`）|
+| [`deploy/nginx.conf.example`](./deploy/nginx.conf.example) | nginx 反代示例（HTTPS + HSTS + 长轮询超时 + AI 爬虫友好路由）|
+| [`deploy/README.md`](./deploy/README.md) | 从 `git clone` → 上线的 step-by-step 走查 |
 
-走 Docker 路径时，`compose.yml` 已自带 `restart: unless-stopped`，systemd 不必要；nginx 模板继续适用。
+走 Docker 路径时，`compose.yml` 已自带 `restart: unless-stopped`，systemd 不必要；nginx 模板继续适用于宿主机做 TLS 终结。
 
-更完整的部署 walkthrough（备份策略 / 监控接入 / 日志切割）跟踪 [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5)。
+更完整的部署 walkthrough（备份策略 / 监控接入 / 多实例 / 日志切割）跟踪 [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5)。
 
 ---
 
@@ -767,17 +841,63 @@ The repository ships **only the sticker loading and tag-matching code** — **no
 
 ### 🛡️ Security Notice
 
-- `.env`, `.admin-credentials`, `.weixin-credentials.json`, `data/bot.db*`, `data/user_memories/` are all gitignored — **never commit them**.
-- The admin password is a 20-char random string generated on first start; it lives in `.admin-credentials` with mode 0600.
-- `/api/health` reports the active providers, WeChat configured flag and email mode. It does **not** expose tokens, bot IDs or user data.
-- Anything that looks like `sk-xxx` or `your_xxx_api_key_here` is a placeholder.
-- Be especially careful with minor-safety and crisis scenarios; see the safety tracker in [Issue #3](https://github.com/dimang01/xiyu-ai/issues/3).
+#### Credentials & sensitive files
+
+- `.env`, `.env.*`, `.auth-secret`, `.admin-secret`, `.admin-credentials`, `.weixin-credentials.json`, `data/bot.db*`, `data/user_memories/` are all gitignored. **Never commit them.** After cloning, get into the habit of checking `git status` before each commit.
+- The admin password is a 20-char random string generated on first start and saved to `.admin-credentials` with mode 0600. Keep it safe; if you lose it, delete the file and let the service regenerate one.
+- Leaving `AUTH_SECRET` empty causes a fresh secret to be generated into `.auth-secret` on every restart — invalidating all existing JWTs. For production, set an explicit value (≥32 random characters).
+- Anything that looks like `sk-xxx` or `your_xxx_api_key_here` is a placeholder, not a live key. Replace before deployment.
+
+#### Service behavior
+
+- `/api/health` only reports active provider names, WeChat configured flag, and email mode. It **never** exposes tokens, bot IDs, or user data.
+- The iLink `bot_token` is never printed by any log line; the QR login helper only shows masked `bot_id` / `user_id`.
+- CORS is off by default; if you need cross-origin access, add an explicit allow-list in the reverse proxy or in code.
+- The default rate limiter in `src/ratelimit.mjs` is sized for personal use; widen it or place a WAF in front for public deployments.
+
+#### Data & content
+
+- SQLite lives at `data/bot.db` and holds **chat history, long-term memory, and user profiles**. When self-hosting, this data stays entirely on your machine — encrypt or restrict access to your backups.
+- Chat history is retained for 60 days by default (`runHourlyCleanup`) and can be adjusted. Account deletion wipes the corresponding companion's data.
+- Be especially careful with minor-safety and crisis scenarios — see [Issue #3 safety tracker](https://github.com/dimang01/xiyu-ai/issues/3).
+
+#### Reporting security issues
+
+- Email: `xiyuai@proton.me`
+- GitHub Security Advisories: https://github.com/dimang01/xiyu-ai/security/advisories/new
+- Full policy in [SECURITY.md](./SECURITY.md)
 
 ---
 
 ### ⚖️ Legal / Compliance Disclaimer
 
-This project does not provide legal, privacy, or content-safety compliance guarantees. Before public deployment, review privacy policy, terms of service, minor-safety requirements, AI-generated content labeling, and moderation obligations for your jurisdiction and target users.
+**This project does not provide any legal, privacy, or content-safety compliance guarantees.** The MIT license covers the code itself; it does **not** extend to the content the code produces, the third-party services it calls, or how you choose to operate it. **Public deployment is the operator's own responsibility.** The list below highlights common dimensions (this is not legal advice):
+
+#### What you need to handle yourself
+
+| Area | Notes |
+|---|---|
+| **Privacy policy / Terms of Service** | Draft your own. The shipped `terms.html` / `privacy.html` are empty templates and **must not** be used as-is for a real product. |
+| **AI-generated content labeling** | Mainland China requires clear labeling per the *Provisional Measures for Generative AI Services*. The EU AI Act and several national laws have analogous labeling rules. |
+| **Minor-safety** | This release does not ship age-gating or content rating. **Not recommended** for deployments targeting minors. If you do, add your own age gate and minor-mode content moderation. |
+| **Personal data protection** | PIPL (China), GDPR (EU), CCPA (California) and similar regimes require explicit purpose disclosure, deletion endpoints (the repo provides `DELETE /api/me/account`, but the policy, retention period, and cross-border transfer rules are yours to define), and more. |
+| **Content moderation** | The repo currently has only a simple blacklist for inbound/outbound. For public deployment, integrate a cloud moderation API or build your own pipeline. |
+| **Crisis / self-harm language** | The current build does not detect self-harm or suicidal ideation in user input. If you ship to real users, add a crisis-detection layer and route to professional helplines appropriate to your jurisdiction. |
+| **Third-party provider ToS** | Every LLM / image provider has its own terms covering virtual personas, emotional-companionship use cases, and commercial scope. **Check before switching providers.** |
+| **WeChat / iLink approval** | Tencent iLink / ClawBot access requires the platform's own approval. Its terms are out of scope of this repository — comply with Tencent's specific agreements. |
+| **Commercial use** | MIT allows commercial use, modification, and redistribution — but does **not** waive any of the obligations above, nor any third-party provider agreement you may have. |
+
+#### Baseline safety / compliance recommendations
+
+- Run an internal red-team pass on the full product before going public (try to elicit high-risk outputs and verify the moderation holds).
+- Keep operational logs but redact user content, retain only as long as needed, and restrict access.
+- Make the "AI-generated" label prominent in the UI.
+- Restrict functionality for unauthenticated visitors; require email or stronger verification.
+- Expose a one-click "delete my data" action in the user UI — not an email request.
+
+#### About this repo's "companion" framing
+
+The framework does not presuppose a specific character personality, NSFW content, or boundary-crossing interaction. **The persona is chosen by the deployer or end user at registration time.** All personality templates shipped in the repo (classmate, therapist, etc.) are neutral examples. Whether you deploy an emotional-companionship product for adults, or restrict certain character types, is your product and compliance decision — at your own risk.
 
 ---
 
@@ -785,27 +905,55 @@ This project does not provide legal, privacy, or content-safety compliance guara
 
 If you plan to run this for more than local experiments:
 
+#### Network & boundary
+
 | Concern | Recommendation |
 |---|---|
-| Reverse proxy | nginx / Caddy for TLS termination; bind Node to `127.0.0.1` |
-| Database | WAL is already on; back up `data/bot.db*` regularly (`scripts/backup-db.sh` is a starting point) |
-| `AUTH_SECRET` | Set explicitly; leaving it empty regenerates the secret on every restart and forces logouts |
-| Email | For public deployment, disable `EMAIL_DEV_MODE` and set `RESEND_API_KEY` + a real `RESEND_FROM` |
-| Rate limiting | Defaults in `src/ratelimit.mjs` are sized for personal use; widen or place a WAF in front for public deployments |
-| Cost monitoring | Chat / image providers cost money; the `ai_usage_daily` table is the natural place to wire metrics |
-| Content labeling | Label AI-generated content per local laws and platform policy |
+| Reverse proxy | nginx / Caddy for TLS termination; bind the Node process to `127.0.0.1` rather than exposing it publicly |
+| HTTP headers | Add HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy at the proxy level (`deploy/nginx.conf.example` already has them) |
+| DDoS / abusive traffic | For public services put Cloudflare / a cloud WAF in front, with rate limiting enabled. `src/ratelimit.mjs` is an app-level fallback, not a substitute for a WAF |
+| Credential transport | Don't pass iLink / email / LLM provider keys on a systemd command line. Use `EnvironmentFile` pointing at a `chmod 600` `.env` |
 
-**Templates**: the `deploy/` directory ships drop-in deployment templates:
+#### Data persistence
+
+| Concern | Recommendation |
+|---|---|
+| SQLite WAL | Already on; do **not** have multiple processes write the same `bot.db` file |
+| Backups | Regularly back up the full three-file set of `data/bot.db*`. `scripts/backup-db.sh` is a starting point; production should pipe through restic / borgbackup or equivalent off-site |
+| User data | `data/user_memories/` is a human-readable markdown archive — same backup policy applies |
+| Restore | Stop the service (`systemctl stop`) before replacing the `bot.db` triplet, or you'll get a WAL inconsistency |
+
+#### Secrets / email / rate limits
+
+| Concern | Recommendation |
+|---|---|
+| `AUTH_SECRET` | Must be set explicitly (≥32 random characters); leaving it empty regenerates the secret on every restart and forces logouts |
+| Email | For public deployment, disable `EMAIL_DEV_MODE` and configure a real `RESEND_API_KEY` + a DKIM/SPF-verified `RESEND_FROM` |
+| Rate limits | Defaults in `src/ratelimit.mjs` are sized for personal use. For public services, widen per scope (register / verify-code / chat / image-gen) and layer a WAF |
+| Admin panel | `/app/admin.html` should sit behind the reverse proxy with an IP allow-list, and ideally an extra HTTP Basic Auth |
+
+#### Cost / monitoring / content
+
+| Concern | Recommendation |
+|---|---|
+| Cost monitoring | Chat / image / vision / ASR / embedding providers all bill per token or per image. The `ai_usage_daily` table is the natural place to wire metrics |
+| Log rotation | systemd uses journald by default; if you redirect to a file with `>> server.log`, run `logrotate` |
+| Health checks | `/api/health` is suitable for Uptime Kuma / Prometheus blackbox exporter |
+| Content labeling | Label all AI-generated content (text and images) per local laws and platform policy |
+
+#### Templates
+
+The `deploy/` directory ships drop-in templates:
 
 | File | Purpose |
 |---|---|
-| [`deploy/xiyu-ai.service`](./deploy/xiyu-ai.service) | systemd unit |
-| [`deploy/nginx.conf.example`](./deploy/nginx.conf.example) | nginx reverse proxy |
-| [`deploy/README.md`](./deploy/README.md) | Step-by-step from clone → live VPS |
+| [`deploy/xiyu-ai.service`](./deploy/xiyu-ai.service) | systemd unit (hardened: `NoNewPrivileges` / `PrivateTmp` / `ProtectSystem` / `ReadWritePaths`) |
+| [`deploy/nginx.conf.example`](./deploy/nginx.conf.example) | nginx reverse proxy (HTTPS, HSTS, long-poll timeouts, AI-crawler-friendly routes) |
+| [`deploy/README.md`](./deploy/README.md) | Step-by-step from `git clone` → live VPS |
 
-For the Docker path, `compose.yml` already sets `restart: unless-stopped`, so systemd is unnecessary; the nginx template is still useful for TLS termination on the host.
+For the Docker path, `compose.yml` already sets `restart: unless-stopped`, so systemd is unnecessary; the nginx template is still useful for host-side TLS termination.
 
-A fuller deployment walkthrough (backups, monitoring, log rotation) is tracked in [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5).
+A fuller deployment walkthrough (backup strategy, monitoring, multi-instance, log rotation) is tracked in [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5).
 
 ---
 

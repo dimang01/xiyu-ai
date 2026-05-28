@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>记忆管理 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+          ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA' },
+        fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+        boxShadow: { sakura: '0 4px 24px rgba(255,182,217,.15)', card: '0 12px 48px rgba(0,0,0,.06)' },
+      } },
+    };
+  </script>
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    body {
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255,182,217,.28), transparent 60%),
+        #FAFAFA;
+      background-attachment: fixed;
+    }
+    .layer-badge {
+      display:inline-block;
+      padding:1px 6px;
+      border-radius:4px;
+      font-size:11px;
+      font-weight:600;
+      letter-spacing:.02em;
+    }
+    .memory-card { transition: box-shadow .15s; }
+    .memory-card:hover { box-shadow: 0 6px 24px rgba(255,182,217,.25); }
+    .tag-btn {
+      padding:2px 10px; border-radius:20px; font-size:12px; cursor:pointer;
+      border:1px solid #e5e5e7; background:#fff; transition:all .15s;
+    }
+    .tag-btn.active { background:#FFB6D9; border-color:#FFB6D9; color:#fff; font-weight:600; }
+    .tag-btn:hover:not(.active) { border-color:#FFB6D9; color:#FF8FB8; }
+  </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+
+<!-- Nav -->
+<header class="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-line px-6 h-14 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <a href="/app/dashboard.html" class="text-mute hover:text-ink transition-colors text-sm">← 控制台</a>
+    <span class="text-line">|</span>
+    <span class="font-semibold text-sakura-deep text-sm">记忆管理</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <button id="btnAdd" class="text-xs bg-sakura text-white px-3 py-1.5 rounded-lg hover:bg-sakura-deep transition-colors">+ 新增记忆</button>
+  </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-4 py-6 pb-24">
+
+  <!-- Stats bar -->
+  <div id="statsBar" class="mb-4 text-xs text-mute hidden">
+    共 <span id="totalCount" class="font-semibold text-ink">0</span> 条记忆
+    <span id="loadingSpinner" class="ml-2 hidden">加载中…</span>
+  </div>
+
+  <!-- Filter row -->
+  <div class="flex flex-wrap gap-2 mb-4">
+    <!-- Layer filters -->
+    <div class="flex flex-wrap gap-1.5" id="layerFilters">
+      <button class="tag-btn active" data-layer="">全部</button>
+      <button class="tag-btn" data-layer="core_persona">核心人设</button>
+      <button class="tag-btn" data-layer="relationship_rule">关系规则</button>
+      <button class="tag-btn" data-layer="user_fact">用户事实</button>
+      <button class="tag-btn" data-layer="preference">偏好</button>
+      <button class="tag-btn" data-layer="event">事件</button>
+      <button class="tag-btn" data-layer="emotion">情感</button>
+      <button class="tag-btn" data-layer="summary">摘要</button>
+    </div>
+  </div>
+
+  <!-- Status + search row -->
+  <div class="flex flex-wrap gap-2 mb-5 items-center">
+    <div class="flex gap-1.5" id="statusFilters">
+      <button class="tag-btn active" data-status="active">生效中</button>
+      <button class="tag-btn" data-status="archived">已归档</button>
+      <button class="tag-btn" data-status="all">全部</button>
+    </div>
+    <input id="searchInput" type="text" placeholder="搜索记忆内容…"
+      class="flex-1 min-w-[140px] text-sm border border-line rounded-lg px-3 py-1.5 bg-white/80 focus:outline-none focus:border-sakura" />
+  </div>
+
+  <!-- Memory list -->
+  <div id="memoryList" class="space-y-3"></div>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-between mt-6" id="paginationBar">
+    <button id="btnPrev" class="text-xs text-mute border border-line px-3 py-1.5 rounded-lg hover:border-sakura disabled:opacity-30" disabled>← 上一页</button>
+    <span id="pageInfo" class="text-xs text-mute"></span>
+    <button id="btnNext" class="text-xs text-mute border border-line px-3 py-1.5 rounded-lg hover:border-sakura disabled:opacity-30" disabled>下一页 →</button>
+  </div>
+</main>
+
+<!-- Add / Edit Modal -->
+<div id="modalOverlay" class="hidden fixed inset-0 bg-black/30 z-50 flex items-center justify-center px-4">
+  <div class="bg-white rounded-2xl shadow-card w-full max-w-lg p-6">
+    <h3 id="modalTitle" class="font-semibold text-lg mb-4">新增记忆</h3>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-mute mb-1 block">内容 *</label>
+        <textarea id="modalContent" rows="3"
+          class="w-full text-sm border border-line rounded-lg px-3 py-2 focus:outline-none focus:border-sakura resize-none"
+          placeholder="记忆内容（最多 200 字）"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-mute mb-1 block">类别</label>
+          <select id="modalLayer" class="w-full text-sm border border-line rounded-lg px-3 py-2 focus:outline-none focus:border-sakura bg-white">
+            <option value="user_fact">用户事实</option>
+            <option value="preference">偏好</option>
+            <option value="event" selected>事件</option>
+            <option value="emotion">情感</option>
+            <option value="core_persona">核心人设</option>
+            <option value="relationship_rule">关系规则</option>
+            <option value="summary">摘要</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-mute mb-1 block">权重 (0–5)</label>
+          <input id="modalWeight" type="number" min="0" max="5" value="3"
+            class="w-full text-sm border border-line rounded-lg px-3 py-2 focus:outline-none focus:border-sakura" />
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-2 mt-4 justify-end">
+      <button id="modalCancel" class="text-sm text-mute border border-line px-4 py-2 rounded-lg hover:border-sakura">取消</button>
+      <button id="modalSave" class="text-sm bg-sakura text-white px-4 py-2 rounded-lg hover:bg-sakura-deep transition-colors">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Error toast -->
+<div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 bg-ink text-white text-sm px-4 py-2 rounded-full shadow-lg z-50"></div>
+
+<script>
+// ─── State ─────────────────────────────────────────────────────────────────
+let token = null;
+let companionId = null;
+let currentLayer = '';
+let currentStatus = 'active';
+let searchQ = '';
+let page = 0;
+const PAGE_SIZE = 30;
+let totalItems = 0;
+let editingMemoryId = null;
+
+const LAYER_LABELS = {
+  core_persona: '核心人设', relationship_rule: '关系规则',
+  user_fact: '用户事实', preference: '偏好',
+  event: '事件', emotion: '情感', summary: '摘要',
+};
+const LAYER_COLORS = {
+  core_persona: 'bg-purple-100 text-purple-700',
+  relationship_rule: 'bg-blue-100 text-blue-700',
+  user_fact: 'bg-green-100 text-green-700',
+  preference: 'bg-yellow-100 text-yellow-700',
+  event: 'bg-pink-100 text-pink-700',
+  emotion: 'bg-red-100 text-red-700',
+  summary: 'bg-gray-100 text-gray-600',
+};
+const SOURCE_LABELS = { auto: '自动', user: '手动', system: '系统', summary: '总结', reflection: '反思', imported: '导入' };
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+async function init() {
+  token = localStorage.getItem('xiyu_token');
+  if (!token) { location.href = '/app/auth.html'; return; }
+
+  // Get companion ID from dashboard
+  const cInfo = await apiFetch('/api/me/companion');
+  if (!cInfo?.data?.companion_id) {
+    showToast('请先绑定微信并创建 AI 伴侣');
+    return;
+  }
+  companionId = cInfo.data.companion_id;
+  document.getElementById('statsBar').classList.remove('hidden');
+  loadMemories();
+}
+
+// ─── API ─────────────────────────────────────────────────────────────────
+async function apiFetch(url, opts = {}) {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  if (res.status === 401) { localStorage.removeItem('xiyu_token'); location.href = '/app/auth.html'; return null; }
+  return res.json().catch(() => null);
+}
+
+async function memoryAction(memoryId, action, body = null) {
+  const url = `/api/companions/${companionId}/memories/${memoryId}/${action}`;
+  const r = await apiFetch(url, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
+  if (!r?.ok) { showToast(r?.error || '操作失败'); return false; }
+  return true;
+}
+
+// ─── Load ─────────────────────────────────────────────────────────────────
+async function loadMemories() {
+  setLoading(true);
+  const params = new URLSearchParams({
+    limit: PAGE_SIZE, offset: page * PAGE_SIZE,
+    status: currentStatus === 'all' ? 'all' : currentStatus,
+  });
+  if (currentLayer) params.set('layer', currentLayer);
+  if (searchQ) params.set('q', searchQ);
+
+  const r = await apiFetch(`/api/companions/${companionId}/memories?${params}`);
+  setLoading(false);
+  if (!r?.ok) { showToast(r?.error || '加载失败'); return; }
+
+  totalItems = r.data.total || 0;
+  document.getElementById('totalCount').textContent = totalItems;
+  renderList(r.data.memories || []);
+  renderPagination();
+}
+
+// ─── Render ─────────────────────────────────────────────────────────────────
+function renderList(memories) {
+  const el = document.getElementById('memoryList');
+  if (memories.length === 0) {
+    el.innerHTML = '<div class="text-center text-mute text-sm py-12">暂无记忆</div>';
+    return;
+  }
+  el.innerHTML = memories.map(m => renderCard(m)).join('');
+  el.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', onAction);
+  });
+}
+
+function renderCard(m) {
+  const layer = m.memory_layer || 'event';
+  const layerCls = LAYER_COLORS[layer] || 'bg-gray-100 text-gray-600';
+  const layerLabel = LAYER_LABELS[layer] || layer;
+  const weight = m.memory_weight ?? 3;
+  const stars = '★'.repeat(weight) + '☆'.repeat(Math.max(0, 5 - weight));
+  const pinned = m.pinned ? '📌' : '';
+  const locked = m.locked ? '🔒' : '';
+  const dnm = m.do_not_mention ? '🚫' : '';
+  const source = SOURCE_LABELS[m.memory_source] || m.memory_source || '';
+  const useCount = m.use_count ?? 0;
+  const lastUsed = m.last_used_at ? new Date(m.last_used_at).toLocaleDateString('zh-CN') : '-';
+  const created  = m.created_at  ? new Date(m.created_at ).toLocaleDateString('zh-CN') : '-';
+
+  return `<div class="memory-card bg-white rounded-xl border border-line px-4 py-3" data-id="${m.id}">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex-1 min-w-0">
+        <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+          <span class="layer-badge ${layerCls}">${layerLabel}</span>
+          <span class="text-xs text-mute">${stars}</span>
+          ${pinned ? `<span title="已置顶">${pinned}</span>` : ''}
+          ${locked ? `<span title="已锁定">${locked}</span>` : ''}
+          ${dnm ? `<span title="不主动提及">${dnm}</span>` : ''}
+          ${source ? `<span class="text-xs text-mute border border-line rounded px-1">${source}</span>` : ''}
+        </div>
+        <p class="text-sm text-ink leading-relaxed">${escHtml(m.content || '')}</p>
+        <div class="mt-2 flex gap-3 text-xs text-mute">
+          <span title="召回次数">使用 ${useCount} 次</span>
+          <span title="最近使用">上次 ${lastUsed}</span>
+          <span title="创建时间">创建 ${created}</span>
+        </div>
+      </div>
+      <div class="flex flex-col gap-1 shrink-0 text-xs">
+        <button class="tag-btn" data-action="edit" data-id="${m.id}" data-content="${escAttr(m.content)}" data-layer="${layer}" data-weight="${weight}">编辑</button>
+        ${m.pinned
+          ? `<button class="tag-btn" data-action="unpin" data-id="${m.id}">取消置顶</button>`
+          : `<button class="tag-btn" data-action="pin"   data-id="${m.id}">置顶</button>`}
+        ${m.locked
+          ? `<button class="tag-btn" data-action="unlock" data-id="${m.id}">解锁</button>`
+          : `<button class="tag-btn" data-action="lock"   data-id="${m.id}">锁定</button>`}
+        ${m.do_not_mention
+          ? `<button class="tag-btn" data-action="mention-on"  data-id="${m.id}">可提及</button>`
+          : `<button class="tag-btn" data-action="mention-off" data-id="${m.id}">不提及</button>`}
+        ${m.memory_status !== 'archived'
+          ? `<button class="tag-btn" data-action="archive" data-id="${m.id}">归档</button>`
+          : ''}
+        <button class="tag-btn text-red-400 border-red-200 hover:border-red-400" data-action="delete" data-id="${m.id}">删除</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderPagination() {
+  const total = Math.ceil(totalItems / PAGE_SIZE);
+  document.getElementById('pageInfo').textContent = total > 1 ? `第 ${page + 1} / ${total} 页` : '';
+  document.getElementById('btnPrev').disabled = page === 0;
+  document.getElementById('btnNext').disabled = (page + 1) * PAGE_SIZE >= totalItems;
+  document.getElementById('paginationBar').classList.toggle('hidden', total <= 1);
+}
+
+// ─── Actions ─────────────────────────────────────────────────────────────────
+async function onAction(e) {
+  const btn = e.currentTarget;
+  const action = btn.dataset.action;
+  const id = Number(btn.dataset.id);
+
+  if (action === 'edit') {
+    openEditModal(id, btn.dataset.content, btn.dataset.layer, Number(btn.dataset.weight));
+    return;
+  }
+  if (action === 'delete') {
+    if (!confirm('软删除这条记忆？（状态变为"已删除"，不再参与召回）')) return;
+    const r = await apiFetch(`/api/companions/${companionId}/memories/${id}`, { method: 'DELETE' });
+    if (!r?.ok) { showToast(r?.error || '删除失败'); return; }
+    showToast('已删除');
+    loadMemories();
+    return;
+  }
+  if (action === 'archive') { if (await memoryAction(id, 'archive')) { showToast('已归档'); loadMemories(); } return; }
+  if (action === 'pin')     { if (await memoryAction(id, 'pin'))     { showToast('已置顶'); loadMemories(); } return; }
+  if (action === 'unpin')   { if (await memoryAction(id, 'unpin'))   { showToast('已取消置顶'); loadMemories(); } return; }
+  if (action === 'lock')    { if (await memoryAction(id, 'lock'))    { showToast('已锁定（不衰减）'); loadMemories(); } return; }
+  if (action === 'unlock')  { if (await memoryAction(id, 'unlock'))  { showToast('已解锁'); loadMemories(); } return; }
+  if (action === 'mention-off') { if (await memoryAction(id, 'do-not-mention', { flag: true }))  { showToast('已设为不主动提及'); loadMemories(); } return; }
+  if (action === 'mention-on')  { if (await memoryAction(id, 'do-not-mention', { flag: false })) { showToast('已恢复可提及'); loadMemories(); } return; }
+}
+
+// ─── Filters ─────────────────────────────────────────────────────────────────
+document.getElementById('layerFilters').addEventListener('click', e => {
+  const btn = e.target.closest('[data-layer]');
+  if (!btn) return;
+  document.querySelectorAll('#layerFilters .tag-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentLayer = btn.dataset.layer;
+  page = 0;
+  loadMemories();
+});
+
+document.getElementById('statusFilters').addEventListener('click', e => {
+  const btn = e.target.closest('[data-status]');
+  if (!btn) return;
+  document.querySelectorAll('#statusFilters .tag-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentStatus = btn.dataset.status;
+  page = 0;
+  loadMemories();
+});
+
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchQ = e.target.value.trim();
+    page = 0;
+    loadMemories();
+  }, 350);
+});
+
+document.getElementById('btnPrev').addEventListener('click', () => { page--; loadMemories(); });
+document.getElementById('btnNext').addEventListener('click', () => { page++; loadMemories(); });
+
+// ─── Add modal ─────────────────────────────────────────────────────────────────
+document.getElementById('btnAdd').addEventListener('click', () => openAddModal());
+document.getElementById('modalCancel').addEventListener('click', closeModal);
+document.getElementById('modalOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+document.getElementById('modalSave').addEventListener('click', async () => {
+  const content = document.getElementById('modalContent').value.trim();
+  if (!content) { showToast('请输入内容'); return; }
+  const layer  = document.getElementById('modalLayer').value;
+  const weight = Number(document.getElementById('modalWeight').value);
+
+  if (editingMemoryId) {
+    const r = await apiFetch(`/api/companions/${companionId}/memories/${editingMemoryId}`, {
+      method: 'PUT', body: JSON.stringify({ content, memory_layer: layer, memory_weight: weight }),
+    });
+    if (!r?.ok) { showToast(r?.error || '保存失败'); return; }
+    showToast('已更新');
+  } else {
+    const r = await apiFetch(`/api/companions/${companionId}/memories`, {
+      method: 'POST', body: JSON.stringify({ content, memory_layer: layer, memory_weight: weight, memory_source: 'user' }),
+    });
+    if (!r?.ok) { showToast(r?.error || '添加失败'); return; }
+    showToast('已添加');
+  }
+  closeModal();
+  loadMemories();
+});
+
+function openAddModal() {
+  editingMemoryId = null;
+  document.getElementById('modalTitle').textContent = '新增记忆';
+  document.getElementById('modalContent').value = '';
+  document.getElementById('modalLayer').value = 'event';
+  document.getElementById('modalWeight').value = '3';
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+function openEditModal(id, content, layer, weight) {
+  editingMemoryId = id;
+  document.getElementById('modalTitle').textContent = '编辑记忆';
+  document.getElementById('modalContent').value = content || '';
+  document.getElementById('modalLayer').value = layer || 'event';
+  document.getElementById('modalWeight').value = String(weight ?? 3);
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.add('hidden');
+  editingMemoryId = null;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function setLoading(v) {
+  document.getElementById('loadingSpinner').classList.toggle('hidden', !v);
+}
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.add('hidden'), 2400);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) { return escHtml(s).replace(/'/g,'&#039;'); }
+
+// ─── Boot ─────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
