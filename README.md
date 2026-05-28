@@ -26,7 +26,7 @@
 - [🎯 项目定位](#-项目定位)
 - [✨ 核心特性](#-核心特性)
 - [🚀 一键启动](#-一键启动)
-- [📱 接入微信 (可选)](#-接入微信-可选)
+- [📱 关于微信接入](#-关于微信接入)
 - [🤖 多模型 Provider 支持](#-多模型-provider-支持)
 - [🧩 架构概览](#-架构概览)
 - [📂 目录结构](#-目录结构)
@@ -78,13 +78,14 @@
 | 🧬 **长期记忆** | 语义 embedding 召回 + importance 评分 + 日 / 周 / 月归档 |
 | 💬 **多 Provider** | chat / image / vision / ASR / embedding 五大能力各自独立可换，零代码改动 |
 | 🎛️ **完整 Dashboard** | 好感度进度 / 关系阶段 / "她现在在做什么" / 时间轴 / 头像管理 / CP 卡片 |
-| 📱 **微信对接** | 通过腾讯 iLink ClawBot 协议（可选；不接微信也能在网页里聊） |
+| 📱 **微信对接** | 网页扫码即可绑定 — 后端运行时直接向腾讯 iLink 申请二维码，**无需预填 ILINK_* 环境变量**（需要你的微信号在腾讯 iLink/ClawBot 已准入） |
 
 ---
 
 ### 🚀 一键启动
 
-三条路径任选其一。如果你只是想试一下，**路径 A（向导）** 最快。
+> **30 秒概念图**：装依赖 → 跑起服务 → 浏览器注册 → 网页扫码绑定微信 → 开聊。
+> **完全不需要**手动填 `ILINK_BOT_TOKEN`，**完全不需要**先去腾讯后台找什么 bot ID — 服务运行时会自动向 iLink 申请一个新二维码，跟下面截图里 [xiyuai.cc 那种](https://github.com/dimang01/xiyu-ai) 一样直接显示在你的网页上。
 
 #### 🅰️ 路径 A — 本地裸跑（推荐入门，3 分钟）
 
@@ -92,25 +93,23 @@
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
 npm install        # Node ≥ 20
-npm run setup      # 交互式配置：选 provider、粘贴 API key、自动写 .env
+npm run setup      # 交互式：选 chat provider、粘贴 API key、自动写 .env
 npm start
 # 打开 http://localhost:3000
 ```
 
-`npm run setup` 会在终端列出所有 chat provider 让你选，自动写好 `.env`。如果你跳过 API key 那一步，服务仍会启动，落地页底部会弹出引导条提示去 `/app/setup.html` 完成配置。
-
-#### 🅱️ 路径 B — Docker Compose（推荐生产）
+#### 🅱️ 路径 B — Docker Compose（推荐生产 / 不想装 Node）
 
 ```bash
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
-cp .env.example .env                # 然后编辑 .env，至少填 CHAT_PROVIDER + 对应 *_API_KEY
+cp .env.example .env                # 编辑 .env：至少填 CHAT_PROVIDER + 对应 *_API_KEY
 docker compose up -d
 # 打开 http://localhost:3000
 ```
 
 - SQLite 数据库走 `./data` volume，重启不丢
-- `restart: unless-stopped` 已经在 compose 里；不需要 systemd
+- `restart: unless-stopped` 已经写在 compose 里；不需要额外 systemd
 - 自定义端口：`HOST_PORT=8080 docker compose up -d`
 - 看日志：`docker compose logs -f xiyu-ai`
 
@@ -118,66 +117,72 @@ docker compose up -d
 
 ```dotenv
 # 最小 .env（任选其一）
-
-# 选项 1：DeepSeek（推荐入门，性价比最高）
 CHAT_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
-
-# 选项 2：OpenAI
-CHAT_PROVIDER=openai
-OPENAI_API_KEY=your_openai_api_key_here
-
-# 选项 3：智谱（国内无需备案即可调用）
-CHAT_PROVIDER=zhipu
-ZHIPU_API_KEY=your_zhipu_api_key_here
 ```
 
 填好 `.env` 之后 `npm start` 即可。
 
-**启动后页面**：
+---
+
+#### 🎬 跑起来之后做什么（新手走查）
+
+服务起来后，做这 4 步就完成全部接入：
+
+```
+  1. 浏览器开 http://localhost:3000
+        ↓
+  2. /app/auth.html → 邮箱注册（验证码会通过 Resend 发，可选）
+        ↓
+  3. /app/create.html → 4 步向导创建 AI 角色（取名、年龄、性格、背景故事）
+        ↓
+  4. /app/bind.html → 服务端实时向腾讯申请二维码，前端直接 <img> 显示
+        ↓                                            ↑
+     微信扫码 → 手机点"允许"           （这一步跟 xiyuai.cc 体验完全一致）
+        ↓
+  ✅ 后端 confirmed → 写入数据库 + 热注册到 polling pool → 自动跳 dashboard
+```
+
+**关键页面**：
 
 | 路径 | 用途 |
 |------|------|
-| `/` | 落地页 |
+| `/` | 落地页（缺 chat provider 时会弹引导条） |
+| `/app/setup.html` | 首次配置引导（不写 .env，只指路） |
 | `/app/auth.html` | 邮箱注册 / 登录 |
 | `/app/create.html` | 创建 AI 角色（4 步向导） |
-| `/app/dashboard.html` | 控制台 |
-| `/app/admin.html` | 管理员后台（首次启动时 20 位随机密码自动写入 `.admin-credentials`，mode 0600） |
+| `/app/bind.html` | **网页扫码绑定微信** |
+| `/app/dashboard.html` | 用户控制台 |
+| `/app/admin.html` | 管理员后台（密码在 `.admin-credentials`） |
 
 ---
 
-### 📱 接入微信 (可选)
+### 📱 关于微信接入
 
-> 需要已获得腾讯 iLink / ClawBot 资格的微信账号。扫码与"允许登录"必须由账号持有人本人完成 — 脚本不会、也不应该绕过。
+#### 路径 1（默认推荐）— 网页扫码
+
+跟着上面"新手走查"走到第 4 步即可。**不需要**：
+- ❌ 不需要预先在 `.env` 里填 `ILINK_BOT_TOKEN` / `ILINK_BOT_ID`
+- ❌ 不需要预先跑 `npm run ilink:login`
+- ❌ 不需要在腾讯后台找什么 bot 配置
+
+后端会在 `POST /api/wechat/bind-session` 时调 `ilink/bot/get_bot_qrcode?bot_type=3` 实时申请一个全新二维码，扫码成功后自动写入 `wechat_accounts` 表并 hot-register 到 polling pool。
+
+> ⚠️ **关于 iLink 准入资格**：扫码后能否拿到 `bot_token`，取决于你的微信号**是否已在腾讯 iLink / ClawBot 后台获得开发者准入**。
+>
+> - **已准入**：直接走网页扫码即可，体验跟 xiyuai.cc 一样
+> - **未准入**：扫码会显示"需要验证码"或类似失败状态。这种情况下，**服务依然完全可用** — AI 人设引擎、长期记忆、关系阶段、主动消息节奏都能在浏览器 dashboard 里调试，只是不会真的把消息发到微信
+> - 申请准入的入口在腾讯 iLink ClawBot 控制台，超出本仓库职责
+
+#### 路径 2（高阶/无浏览器）— 终端二维码登录
+
+如果你跑在没图形界面的 VPS / 容器里，或者想脚本化把凭据持久化下来，可以用：
 
 ```bash
 npm run ilink:login
 ```
 
-终端会打印二维码，流程：
-
-```
-  📲 你的微信扫码        ─→     ✅ 手机端"允许"
-        │                              │
-        ▼                              ▼
-   wait → scaned ──────────────→  confirmed
-                                        │
-                                        ▼
-                            ./.weixin-credentials.json
-                                  (mode 0600)
-```
-
-成功后会写入 `./.weixin-credentials.json`（**已在 `.gitignore`**）：
-
-```json
-{
-  "baseurl": "https://ilinkai.weixin.qq.com",
-  "ilink_bot_id": "...",
-  "ilink_user_id": "...",
-  "bot_token": "...",
-  "created_at": "..."
-}
-```
+终端会打印二维码，成功后写入 `./.weixin-credentials.json`（mode 0600，已在 `.gitignore`）。
 
 **运行时凭据加载优先级**：
 
@@ -186,6 +191,8 @@ npm run ilink:login
               ↓ 若缺
        .weixin-credentials.json
               ↓ 若缺
+       网页扫码绑定的 wechat_accounts 表
+              ↓ 三者都没有
    ✅ 服务正常启动 / 微信功能 disabled
    /api/health → "wechat": { "configured": false }
 ```
@@ -388,7 +395,7 @@ CHAT_MODEL=claude-sonnet-4-6
 - [🎯 Project Scope](#-project-scope)
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
-- [📱 WeChat iLink Login (Optional)](#-wechat-ilink-login-optional)
+- [📱 About WeChat Integration](#-about-wechat-integration)
 - [🤖 Multi-provider AI Support](#-multi-provider-ai-support)
 - [🧩 Architecture](#-architecture)
 - [📂 Repository Structure](#-repository-structure)
@@ -440,13 +447,14 @@ CHAT_MODEL=claude-sonnet-4-6
 | 🧬 **Long-term memory** | Semantic embedding recall + importance scoring + daily/weekly/monthly summaries |
 | 💬 **Multi-provider** | chat / image / vision / ASR / embedding — each capability independently swappable, no code changes |
 | 🎛️ **Full dashboard** | Affection progress, relationship stage, "what she's doing right now", timeline, avatar manager, shareable CP-card |
-| 📱 **WeChat integration** | Via Tencent iLink / ClawBot (optional — works fine in-browser without it) |
+| 📱 **WeChat integration** | In-browser QR binding — backend requests the QR from iLink at runtime; **no `ILINK_*` env vars to pre-configure** (requires Tencent iLink/ClawBot approval on your WeChat account) |
 
 ---
 
 ### 🚀 Quick Start
 
-Three paths — pick whichever fits. **Path A (wizard)** is the fastest for a first try.
+> **30-second mental model**: install → run → register in browser → scan a QR to connect WeChat → start chatting.
+> You do **not** have to put `ILINK_BOT_TOKEN` in `.env`. You do **not** have to dig through any vendor console for a bot ID. The server requests a fresh QR from iLink at runtime and shows it on your dashboard, exactly like a hosted demo would.
 
 #### 🅰️ Path A — Local (recommended for first try, 3 min)
 
@@ -459,14 +467,12 @@ npm start
 # Open http://localhost:3000
 ```
 
-`npm run setup` lists every chat provider in your terminal and writes `.env` for you. If you skip the API key step the service still starts; the landing page then shows a bottom banner pointing at `/app/setup.html` to finish configuration.
-
 #### 🅱️ Path B — Docker Compose (recommended for self-hosting)
 
 ```bash
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
-cp .env.example .env                # then edit .env: set CHAT_PROVIDER + matching *_API_KEY
+cp .env.example .env                # edit .env: set CHAT_PROVIDER + matching *_API_KEY
 docker compose up -d
 # Open http://localhost:3000
 ```
@@ -480,66 +486,72 @@ docker compose up -d
 
 ```dotenv
 # Minimal .env (pick one)
-
-# Option 1 — DeepSeek (cheapest, recommended for first try)
 CHAT_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
-
-# Option 2 — OpenAI
-CHAT_PROVIDER=openai
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Option 3 — Zhipu (mainland-China friendly)
-CHAT_PROVIDER=zhipu
-ZHIPU_API_KEY=your_zhipu_api_key_here
 ```
 
 Then `npm start`.
 
-**Pages after start**:
+---
+
+#### 🎬 What to do after it starts (new-user walkthrough)
+
+Once the server is up, four browser steps and you are done:
+
+```
+  1. Open http://localhost:3000
+        ↓
+  2. /app/auth.html → email signup (verification code via Resend, optional)
+        ↓
+  3. /app/create.html → 4-step character wizard (name, age, personality, backstory)
+        ↓
+  4. /app/bind.html → server live-requests a QR from iLink and renders it in <img>
+        ↓                                                          ↑
+     scan with WeChat → tap "Allow" on phone           (same UX as a hosted demo)
+        ↓
+  ✅ Server confirms → DB write + hot-register to polling pool → auto-redirect to dashboard
+```
+
+**Key pages**:
 
 | Path | Purpose |
 |------|---------|
-| `/` | Landing page |
+| `/` | Landing page (shows a setup banner if no chat provider is configured) |
+| `/app/setup.html` | First-run guide (does NOT write .env from browser — only points you at the CLI) |
 | `/app/auth.html` | Email signup / login |
 | `/app/create.html` | 4-step character wizard |
+| `/app/bind.html` | **In-browser WeChat QR binding** |
 | `/app/dashboard.html` | User dashboard |
-| `/app/admin.html` | Admin panel (a 20-char random password is generated on first start into `.admin-credentials`, mode 0600) |
+| `/app/admin.html` | Admin panel (password in `.admin-credentials`) |
 
 ---
 
-### 📱 WeChat iLink Login (Optional)
+### 📱 About WeChat Integration
 
-> Requires a WeChat account with Tencent iLink / ClawBot access. The QR scan and "Allow login" tap **must** be done by the account holder — the helper does not and should not bypass this.
+#### Path 1 (default, recommended) — In-browser QR
+
+Just follow step 4 of the walkthrough above. You do **not** need any of:
+- ❌ Pre-set `ILINK_BOT_TOKEN` / `ILINK_BOT_ID` in `.env`
+- ❌ Running `npm run ilink:login` ahead of time
+- ❌ Any pre-configured bot ID in a vendor console
+
+When the user clicks "Bind WeChat", the backend hits `ilink/bot/get_bot_qrcode?bot_type=3` to request a fresh QR; on `confirmed`, the credentials are written to the `wechat_accounts` table and the new bot is hot-registered into the polling pool.
+
+> ⚠️ **About iLink access**: whether the scan actually yields a `bot_token` depends on **whether your WeChat account has been approved for Tencent iLink / ClawBot developer access**.
+>
+> - **Approved**: web QR binding works end-to-end, same UX as a hosted demo.
+> - **Not approved**: the scan will return a verify-code or failure state. In that case, **the service is still fully usable** — you can develop, debug and exercise the persona engine, long-term memory, relationship stages and proactive-messaging cadence entirely through the browser dashboard; messages just won't reach WeChat.
+> - Applying for access happens inside the Tencent iLink / ClawBot console, which is out of scope for this repo.
+
+#### Path 2 (advanced / headless) — Terminal QR login
+
+If you're on a VPS without a browser, or want to persist credentials to a file before bringing the server up, you can use:
 
 ```bash
 npm run ilink:login
 ```
 
-A QR code appears in your terminal. Flow:
-
-```
-  📲 Scan with WeChat        ─→     ✅ Tap "Allow" on phone
-        │                                │
-        ▼                                ▼
-   wait → scaned ────────────────→  confirmed
-                                        │
-                                        ▼
-                            ./.weixin-credentials.json
-                                  (mode 0600)
-```
-
-On success the credentials are written to `./.weixin-credentials.json` (**gitignored**):
-
-```json
-{
-  "baseurl": "https://ilinkai.weixin.qq.com",
-  "ilink_bot_id": "...",
-  "ilink_user_id": "...",
-  "bot_token": "...",
-  "created_at": "..."
-}
-```
+A QR is printed in the terminal; on success, credentials are written to `./.weixin-credentials.json` (mode 0600, gitignored).
 
 **Credential load priority at runtime**:
 
@@ -548,6 +560,8 @@ On success the credentials are written to `./.weixin-credentials.json` (**gitign
               ↓ missing
        .weixin-credentials.json
               ↓ missing
+       wechat_accounts table (populated by in-browser QR)
+              ↓ all three missing
    ✅ Service still starts / WeChat disabled
    /api/health → "wechat": { "configured": false }
 ```
