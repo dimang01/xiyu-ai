@@ -1,0 +1,54 @@
+# 溪语 AI · systemd unit 模板
+#
+# 安装：
+#   1. 修改下方 User / WorkingDirectory / EnvironmentFile 为你的实际路径
+#   2. sudo cp deploy/xiyu-ai.service /etc/systemd/system/xiyu-ai.service
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now xiyu-ai
+#
+# 看日志：
+#   journalctl -u xiyu-ai -f
+#   systemctl status xiyu-ai
+#
+# 配套 nginx 反代配置见 deploy/nginx.conf.example。
+
+[Unit]
+Description=Xiyu AI · WeChat AI companion framework
+Documentation=https://github.com/dimang01/xiyu-ai
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# 改成你拉代码的用户和路径
+User=xiyu
+Group=xiyu
+WorkingDirectory=/opt/xiyu-ai
+
+# 用绝对路径，避免 PATH 找不到 node
+ExecStart=/usr/bin/node index.mjs
+
+# .env 通过 EnvironmentFile 注入，便于和文件权限管理一致（建议 chmod 600）
+EnvironmentFile=/opt/xiyu-ai/.env
+
+# 在 systemd 里固定监听端口，可被 .env 里同名键覆盖
+Environment=NODE_ENV=production
+Environment=API_PORT=3000
+
+Restart=on-failure
+RestartSec=5s
+
+# 资源限制（按需调整）
+LimitNOFILE=65535
+
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# 数据库 / 日志 / 头像目录需要可写
+ReadWritePaths=/opt/xiyu-ai/data /opt/xiyu-ai/logs /opt/xiyu-ai/public/avatars
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,43 @@
+# 溪语 AI · docker compose
+#
+# 用法：
+#   1. cp .env.example .env  并填好 CHAT_PROVIDER 与至少一个 *_API_KEY
+#      （或者先 docker compose up 起来后浏览器打开 /app/setup.html 看引导）
+#   2. docker compose up -d
+#   3. 打开 http://localhost:3000
+#
+# 持久化：
+#   ./data 挂载到容器 /app/data，里头是 SQLite 数据库 + 用户记忆归档
+#   .env 通过 env_file 注入，不进镜像层
+#   .weixin-credentials.json 若存在也会挂载（可选）
+#
+# Copyright (c) 2026 溪语 AI Contributors. MIT License.
+
+services:
+  xiyu-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: xiyu-ai:latest
+    container_name: xiyu-ai
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      # 容器内固定路径，覆盖 .env 里可能的相对路径
+      - DB_PATH=/app/data/bot.db
+      - API_PORT=3000
+    volumes:
+      - ./data:/app/data
+      # 可选：如果你跑过 `npm run ilink:login` 生成了凭据文件，挂进去
+      - ./.weixin-credentials.json:/app/.weixin-credentials.json:ro
+      # 可选：用户上传的头像、场景照等
+      - ./public/avatars:/app/public/avatars
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3

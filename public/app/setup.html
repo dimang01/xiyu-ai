@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>首次配置 · 溪语 AI</title>
+  <link rel="icon" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sakura: '#FFB6D9', 'sakura-soft': '#FFE8F2', 'sakura-deep': '#FF8FB8',
+            ink: '#1D1D1F', mute: '#86868B', line: '#F0F0F2', cloud: '#FAFAFA',
+          },
+          fontFamily: {
+            sans: ['"PingFang SC"', '"HarmonyOS Sans SC"', '"Microsoft YaHei"', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['"SF Mono"', 'ui-monospace', 'Menlo', 'Consolas', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { background: linear-gradient(180deg, #FFF7FB 0%, #FFFFFF 60%); }
+    .card { background: #fff; border: 1px solid #F0F0F2; border-radius: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .pill { background: #FFE8F2; color: #FF8FB8; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
+    pre { background: #1D1D1F; color: #FAFAFA; padding: 14px 16px; border-radius: 12px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+    a.link { color: #FF8FB8; font-weight: 600; }
+    a.link:hover { color: #FF6FA3; text-decoration: underline; }
+    .pkey { background: #FFE8F2; padding: 2px 6px; border-radius: 6px; font-size: 12px; color: #FF6FA3; }
+  </style>
+</head>
+<body class="font-sans text-ink">
+
+  <main class="max-w-2xl mx-auto px-5 py-12">
+
+    <header class="text-center mb-10">
+      <img src="/logo-256.webp" alt="" class="w-16 h-16 mx-auto rounded-2xl shadow-sm" />
+      <h1 class="mt-5 text-[28px] font-extrabold tracking-tight">欢迎使用 溪语 AI</h1>
+      <p class="mt-2 text-[14px] text-mute">先把 chat provider 配好，才能开始聊天。</p>
+    </header>
+
+    <!-- 状态卡 -->
+    <section id="status-card" class="card p-6 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-[15px] font-bold">当前状态</h2>
+        <span id="status-pill" class="pill">检查中…</span>
+      </div>
+      <dl class="text-[13px] space-y-2">
+        <div class="flex justify-between"><dt class="text-mute">Chat provider</dt><dd id="s-chat" class="font-semibold">—</dd></div>
+        <div class="flex justify-between"><dt class="text-mute">缺失环境变量</dt><dd id="s-missing" class="font-semibold"><span class="pkey">—</span></dd></div>
+        <div class="flex justify-between"><dt class="text-mute">微信接入</dt><dd id="s-wechat" class="font-semibold">—</dd></div>
+      </dl>
+    </section>
+
+    <!-- 推荐路径 -->
+    <section class="card p-6 mb-6">
+      <h2 class="text-[15px] font-bold mb-3">推荐做法 (3 分钟)</h2>
+      <ol class="space-y-4 text-[14px] leading-relaxed">
+        <li>
+          <span class="font-bold text-sakura-deep">1.</span>
+          回到运行服务的终端，停掉服务后执行：
+          <pre class="mt-2">npm run setup</pre>
+          <p class="text-[12px] text-mute mt-2">交互向导会问你选哪家、粘贴一次 API key，自动写入 <code>.env</code>。</p>
+        </li>
+        <li>
+          <span class="font-bold text-sakura-deep">2.</span>
+          重启服务：
+          <pre class="mt-2">npm start</pre>
+        </li>
+        <li>
+          <span class="font-bold text-sakura-deep">3.</span>
+          回到 <a href="/" class="link">首页</a> 注册账号 → 创建角色 → 开聊。
+        </li>
+      </ol>
+    </section>
+
+    <!-- 手动 fallback -->
+    <section class="card p-6 mb-6">
+      <h2 class="text-[15px] font-bold mb-3">或者：手动编辑 <code>.env</code></h2>
+      <p class="text-[13px] text-mute mb-3">如果服务不在你能开终端的机器上（比如远程容器），可以手动改 <code>.env</code> 文件然后重启：</p>
+      <pre>CHAT_PROVIDER=deepseek
+DEEPSEEK_API_KEY=your_deepseek_api_key_here</pre>
+      <p class="text-[12px] text-mute mt-3">下面是各家 chat provider 的申请链接。任选一家：</p>
+      <ul class="mt-3 space-y-2 text-[13px]">
+        <li>· <span class="pkey">deepseek</span> DeepSeek — <a class="link" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> <span class="text-mute text-[11px]">★ 推荐入门</span></li>
+        <li>· <span class="pkey">openai</span> OpenAI — <a class="link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a></li>
+        <li>· <span class="pkey">anthropic</span> Anthropic Claude — <a class="link" href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a></li>
+        <li>· <span class="pkey">zhipu</span> 智谱 GLM — <a class="link" href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noopener">open.bigmodel.cn</a></li>
+        <li>· <span class="pkey">qwen</span> 通义千问 — <a class="link" href="https://dashscope.console.aliyun.com/apiKey" target="_blank" rel="noopener">dashscope.console.aliyun.com</a></li>
+        <li>· <span class="pkey">kimi</span> Moonshot Kimi — <a class="link" href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noopener">platform.moonshot.cn</a></li>
+        <li>· <span class="pkey">doubao</span> 字节豆包 — <a class="link" href="https://console.volcengine.com/ark" target="_blank" rel="noopener">console.volcengine.com</a> <span class="text-mute text-[11px]">需填 ep-xxx</span></li>
+        <li>· <span class="pkey">xai</span> xAI Grok — <a class="link" href="https://console.x.ai/" target="_blank" rel="noopener">console.x.ai</a></li>
+        <li>· <span class="pkey">wenxin</span> 百度文心 — <a class="link" href="https://qianfan.cloud.baidu.com/" target="_blank" rel="noopener">qianfan.cloud.baidu.com</a></li>
+      </ul>
+    </section>
+
+    <section class="card p-6 mb-10">
+      <h2 class="text-[15px] font-bold mb-3">安全提示</h2>
+      <ul class="text-[13px] text-mute space-y-2 leading-relaxed">
+        <li>· 本页 <strong>不会</strong> 在浏览器里写 <code>.env</code> —— 凭据必须落在你能访问的文件系统上才安全。</li>
+        <li>· <code>.env</code> 已在 <code>.gitignore</code>。永远不要把它 commit 进仓库。</li>
+        <li>· 部署到公网时记得用 nginx / Caddy 加 TLS，参考 <a class="link" href="https://github.com/dimang01/xiyu-ai/blob/main/deploy/nginx.conf.example" target="_blank" rel="noopener">deploy/nginx.conf.example</a>。</li>
+      </ul>
+    </section>
+
+    <footer class="text-center text-[12px] text-mute">
+      <a class="link" href="https://github.com/dimang01/xiyu-ai" target="_blank" rel="noopener">GitHub</a>
+      · <a class="link" href="https://github.com/dimang01/xiyu-ai/issues" target="_blank" rel="noopener">Issues</a>
+      · MIT License
+    </footer>
+  </main>
+
+  <script>
+    async function load() {
+      try {
+        const r = await fetch('/api/health');
+        const d = await r.json();
+        const chat = d.providers?.chat || {};
+        document.getElementById('s-chat').textContent = `${chat.label || chat.id || '—'} (${chat.model || '默认'})`;
+        const missingEnv = d.setup?.missing_env || '';
+        document.getElementById('s-missing').innerHTML = missingEnv
+          ? `<span class="pkey">${missingEnv}</span>`
+          : `<span class="text-mute">无</span>`;
+        document.getElementById('s-wechat').textContent = d.wechat?.configured ? `已配置 (${d.wechat.source})` : '未配置（不影响 web 使用）';
+        const pill = document.getElementById('status-pill');
+        if (d.setup_required) {
+          pill.textContent = '需要配置';
+          pill.style.background = '#FFE3E3';
+          pill.style.color = '#D63B3B';
+        } else {
+          pill.textContent = '已就绪';
+          pill.style.background = '#E3F8E5';
+          pill.style.color = '#28A745';
+          // 已经配好了，提示用户可以回首页
+          const main = document.querySelector('main');
+          const ready = document.createElement('div');
+          ready.className = 'card p-5 mb-6 bg-gradient-to-br from-white to-sakura-soft/40 text-center';
+          ready.innerHTML = '<p class="text-[14px] font-semibold">✅ 配置已就绪，可以开始使用</p><a href="/" class="inline-block mt-3 px-5 py-2 rounded-full bg-sakura-deep text-white text-[13px] font-semibold">回到首页</a>';
+          main.insertBefore(ready, main.children[1]);
+        }
+      } catch (e) {
+        document.getElementById('status-pill').textContent = '无法访问 /api/health';
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

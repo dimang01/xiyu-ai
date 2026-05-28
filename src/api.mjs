@@ -2429,11 +2429,33 @@ export function startApiServer() {
   // 健康检查 + 当前激活的 AI provider（开源版本提供，便于排查"为什么没回复"）
   // wechat 字段只暴露 configured + source，绝不输出 token / botId
   app.get('/api/health', (_req, res) => {
+    const chat = getActiveChatProvider();
+    // chat provider 是否已配置对应的 *_API_KEY
+    // 与 providers/chat.mjs / scripts/setup-wizard.mjs 的映射保持一致
+    const CHAT_KEY_ENV = {
+      deepseek: 'DEEPSEEK_API_KEY',
+      openai: 'OPENAI_API_KEY',
+      anthropic: 'ANTHROPIC_API_KEY',
+      xai: 'XAI_API_KEY',
+      zhipu: 'ZHIPU_API_KEY',
+      doubao: 'DOUBAO_API_KEY',
+      qwen: 'QWEN_API_KEY',
+      kimi: 'KIMI_API_KEY',
+      wenxin: 'WENXIN_API_KEY',
+    };
+    const chatKeyEnv = CHAT_KEY_ENV[String(chat?.id || '').toLowerCase()];
+    const chatConfigured = chatKeyEnv ? Boolean(process.env[chatKeyEnv]) : false;
+    const setupRequired = !chatConfigured;
+
     res.json({
       ok: true,
       status: 'running',
+      setup_required: setupRequired,                          // 用于首次启动浏览器引导
+      setup: setupRequired
+        ? { reason: 'chat_provider_unconfigured', chat_provider: chat?.id, missing_env: chatKeyEnv }
+        : null,
       providers: {
-        chat: getActiveChatProvider(),
+        chat: { ...chat, configured: chatConfigured },
         image: getActiveImageProvider(),
         vision: getActiveVisionProvider(),
         asr: getActiveAsrProvider(),

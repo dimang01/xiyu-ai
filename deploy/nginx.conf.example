@@ -1,0 +1,64 @@
+# 溪语 AI · nginx 反代示例
+#
+# 用法：
+#   1. 把本文件复制到 /etc/nginx/sites-available/xiyu-ai
+#   2. 修改 server_name 为你的域名
+#   3. 用 certbot 申请 TLS：
+#        certbot --nginx -d your-domain.example.com
+#   4. ln -s /etc/nginx/sites-available/xiyu-ai /etc/nginx/sites-enabled/
+#   5. nginx -t && systemctl reload nginx
+#
+# 假设 Node 服务监听 127.0.0.1:3000（与 deploy/xiyu-ai.service 默认一致）。
+
+# ─── HTTP → HTTPS 跳转 ────────────────────────────────────────────────────
+server {
+    listen 80;
+    listen [::]:80;
+    server_name your-domain.example.com;
+
+    # certbot 的 ACME challenge 走 80
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+
+    location / { return 301 https://$host$request_uri; }
+}
+
+# ─── HTTPS 反代 ───────────────────────────────────────────────────────────
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name your-domain.example.com;
+
+    # certbot 会把下面两行写好，这里仅占位：
+    # ssl_certificate     /etc/letsencrypt/live/your-domain.example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/your-domain.example.com/privkey.pem;
+
+    # 安全 header（按需开启）
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header X-Frame-Options           "SAMEORIGIN" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+
+    # 用户上传头像最大 25MB（与 express 默认对齐）
+    client_max_body_size 25m;
+
+    # 静态文件可以走 nginx 直发，加速一点；这里全部转交 Node，简单可靠
+    location / {
+        proxy_pass         http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # iLink 长轮询要求长连接
+        proxy_read_timeout  90s;
+        proxy_send_timeout  90s;
+        proxy_connect_timeout 10s;
+    }
+
+    # 健康检查端点：不要让其被外部 caching CDN 缓存
+    location = /api/health {
+        proxy_pass http://127.0.0.1:3000;
+        add_header Cache-Control "no-store" always;
+    }
+}

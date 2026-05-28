@@ -84,38 +84,55 @@
 
 ### 🚀 一键启动
 
+三条路径任选其一。如果你只是想试一下，**路径 A（向导）** 最快。
+
+#### 🅰️ 路径 A — 本地裸跑（推荐入门，3 分钟）
+
 ```bash
-# 1. 克隆
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
-
-# 2. 安装依赖（Node ≥ 20）
-npm install
-
-# 3. 配置环境变量
-cp .env.example .env
-# 编辑 .env：至少把 CHAT_PROVIDER 和对应的 *_API_KEY 填上
-
-# 4. 启动
+npm install        # Node ≥ 20
+npm run setup      # 交互式配置：选 provider、粘贴 API key、自动写 .env
 npm start
 # 打开 http://localhost:3000
 ```
 
-**最小 `.env` 示例**（任选其一）：
+`npm run setup` 会在终端列出所有 chat provider 让你选，自动写好 `.env`。如果你跳过 API key 那一步，服务仍会启动，落地页底部会弹出引导条提示去 `/app/setup.html` 完成配置。
+
+#### 🅱️ 路径 B — Docker Compose（推荐生产）
+
+```bash
+git clone https://github.com/dimang01/xiyu-ai.git
+cd xiyu-ai
+cp .env.example .env                # 然后编辑 .env，至少填 CHAT_PROVIDER + 对应 *_API_KEY
+docker compose up -d
+# 打开 http://localhost:3000
+```
+
+- SQLite 数据库走 `./data` volume，重启不丢
+- `restart: unless-stopped` 已经在 compose 里；不需要 systemd
+- 自定义端口：`HOST_PORT=8080 docker compose up -d`
+- 看日志：`docker compose logs -f xiyu-ai`
+
+#### 🅲 路径 C — 完全手动
 
 ```dotenv
-# 选项 A：DeepSeek（推荐入门，性价比最高）
+# 最小 .env（任选其一）
+
+# 选项 1：DeepSeek（推荐入门，性价比最高）
 CHAT_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
-# 选项 B：OpenAI
+# 选项 2：OpenAI
 CHAT_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key_here
 
-# 选项 C：智谱（国内无需备案即可调用）
+# 选项 3：智谱（国内无需备案即可调用）
 CHAT_PROVIDER=zhipu
 ZHIPU_API_KEY=your_zhipu_api_key_here
 ```
+
+填好 `.env` 之后 `npm start` 即可。
 
 **启动后页面**：
 
@@ -318,26 +335,17 @@ CHAT_MODEL=claude-sonnet-4-6
 | 成本监控 | chat / image provider 都有费用；`ai_usage_daily` 表是接监控的天然入口 |
 | 内容标识 | 按当地法规对 AI 生成内容做标注 |
 
-**最小 nginx 反代示例**：
+**模板**：仓库里 `deploy/` 目录提供了开箱即用的部署模板：
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name your-domain.example.com;
+| 文件 | 用途 |
+|---|---|
+| [`deploy/xiyu-ai.service`](./deploy/xiyu-ai.service) | systemd unit；服务自启动 + 崩溃自动重启 + 安全加固 |
+| [`deploy/nginx.conf.example`](./deploy/nginx.conf.example) | nginx 反代示例：80 → 443 跳转、HSTS、长轮询超时 |
+| [`deploy/README.md`](./deploy/README.md) | 一份从 0 → 上线的 step-by-step（裸跑路径） |
 
-    # ssl_certificate / ssl_certificate_key ...
+如果走 Docker，`compose.yml` 自带 `restart: unless-stopped`，systemd 那份就不必要了；nginx 模板继续适用。
 
-    location / {
-        proxy_pass         http://127.0.0.1:3000;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_http_version 1.1;
-        client_max_body_size 25m;     # 用户上传头像
-    }
-}
-```
-
-更完整的部署指南正在写，跟踪 [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5)。
+更完整的部署 walkthrough（备份策略 / 监控接入 / 日志切割）跟踪 [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5)。
 
 ---
 
@@ -438,38 +446,55 @@ server {
 
 ### 🚀 Quick Start
 
+Three paths — pick whichever fits. **Path A (wizard)** is the fastest for a first try.
+
+#### 🅰️ Path A — Local (recommended for first try, 3 min)
+
 ```bash
-# 1. Clone
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
-
-# 2. Install (Node ≥ 20)
-npm install
-
-# 3. Configure env
-cp .env.example .env
-# Edit .env: set CHAT_PROVIDER and the corresponding *_API_KEY
-
-# 4. Run
+npm install        # Node ≥ 20
+npm run setup      # Interactive: pick provider, paste API key, .env written for you
 npm start
 # Open http://localhost:3000
 ```
 
-**Minimal `.env` (pick one)**:
+`npm run setup` lists every chat provider in your terminal and writes `.env` for you. If you skip the API key step the service still starts; the landing page then shows a bottom banner pointing at `/app/setup.html` to finish configuration.
+
+#### 🅱️ Path B — Docker Compose (recommended for self-hosting)
+
+```bash
+git clone https://github.com/dimang01/xiyu-ai.git
+cd xiyu-ai
+cp .env.example .env                # then edit .env: set CHAT_PROVIDER + matching *_API_KEY
+docker compose up -d
+# Open http://localhost:3000
+```
+
+- SQLite database lives in the `./data` volume — survives restarts.
+- `restart: unless-stopped` is already set in compose; no systemd needed.
+- Custom port: `HOST_PORT=8080 docker compose up -d`
+- Logs: `docker compose logs -f xiyu-ai`
+
+#### 🅲 Path C — Fully manual
 
 ```dotenv
-# Option A — DeepSeek (recommended for first try, cheapest)
+# Minimal .env (pick one)
+
+# Option 1 — DeepSeek (cheapest, recommended for first try)
 CHAT_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
-# Option B — OpenAI
+# Option 2 — OpenAI
 CHAT_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key_here
 
-# Option C — Zhipu (no domain filing required in mainland China)
+# Option 3 — Zhipu (mainland-China friendly)
 CHAT_PROVIDER=zhipu
 ZHIPU_API_KEY=your_zhipu_api_key_here
 ```
+
+Then `npm start`.
 
 **Pages after start**:
 
@@ -667,26 +692,17 @@ If you plan to run this for more than local experiments:
 | Cost monitoring | Chat / image providers cost money; the `ai_usage_daily` table is the natural place to wire metrics |
 | Content labeling | Label AI-generated content per local laws and platform policy |
 
-**Minimal nginx reverse-proxy snippet**:
+**Templates**: the `deploy/` directory ships drop-in deployment templates:
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name your-domain.example.com;
+| File | Purpose |
+|---|---|
+| [`deploy/xiyu-ai.service`](./deploy/xiyu-ai.service) | systemd unit — auto-start, auto-restart, hardening |
+| [`deploy/nginx.conf.example`](./deploy/nginx.conf.example) | nginx reverse proxy: HTTPS, HSTS, long-poll timeouts |
+| [`deploy/README.md`](./deploy/README.md) | Step-by-step from 0 → live VPS (bare-metal path) |
 
-    # ssl_certificate / ssl_certificate_key ...
+For the Docker path, `compose.yml` already sets `restart: unless-stopped`, so the systemd unit is unnecessary; the nginx template is still useful for TLS termination on the host.
 
-    location / {
-        proxy_pass         http://127.0.0.1:3000;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_http_version 1.1;
-        client_max_body_size 25m;     # user avatar uploads
-    }
-}
-```
-
-A fuller deployment guide is being drafted — tracked in [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5).
+A fuller deployment walkthrough (backups, monitoring, log rotation) is tracked in [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5).
 
 ---
 

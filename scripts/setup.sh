@@ -31,19 +31,17 @@ else
   green "    node_modules 已存在，跳过 npm install"
 fi
 
-cyan "==> 检查 .env"
-if [ ! -f .env ]; then
-  cp .env.example .env
-  yellow "    已生成 .env（从 .env.example 复制）。"
-  yellow "    请用编辑器打开 .env，至少填入：CHAT_PROVIDER 对应的 API_KEY"
-  yellow "    然后再次运行 npm start"
-  exit 0
-fi
+cyan "==> 检查 / 配置 .env"
+# 调用 setup-wizard：TTY 交互、非 TTY 自动复制 .env.example
+node scripts/setup-wizard.mjs || true
 
-# 简单校验：是否至少有一个 *_API_KEY 非空
-if ! grep -qE '^[A-Z_]+_API_KEY=.+' .env; then
-  yellow "⚠  .env 中没有发现任何 *_API_KEY 已填入。"
-  yellow "   请至少填一个 chat provider 的 key，然后再次运行 npm start。"
+# 已配置好（chat provider + 对应 API key）就继续；否则提示用户
+if ! node scripts/setup-wizard.mjs --check >/dev/null 2>&1; then
+  yellow "⚠  .env 还没配好（缺 CHAT_PROVIDER 对应的 API_KEY）。"
+  yellow "   你可以："
+  yellow "     · 重新运行  npm run setup        (TTY 交互)"
+  yellow "     · 或手动编辑 .env 后再次 npm start"
+  yellow "     · 或先启动服务，浏览器打开 /app/setup.html 看引导"
   exit 0
 fi
 

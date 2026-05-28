@@ -617,5 +617,30 @@
       lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
     }));
   </script>
+
+  <!-- 首次启动引导：chat provider 未配置则弹一个非阻塞的提示条 -->
+  <script>
+    (async () => {
+      try {
+        const r = await fetch('/api/health');
+        const d = await r.json();
+        if (!d?.setup_required) return;
+        if (sessionStorage.getItem('xiyu_setup_dismissed') === '1') return;
+        const bar = document.createElement('div');
+        bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;padding:14px 16px;background:#1D1D1F;color:#fff;display:flex;align-items:center;gap:12px;justify-content:space-between;font-family:system-ui,-apple-system,"PingFang SC",sans-serif;font-size:13px;box-shadow:0 -4px 16px rgba(0,0,0,0.2);';
+        bar.innerHTML =
+          '<span>⚙️ 服务已启动，但还没配置 chat provider（缺 <code style="background:#333;padding:2px 6px;border-radius:4px;">' + (d.setup?.missing_env || 'API_KEY') + '</code>）。聊天功能要先配好 key 才能用。</span>' +
+          '<span style="display:flex;gap:8px;flex-shrink:0;">' +
+          '<a href="/app/setup.html" style="background:#FFB6D9;color:#1D1D1F;padding:6px 14px;border-radius:9999px;font-weight:600;text-decoration:none;">去配置 →</a>' +
+          '<button id="xiyu-setup-dismiss" style="background:transparent;border:1px solid #555;color:#ccc;padding:6px 12px;border-radius:9999px;font-weight:500;cursor:pointer;">稍后</button>' +
+          '</span>';
+        document.body.appendChild(bar);
+        document.getElementById('xiyu-setup-dismiss')?.addEventListener('click', () => {
+          sessionStorage.setItem('xiyu_setup_dismissed', '1');
+          bar.remove();
+        });
+      } catch { /* ignore */ }
+    })();
+  </script>
 </body>
 </html>

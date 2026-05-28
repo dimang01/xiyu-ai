@@ -1,0 +1,47 @@
+# 排除运行时数据 / 凭据 / 编辑器文件
+node_modules
+.git
+.gitignore
+.gitattributes
+
+# 运行时数据（应该走 volume）
+data
+logs
+*.db
+*.db-wal
+*.db-shm
+
+# 敏感
+.env
+.env.local
+.env.*.local
+.auth-secret
+.admin-secret
+.admin-credentials
+.weixin-credentials.json
+*.secret
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+*.swp
+*~
+
+# 备份 / 私有
+_backup_*
+backups
+*.tar
+*.tar.gz
+*.zip
+
+# 用户生成媒体（如果挂 volume 就由 compose 处理）
+public/avatars/scenes
+public/assets/scenes
+public/uploads
+public/generated
+
+# CI / docs 输出
+.github/workflows/*.log
+README.md.bak
