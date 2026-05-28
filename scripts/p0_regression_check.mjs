@@ -121,25 +121,98 @@ try {
   check('memory_v2 isSensitiveMemoryContent 检测 API key', false, e.message);
 }
 
-// ─── 10. HTTP health / auth checks (via Node fetch if server running) ─────────
-const API_PORT = process.env.API_PORT || process.env.PORT || 3000;
-const BASE = `http://127.0.0.1:${API_PORT}`;
+// ─── 10. Companion ownership static audit ────────────────────────────────────
+// Verify that no user-facing /companions/:id/* route uses bare requireCompanion
+// (which only checks existence, not ownership). All such routes must use
+// requireOwnedCompanion so that cross-user access returns 403.
+try {
+  const { readFileSync } = await import('node:fs');
+  const apiSrc = readFileSync(path.join(ROOT, 'src/api.mjs'), 'utf-8');
+
+  // Count remaining bare requireCompanion call sites (excludes function definition)
+  // A call site looks like "requireCompanion(res, id); if (!c) return;"
+  const bareCallSites = (apiSrc.match(/requireCompanion\(res, id\); if \(!c\) return;/g) || []).length;
+  check('user 路由无 requireCompanion 调用点（全部改为 requireOwnedCompanion）', bareCallSites === 0,
+    bareCallSites > 0 ? `仍有 ${bareCallSites} 处未修复` : '');
+
+  // Verify key ownership-sensitive routes use requireOwnedCompanion
+  const ownershipRoutes = [
+    { path: '/companions/:id/memories',      method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/prompt-debug',  method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/emotion-trend', method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/user-profile',  method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/mood',          method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/scene',         method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/reminders',     method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/persona',       method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/avatar',        method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/affection',     method: 'requireOwnedCompanion' },
+    { path: '/companions/:id/context',       method: 'requireOwnedCompanion' },
+  ];
+
+  for (const { path: rPath } of ownershipRoutes) {
+    // Find the route declaration and check the next requireOwnedCompanion call
+    // Use escaped path for regex: /companions/:id/mood → /companions\/:id\/mood
+    const escaped = rPath.replace(/\//g, '\\/').replace(/:/g, ':');
+    const re = new RegExp(`'${escaped}[^']*'[\\s\\S]{0,400}?requireOwnedCompanion`);
+    const found = re.test(apiSrc);
+    check(`${rPath} 使用 requireOwnedCompanion`, found);
+  }
+
+  // Verify DELETE /companions/:id uses req.authUser.id (not body-provided accountId).
+  // Use position-based search: find the route declaration, then scan the next 1000 chars.
+  const deleteRouteIdx = apiSrc.indexOf("router.delete('/companions/:id'");
+  const deleteRegion = deleteRouteIdx >= 0 ? apiSrc.slice(deleteRouteIdx, deleteRouteIdx + 1200) : '';
+  const usesAuthUser = deleteRegion.includes('req.authUser.id');
+  const usesBodyId = deleteRegion.includes('req.query.user_id') || deleteRegion.includes('req.body?.user_id');
+  check('DELETE /companions/:id 使用 req.authUser.id（不取 body user_id）', usesAuthUser && !usesBodyId);
+
+} catch (e) {
+  check('ownership 静态检查', false, e.message);
+}
+
+// ─── 11. HTTP health / auth checks (via Node fetch if server running) ─────────
+// Priority: CHECK_BASE_URL > API_PORT > PORT > 3000
+const BASE = process.env.CHECK_BASE_URL
+  || (process.env.API_PORT ? `http://127.0.0.1:${process.env.API_PORT}` : null)
+  || (process.env.PORT     ? `http://127.0.0.1:${process.env.PORT}`     : null)
+  || 'http://127.0.0.1:3000';
+console.log(`\n[check:p0] HTTP 检查目标: ${BASE}`);
 
 try {
   const healthResp = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
   check('/api/health 返回 200', healthResp.status === 200);
 
-  const memResp = await fetch(`${BASE}/api/companions/1/memories`, { signal: AbortSignal.timeout(3000) });
-  const isAuth = memResp.status === 401 || memResp.status === 403;
-  check('未登录 /api/companions/1/memories 返回 401/403 (不是 500)', isAuth, `status=${memResp.status}`);
-
-  const debugResp = await fetch(`${BASE}/api/companions/1/prompt-debug`, { signal: AbortSignal.timeout(3000) });
-  const isDebugAuth = debugResp.status === 401 || debugResp.status === 403;
-  check('未登录 /api/companions/1/prompt-debug 返回 401/403 (不是 500)', isDebugAuth, `status=${debugResp.status}`);
-
-  const trendResp = await fetch(`${BASE}/api/companions/1/emotion-trend`, { signal: AbortSignal.timeout(3000) });
-  const isTrendAuth = trendResp.status === 401 || trendResp.status === 403;
-  check('未登录 /api/companions/1/emotion-trend 返回 401/403 (不是 500)', isTrendAuth, `status=${trendResp.status}`);
+  // All companion-specific endpoints must reject unauthenticated requests (401/403).
+  // Specify the correct HTTP method for each endpoint.
+  const authEndpoints = [
+    { ep: '/api/companions/1/memories',      method: 'GET'  },
+    { ep: '/api/companions/1/prompt-debug',  method: 'GET'  },
+    { ep: '/api/companions/1/emotion-trend', method: 'GET'  },
+    { ep: '/api/companions/1/mood',          method: 'PUT'  },
+    { ep: '/api/companions/1/scene',         method: 'PUT'  },
+    { ep: '/api/companions/1/reminders',     method: 'GET'  },
+    { ep: '/api/companions/1/persona',       method: 'GET'  },
+    { ep: '/api/companions/1/avatar/suggest',method: 'GET'  },
+    { ep: '/api/companions/1/status',        method: 'GET'  },
+    { ep: '/api/companions/1/context',       method: 'GET'  },
+    { ep: '/api/companions/1/user-profile',  method: 'GET'  },
+    { ep: '/api/companions/1/affection',     method: 'PUT'  },
+  ];
+  for (const { ep, method } of authEndpoints) {
+    try {
+      const r = await fetch(`${BASE}${ep}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: method !== 'GET' ? '{}' : undefined,
+        signal: AbortSignal.timeout(3000),
+      });
+      const isProtected = r.status === 401 || r.status === 403;
+      check(`未登录 ${method} ${ep} 返回 401/403 (不是 500)`, isProtected, `status=${r.status}`);
+    } catch (fetchErr) {
+      check(`未登录 ${method} ${ep} 返回 401/403`, false, fetchErr.message);
+    }
+  }
 } catch (e) {
   const serverMsg = e.name === 'TimeoutError' || e.code === 'ECONNREFUSED'
     ? '服务器未运行，跳过 HTTP 检查'

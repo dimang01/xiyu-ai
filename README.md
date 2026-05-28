@@ -133,15 +133,22 @@ docker compose up -d
 #### 🅲 路径 C — 一行 `docker run`（试一下，不克隆代码）
 
 ```bash
+# 指定版本（推荐生产）
 docker run -d --name xiyu-ai \
   -p 3000:3000 \
   -e CHAT_PROVIDER=deepseek \
   -e DEEPSEEK_API_KEY=your_deepseek_api_key_here \
   -v xiyu-data:/app/data \
-  ghcr.io/dimang01/xiyu-ai:latest
+  ghcr.io/dimang01/xiyu-ai:1.1.0
 # 打开 http://localhost:3000
 ```
 
+> **重要：数据持久化**
+> - 必须挂载 `-v xiyu-data:/app/data`（或绑定宿主机目录 `-v /your/path:/app/data`）
+> - 不挂载 volume 则容器重启后 **SQLite 数据库（聊天记录、记忆、用户）全部丢失**
+> - 所有敏感配置（provider key、`AUTH_SECRET` 等）**必须通过 `-e` 或 `--env-file` 注入**，不要写进镜像
+
+可用标签：`latest`、`1.1`、`1.1.0`（同一镜像，推荐锁定具体版本）。
 镜像由 GitHub Actions 在每次发版（v* tag）时自动构建并发布到 GHCR，支持 `linux/amd64` 和 `linux/arm64`。
 
 ---
@@ -524,6 +531,52 @@ CHAT_MODEL=claude-sonnet-4-6
 
 ---
 
+### 🔼 v1.1.0 升级 / 部署注意事项
+
+> 从 v1.0.x 升级到 v1.1.0，或首次部署 v1.1.0 镜像时，请注意以下几点。
+
+#### 数据库迁移
+
+v1.1.0 新增了 `emotion_snapshots` 等表。首次启动时会**自动创建**缺失的表（`CREATE TABLE IF NOT EXISTS`），不需要手动执行 SQL。  
+建议升级前先备份 `data/bot.db`：
+
+```bash
+cp data/bot.db data/bot.db.backup-before-v1.1.0
+```
+
+#### 新增 Docker 相关要点
+
+```bash
+# 拉取指定版本
+docker pull ghcr.io/dimang01/xiyu-ai:1.1.0
+
+# 运行（必须挂载 data volume）
+docker run -d --name xiyu-ai \
+  -p 3000:3000 \
+  --env-file .env \
+  -v xiyu-data:/app/data \
+  ghcr.io/dimang01/xiyu-ai:1.1.0
+```
+
+| 要点 | 说明 |
+|---|---|
+| **必须挂载 `/app/data`** | 不挂载则数据库随容器消失，聊天记录和记忆全部丢失 |
+| **通过 env 注入密钥** | `CHAT_PROVIDER`、`*_API_KEY`、`AUTH_SECRET` 等，禁止硬编码进镜像 |
+| **SQLite 非 HA** | 单文件数据库，生产建议每日备份（`scripts/backup-db.sh`） |
+| **新增环境变量** | `PROACTIVE_ENGINE=v2\|legacy`（默认 `legacy`，v2 为实验性）；其余见 `.env.example` |
+
+#### 验证
+
+```bash
+# 快速健康检查
+curl http://localhost:3000/api/health
+
+# 运行完整回归检查（需先启动服务）
+CHECK_BASE_URL=http://localhost:3000 npm run check:p0
+```
+
+---
+
 ### 🧪 已知限制
 
 | 限制 | 跟踪 |
@@ -673,15 +726,22 @@ docker compose up -d
 #### 🅲 Path C — One-line `docker run` (try without cloning)
 
 ```bash
+# Pin to a specific version (recommended for production)
 docker run -d --name xiyu-ai \
   -p 3000:3000 \
   -e CHAT_PROVIDER=deepseek \
   -e DEEPSEEK_API_KEY=your_deepseek_api_key_here \
   -v xiyu-data:/app/data \
-  ghcr.io/dimang01/xiyu-ai:latest
+  ghcr.io/dimang01/xiyu-ai:1.1.0
 # Open http://localhost:3000
 ```
 
+> **Important — data persistence**
+> - You **must** mount `-v xiyu-data:/app/data` (or a host-path bind mount `-v /your/path:/app/data`)
+> - Without a volume, the SQLite database (chat history, memories, users) is **lost on every container restart**
+> - All secrets (`AUTH_SECRET`, provider API keys, etc.) must be injected via `-e` or `--env-file` — never bake them into the image
+
+Available tags: `latest`, `1.1`, `1.1.0` (same image — pin the specific version in production).  
 Images are built and published to GHCR by GitHub Actions on every version tag (`v*`), with `linux/amd64` and `linux/arm64` support.
 
 ---
@@ -1005,6 +1065,49 @@ The `deploy/` directory ships drop-in templates:
 For the Docker path, `compose.yml` already sets `restart: unless-stopped`, so systemd is unnecessary; the nginx template is still useful for host-side TLS termination.
 
 A fuller deployment walkthrough (backup strategy, monitoring, multi-instance, log rotation) is tracked in [Issue #5](https://github.com/dimang01/xiyu-ai/issues/5).
+
+---
+
+### 🔼 v1.1.0 Upgrade / Deployment Notes
+
+> Applies when upgrading from v1.0.x → v1.1.0, or doing a first-time deploy of the v1.1.0 image.
+
+#### Database migration
+
+v1.1.0 adds new tables (`emotion_snapshots`, etc.). They are created automatically on first start (`CREATE TABLE IF NOT EXISTS`) — no manual SQL needed.  
+Recommended: back up before upgrading:
+
+```bash
+cp data/bot.db data/bot.db.backup-before-v1.1.0
+```
+
+#### Docker quick reference
+
+```bash
+# Pull a pinned version
+docker pull ghcr.io/dimang01/xiyu-ai:1.1.0
+
+# Run (volume mount is required)
+docker run -d --name xiyu-ai \
+  -p 3000:3000 \
+  --env-file .env \
+  -v xiyu-data:/app/data \
+  ghcr.io/dimang01/xiyu-ai:1.1.0
+```
+
+| Point | Detail |
+|---|---|
+| **Mount `/app/data`** | Without a volume, the database is wiped on every container restart — chat history, memories, and users are gone |
+| **Inject secrets via env** | `CHAT_PROVIDER`, `*_API_KEY`, `AUTH_SECRET`, etc. — never hardcode into the image |
+| **SQLite is not HA** | Single-file DB; schedule daily backups in production (`scripts/backup-db.sh`) |
+| **New env var** | `PROACTIVE_ENGINE=v2\|legacy` (default `legacy`; v2 is experimental) — see `.env.example` for full list |
+
+#### Smoke test
+
+```bash
+curl http://localhost:3000/api/health
+CHECK_BASE_URL=http://localhost:3000 npm run check:p0
+```
 
 ---
 
