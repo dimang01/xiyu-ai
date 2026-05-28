@@ -89,6 +89,10 @@
 | 📱 **微信对接** | 网页扫码即可绑定 — 后端运行时直接向腾讯 iLink 申请二维码，**无需预填 ILINK_\* 环境变量**（需要你的微信号在腾讯 iLink/ClawBot 已准入） |
 | 📬 **邮件 dev 模式** | 未配 Resend 时验证码自动打到服务日志 — 首次注册无需任何邮件服务 |
 | 🩺 **npm run doctor** | 一键诊断自托管环境：Node 版本 / SQLite 可写 / API key / iLink / 端口 / 服务健康 |
+| 🧪 **npm run check:p0** | P0/P1 回归检查：验证核心模块导出、数据表、页面、未登录 API 返回 401/403 |
+| 🧠 **Memory Reflection** | 每日/每周 AI 驱动结构化记忆反思，自动提炼对用户新认识并更新 Memory v2 |
+| 📈 **Emotion Trend** | Dashboard 显示近 7 天情绪曲线（好感 / 信任 / 安全感 / 精力）；`/api/companions/:id/emotion-trend` |
+| 🔍 **Prompt Debug Panel** | `/app/debug-prompt.html` — 开发者查看实时 prompt 拼接，分区显示 |
 
 ---
 
@@ -243,6 +247,32 @@ npm run doctor
 ```
 
 本工具**不输出 API key 内容**，只显示字符数和占位符检测结果。
+
+---
+
+### 🧪 npm run check:p0
+
+P0/P1 核心功能回归检查（可在 CI 或每次更新后执行）：
+
+```bash
+npm run check:p0
+```
+
+检查内容：
+- Memory v2 所有核心导出函数
+- P0 新增模块（emotion_state / proactive_engine / persona_guard / reflection）
+- `/app/memories.html`、`/app/debug-prompt.html` 存在
+- 未登录 API 返回 401/403（不是 500）
+- 如果服务运行中，自动进行 HTTP 健康检查
+
+---
+
+### 🌐 环境变量参考（P1 新增）
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `PROACTIVE_ENGINE` | `v2` | `v2`：启用情绪驱动主动消息决策；`legacy`：保留旧时间窗口调度 |
+| `MEMORY_EMBEDDING_SIM_THRESHOLD` | `0.86` | 语义去重相似度阈值（embedding 可用时） |
 
 ---
 

@@ -7,7 +7,10 @@
  */
 
 import { log } from './logger.mjs';
-import { getEmotionState, upsertEmotionState } from './db.mjs';
+import {
+  getEmotionState, upsertEmotionState,
+  insertEmotionHistory, getEmotionHistoryTrend, getLastEmotionHistoryAt, cleanupOldEmotionHistory,
+} from './db.mjs';
 
 // ─── State vocabulary ─────────────────────────────────────────────────────────
 
@@ -213,6 +216,45 @@ const MOOD_HINTS = {
   comforting:  '你感觉到对方需要安慰，你会温柔、耐心，多给予陪伴感。',
   clingy:      '你有点黏糊糊的，好想陪在对方身边，语气里带着撒娇。',
 };
+
+// ─── Emotion History snapshot ─────────────────────────────────────────────────
+
+const MIN_SNAPSHOT_GAP_MS = 15 * 60_000; // 15 minutes
+const MAX_SNAPSHOTS_PER_DAY = 96;        // ~1 per 15min safety cap
+
+/**
+ * Record a snapshot of the emotion state into companion_emotion_history.
+ * Rate-limited: at most one per MIN_SNAPSHOT_GAP_MS unless state changed significantly.
+ */
+export function recordEmotionSnapshot(companionId, emotionState, source = 'auto') {
+  try {
+    const lastAt = getLastEmotionHistoryAt(companionId);
+    const now = Date.now();
+
+    if (lastAt) {
+      const elapsed = now - new Date(lastAt).getTime();
+      if (elapsed < MIN_SNAPSHOT_GAP_MS) return;
+    }
+
+    insertEmotionHistory(companionId, emotionState, source);
+    cleanupOldEmotionHistory(companionId);
+  } catch (e) {
+    log('warn', `[EmotionHistory] snapshot 失败 companion=${companionId}: ${e.message}`);
+  }
+}
+
+/**
+ * Get emotion trend points for the last N days.
+ */
+export function getEmotionTrend(companionId, options = {}) {
+  const days = options.days ?? 7;
+  try {
+    return getEmotionHistoryTrend(companionId, days);
+  } catch (e) {
+    log('warn', `[EmotionHistory] getTrend 失败 companion=${companionId}: ${e.message}`);
+    return [];
+  }
+}
 
 export function buildEmotionPromptHint(emotionState) {
   if (!emotionState) return '';

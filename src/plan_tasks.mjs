@@ -24,6 +24,8 @@ import {
   getUserPlan, getRecentSummaries,
   saveDailySchedule, getDailySchedule,
 } from './db.mjs';
+import { applyMemoryDecayBatch } from './memory_v2.mjs';
+import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 
@@ -56,6 +58,12 @@ async function tick(now = new Date()) {
   await runOnce(parts, `cleanup-${parts.hour}`, parts.minute === 5, () => runHourlyCleanup());
   // 23:30 — 把今日日程中 importance>=6 的项归档为长期记忆
   await runOnce(parts, 'archive-schedule', parts.hour === 23 && parts.minute === 30, () => runArchiveDailySchedule(parts.dateKey));
+  // 03:20 — 记忆衰减写回
+  await runOnce(parts, 'memory-decay', parts.hour === 3 && parts.minute === 20, () => runMemoryDecay());
+  // 02:15 — 每日反思（在 daily summary 后运行）
+  await runOnce(parts, 'daily-reflection', parts.hour === 2 && parts.minute === 15, () => runDailyReflections(parts.dateKey));
+  // 周日 02:45 — 每周反思
+  await runOnce(parts, 'weekly-reflection', parts.weekday === 0 && parts.hour === 2 && parts.minute === 45, () => runWeeklyReflections(parts.dateKey));
 }
 
 // ─── 日程归档为记忆 ─────────────────────────────────────────────────────────
@@ -259,6 +267,43 @@ function ageOccupationHint(age, isWeekend, roleTitle) {
   return isWeekend
     ? '你 35+，周末可以陪家人/朋友聚会/买菜做饭/看书/休闲'
     : '你 35+，工作日通常工作 + 处理家庭事务，节奏比年轻人慢';
+}
+
+// ─── 记忆衰减写回 ────────────────────────────────────────────────────────────
+async function runMemoryDecay() {
+  try {
+    const db = getDb();
+    const result = applyMemoryDecayBatch(db, { batchSize: 200 });
+    log('info', `[PlanTasks] memory-decay checked=${result.checked} written=${result.written}`);
+  } catch (e) {
+    log('error', `[PlanTasks] memory-decay 异常: ${e.message}`);
+  }
+}
+
+// ─── 每日反思 ─────────────────────────────────────────────────────────────────
+async function runDailyReflections(dateKey) {
+  const companions = getAllActiveCompanions();
+  log('info', `[PlanTasks] daily-reflection start date=${dateKey} companions=${companions.length}`);
+  for (const c of companions) {
+    try {
+      await runDailyReflectionForCompanion(c.id, { userId: c.user_id });
+    } catch (e) {
+      log('warn', `[PlanTasks] daily-reflection 异常 companion=${c.id}: ${e.message}`);
+    }
+  }
+}
+
+// ─── 每周反思 ─────────────────────────────────────────────────────────────────
+async function runWeeklyReflections(dateKey) {
+  const companions = getAllActiveCompanions().filter(c => isProUser(c.user_id));
+  log('info', `[PlanTasks] weekly-reflection start date=${dateKey} pro=${companions.length}`);
+  for (const c of companions) {
+    try {
+      await runWeeklyReflectionForCompanion(c.id, { userId: c.user_id });
+    } catch (e) {
+      log('warn', `[PlanTasks] weekly-reflection 异常 companion=${c.id}: ${e.message}`);
+    }
+  }
 }
 
 // ─── 每小时清理 ──────────────────────────────────────────────────────────────

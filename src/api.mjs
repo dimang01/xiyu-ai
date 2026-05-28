@@ -135,8 +135,10 @@ import {
   getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, touchMemory,
   isCompanionOwnedByAccount,
   getEmotionState, upsertEmotionState,
+  getEmotionHistoryTrend,
 } from './db.mjs';
 import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, normalizeMemoryWeight } from './memory_v2.mjs';
+import { getEmotionTrend } from './emotion_state.mjs';
 
 // 由 index.mjs 注入：{ registerBotAccount, unregisterBotAccount, listBotPool }
 let botPoolHandle = null;
@@ -419,6 +421,26 @@ function requireOwnedCompanion(req, res, id) {
 
 function fallbackText(value, fallback = '') {
   return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+// Parse a system prompt string into named sections for the debug panel
+function parsePromptSections(prompt) {
+  const SECTION_PATTERNS = [
+    { key: 'core_persona',       re: /【你叫[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'relationship_stage', re: /【当前关系】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'emotion_hint',       re: /【当前情绪状态】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'memory_recall',      re: /【你记得的关于他的片段】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'daily_schedule',     re: /【你今天的安排】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'safety_rules',       re: /【重要规则】[\s\S]*?(?=\n【|\n★|\z)/m },
+    { key: 'recent_context',     re: /【最近对话上下文】[\s\S]*?(?=\n【|\n★|\z)/m },
+  ];
+
+  const sections = {};
+  for (const { key, re } of SECTION_PATTERNS) {
+    const m = prompt.match(re);
+    sections[key] = m ? m[0].trim().slice(0, 1200) : '';
+  }
+  return sections;
 }
 
 function companionSummary(companion) {
@@ -2405,6 +2427,87 @@ router.put('/companions/:id/user-profile', requireAuth, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 情绪趋势
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/emotion-trend?days=7
+router.get('/companions/:id/emotion-trend', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+  const points = getEmotionTrend(id, { days });
+  return ok(res, { days, points });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prompt Debug Panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/prompt-debug
+router.get('/companions/:id/prompt-debug', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+
+  // 普通用户只能查看自己的 companion prompt（已由 requireOwnedCompanion 保证）
+  try {
+    const memories      = recallMemories(id, c.user_id, '', 10);
+    const userProfile   = getUserProfile(c.user_id, id);
+    const recentTurns   = getConversationContext(id, 6);
+    const personaFacts  = getPersonaFacts(id);
+    const dateKey       = shanghaiDateKey();
+    const dailySchedule = getDailySchedule(id, dateKey);
+
+    const fullPrompt = buildSystemPrompt(c, {
+      memories, userProfile, recentTurns, personaFacts, dailySchedule,
+    });
+
+    // Parse the full prompt into labeled sections for the debug UI
+    const sections = parsePromptSections(fullPrompt);
+
+    return ok(res, {
+      sections,
+      full_prompt: fullPrompt,
+      redacted: true,
+      warning: '调试用途 — 包含角色设定和记忆摘要，请勿分享。',
+    });
+  } catch (e) {
+    log('error', `[API] prompt-debug 失败 companion=${id}: ${e.message}`);
+    return err(res, 'prompt-debug 生成失败', 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 用户 AI 用量（自查）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/me/ai-usage?days=7
+router.get('/me/ai-usage', requireAuth, (req, res) => {
+  noStore(res);
+  const accountId = req.authUser.id;
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+
+  const history = getAccountUsageHistory(accountId, days);
+  const totals = history.reduce((acc, row) => {
+    acc.prompt_tokens     += row.prompt_tokens     || 0;
+    acc.completion_tokens += row.completion_tokens || 0;
+    acc.message_count     += row.message_count     || 0;
+    return acc;
+  }, { prompt_tokens: 0, completion_tokens: 0, message_count: 0 });
+
+  return ok(res, {
+    days,
+    totals: {
+      prompt_tokens:     totals.prompt_tokens,
+      completion_tokens: totals.completion_tokens,
+      total_tokens:      totals.prompt_tokens + totals.completion_tokens,
+      message_count:     totals.message_count,
+      estimated_cost:    null,
+    },
+    by_day: history,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 管理员后台
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2563,6 +2666,45 @@ router.get('/admin/stats/today', requireAdmin, (req, res) => {
     total_accounts: totalAccounts,
     banned_accounts: bannedAccounts,
     total_companions: totalCompanions,
+  });
+});
+
+// GET /api/admin/stats/ai-usage?days=7
+router.get('/admin/stats/ai-usage', requireAdmin, (req, res) => {
+  noStore(res);
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+  const db = getDb();
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+
+  const rows = db.prepare(`
+    SELECT account_id, day,
+           SUM(prompt_tokens) AS prompt_tokens,
+           SUM(completion_tokens) AS completion_tokens,
+           SUM(message_count) AS message_count
+    FROM ai_usage_daily
+    WHERE day >= ?
+    GROUP BY account_id, day
+    ORDER BY day DESC
+    LIMIT 500
+  `).all(since);
+
+  const totals = rows.reduce((acc, r) => {
+    acc.prompt_tokens     += r.prompt_tokens     || 0;
+    acc.completion_tokens += r.completion_tokens || 0;
+    acc.message_count     += r.message_count     || 0;
+    return acc;
+  }, { prompt_tokens: 0, completion_tokens: 0, message_count: 0 });
+
+  return ok(res, {
+    days,
+    totals: {
+      prompt_tokens:     totals.prompt_tokens,
+      completion_tokens: totals.completion_tokens,
+      total_tokens:      totals.prompt_tokens + totals.completion_tokens,
+      message_count:     totals.message_count,
+      estimated_cost:    null,
+    },
+    by_day: rows,
   });
 });
 

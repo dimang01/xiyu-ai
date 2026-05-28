@@ -7,7 +7,8 @@
  */
 
 import { log } from './logger.mjs';
-import { patchMemory, touchMemory } from './db.mjs';
+import { patchMemory, touchMemory, getDb } from './db.mjs';
+import { embedText } from './ai.mjs';
 
 // ─── Allowed enumerations ──────────────────────────────────────────────────────
 
@@ -181,6 +182,171 @@ function tokenSimilarity(a, b) {
   let common = 0;
   for (const t of ta) { if (tb.has(t)) common++; }
   return common / Math.max(ta.size, tb.size);
+}
+
+// ─── Decay writeback ──────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the new decay score differs enough to be worth writing back.
+ */
+export function shouldWriteBackDecay(memory, newDecay) {
+  if (memory.locked || memory.pinned) return false;
+  const stored = typeof memory.decay_score === 'number' ? memory.decay_score : 1.0;
+  return Math.abs(stored - newDecay) >= 0.02;
+}
+
+/**
+ * Batch-compute and write back decay scores to the DB.
+ * Processes up to batchSize active, non-locked, non-pinned memories at a time.
+ */
+export function applyMemoryDecayBatch(db, options = {}) {
+  const batchSize = options.batchSize ?? 200;
+  const now = options.now ?? new Date();
+
+  const rows = db.prepare(`
+    SELECT id, companion_id, memory_weight, memory_status, locked, pinned,
+           last_used_at, created_at, decay_score
+    FROM companion_memories
+    WHERE memory_status = 'active'
+      AND (locked IS NULL OR locked = 0)
+      AND (pinned IS NULL OR pinned = 0)
+    ORDER BY last_used_at ASC
+    LIMIT ?
+  `).all(batchSize);
+
+  const update = db.prepare(`
+    UPDATE companion_memories SET decay_score = ?, updated_at = ? WHERE id = ?
+  `);
+
+  const runBatch = db.transaction((rows) => {
+    let written = 0;
+    for (const row of rows) {
+      const newDecay = computeMemoryDecay(row, now);
+      if (shouldWriteBackDecay(row, newDecay)) {
+        update.run(newDecay, now.toISOString(), row.id);
+        written++;
+      }
+    }
+    return written;
+  });
+
+  try {
+    const written = runBatch(rows);
+    log('info', `[MemoryDecay] 批次衰减写回 checked=${rows.length} written=${written}`);
+    return { checked: rows.length, written };
+  } catch (e) {
+    log('error', `[MemoryDecay] 批次写回失败: ${e.message}`);
+    return { checked: 0, written: 0 };
+  }
+}
+
+// ─── Semantic dedup ───────────────────────────────────────────────────────────
+
+const EMBEDDING_SIM_THRESHOLD = Number(process.env.MEMORY_EMBEDDING_SIM_THRESHOLD) || 0.86;
+
+/**
+ * Cosine similarity between two float arrays.
+ */
+function cosineSim(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na  += a[i] * a[i];
+    nb  += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+function parseEmbeddingBlob(buf) {
+  if (!buf) return null;
+  try {
+    if (Buffer.isBuffer(buf)) {
+      return Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4));
+    }
+    if (typeof buf === 'string') return JSON.parse(buf);
+    if (Array.isArray(buf)) return buf;
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Find an existing memory whose embedding is cosine-similar to the given content.
+ * Falls back to token similarity if embedding unavailable.
+ * Returns the matching memory row or null.
+ */
+export async function findSimilarMemoryByEmbedding(companionId, content, options = {}) {
+  const layer = options.layer;
+  const threshold = options.threshold ?? EMBEDDING_SIM_THRESHOLD;
+  const db = options.db ?? getDb();
+
+  if (!content || !companionId) return null;
+
+  let queryEmb = null;
+  try {
+    queryEmb = await embedText(content);
+  } catch { /* embedding unavailable → use token fallback */ }
+
+  const whereLayer = layer ? `AND memory_layer = ?` : '';
+  const params = [companionId, ...(layer ? [layer] : [])];
+  const candidates = db.prepare(`
+    SELECT id, companion_id, memory_layer, memory_weight, content, embedding, memory_status
+    FROM companion_memories
+    WHERE companion_id = ?
+      AND memory_status = 'active'
+      ${whereLayer}
+    ORDER BY created_at DESC
+    LIMIT 500
+  `).all(...params);
+
+  if (candidates.length === 0) return null;
+
+  if (queryEmb) {
+    let bestSim = -1, bestRow = null;
+    for (const row of candidates) {
+      const rowEmb = parseEmbeddingBlob(row.embedding);
+      if (!rowEmb) continue;
+      const sim = cosineSim(queryEmb, rowEmb);
+      if (sim > bestSim) { bestSim = sim; bestRow = row; }
+    }
+    if (bestSim >= threshold) return bestRow;
+  }
+
+  // Token fallback
+  for (const row of candidates) {
+    if (tokenSimilarity(row.content || '', content) > 0.7) return row;
+  }
+  return null;
+}
+
+/**
+ * Add a new memory or merge into an existing similar one.
+ * If a similar memory is found: bump its weight and update content note.
+ * If not: insert the new memory row.
+ */
+export async function addOrMergeMemory(companionId, memoryInput, options = {}) {
+  const db = options.db ?? getDb();
+  const layer = normalizeMemoryLayer(memoryInput.memory_layer || memoryInput.memoryType || 'event');
+  const content = memoryInput.content;
+
+  if (!content) return { action: 'skip', reason: 'empty_content' };
+
+  const similar = await findSimilarMemoryByEmbedding(companionId, content, { layer, db });
+
+  if (similar) {
+    const newWeight = Math.min(5, (similar.memory_weight ?? 3) + 1);
+    try {
+      patchMemory(similar.id, companionId, { memory_weight: newWeight });
+      touchMemory(similar.id, companionId);
+      log('info', `[MemoryDedup] companion=${companionId} merged into id=${similar.id} layer=${layer}`);
+    } catch (e) {
+      log('warn', `[MemoryDedup] merge 失败 id=${similar.id}: ${e.message}`);
+    }
+    return { action: 'merged', existingId: similar.id };
+  }
+
+  return { action: 'insert', memory: { ...memoryInput, memory_layer: layer } };
 }
 
 /**

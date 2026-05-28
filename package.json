@@ -11,7 +11,8 @@
     "setup": "node scripts/setup-wizard.mjs",
     "setup:full": "bash scripts/setup.sh",
     "ilink:login": "node scripts/ilink_login.mjs",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "check:p0": "node scripts/p0_regression_check.mjs"
   },
   "keywords": [
     "ai-companion",

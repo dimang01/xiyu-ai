@@ -42,6 +42,7 @@ export function getDb() {
     migrateMemoryV3();
     migrateEmotionState();
     migrateProactiveEngineV2();
+    migrateEmotionHistory();
   }
   return db;
 }
@@ -656,6 +657,74 @@ function migrateProactiveEngineV2() {
   addColIfMissing('companions', 'last_user_reply_at',     'TEXT');
   addColIfMissing('companions', 'last_proactive_reply_at','TEXT');
   addColIfMissing('companions', 'missing_score',          'REAL DEFAULT 0');
+}
+
+// ─── Emotion History ──────────────────────────────────────────────────────────
+function migrateEmotionHistory() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_emotion_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      affection    INTEGER,
+      trust        INTEGER,
+      dependency   INTEGER,
+      possessiveness INTEGER,
+      security     INTEGER,
+      energy       INTEGER,
+      mood         TEXT,
+      source       TEXT DEFAULT 'auto',
+      created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_emotion_history_companion_created
+      ON companion_emotion_history(companion_id, created_at DESC);
+  `);
+}
+
+export function insertEmotionHistory(companionId, state, source = 'auto') {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO companion_emotion_history
+      (companion_id, affection, trust, dependency, possessiveness, security, energy, mood, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    companionId,
+    state.affection   ?? null,
+    state.trust       ?? null,
+    state.dependency  ?? null,
+    state.possessiveness ?? null,
+    state.security    ?? null,
+    state.energy      ?? null,
+    state.mood        ?? null,
+    source,
+    new Date().toISOString(),
+  );
+}
+
+export function getEmotionHistoryTrend(companionId, days = 7) {
+  const db = getDb();
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  return db.prepare(`
+    SELECT id, companion_id, affection, trust, dependency, possessiveness, security, energy, mood, source, created_at
+    FROM companion_emotion_history
+    WHERE companion_id = ? AND created_at >= ?
+    ORDER BY created_at ASC
+  `).all(companionId, since);
+}
+
+export function getLastEmotionHistoryAt(companionId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT created_at FROM companion_emotion_history
+    WHERE companion_id = ? ORDER BY created_at DESC LIMIT 1
+  `).get(companionId);
+  return row?.created_at ?? null;
+}
+
+export function cleanupOldEmotionHistory(companionId) {
+  const db = getDb();
+  const cutoff = new Date(Date.now() - 90 * 86400_000).toISOString();
+  db.prepare(`DELETE FROM companion_emotion_history WHERE companion_id = ? AND created_at < ?`)
+    .run(companionId, cutoff);
 }
 
 function initAvatarPresets() {
