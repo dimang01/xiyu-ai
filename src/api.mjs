@@ -1696,6 +1696,37 @@ router.post('/companions/:id/persona/regenerate', requireAuth, async (req, res) 
   }
 });
 
+// POST /api/setup/test-chat — 给 setup.html 用：用最低 token 数发一次 ping，验证
+// 当前 CHAT_PROVIDER + 对应的 API key 是否能跑通。不需要鉴权（首次启动时还没账号），
+// 但限速防滥用。
+router.post('/setup/test-chat',
+  rateLimit({ scope: 'test-chat', maxPerWindow: 10, windowMs: 60_000, message: '测试过于频繁，请稍后再试' }),
+  async (_req, res) => {
+    try {
+      const { chatComplete, getActiveChatProvider } = await import('./providers/chat.mjs');
+      const t0 = Date.now();
+      const r = await chatComplete({
+        system: 'You answer with exactly one short word.',
+        messages: [{ role: 'user', content: 'Reply with the single word: ok' }],
+        temperature: 0,
+        max_tokens: 8,
+      });
+      const ms = Date.now() - t0;
+      return ok(res, {
+        provider: getActiveChatProvider(),
+        ok: true,
+        latency_ms: ms,
+        sample: String(r?.text || '').slice(0, 40),
+      });
+    } catch (e) {
+      // 不要把异常 stack 直接抛给浏览器，只回 message 的安全前缀
+      const msg = String(e?.message || 'unknown error').slice(0, 200);
+      log('warn', `[Setup] test-chat failed: ${msg}`);
+      return res.status(200).json({ ok: false, error: msg });
+    }
+  }
+);
+
 // POST /api/companions/:id/playground-chat — 浏览器端跟 companion 聊天（不走微信）
 // 让未拿到腾讯 iLink/ClawBot 准入的用户也能完整体验 AI 人设、记忆、关系演进
 router.post('/companions/:id/playground-chat',

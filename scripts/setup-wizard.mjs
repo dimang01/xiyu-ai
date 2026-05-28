@@ -16,6 +16,8 @@ import { existsSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline/promises';
+import { execFileSync } from 'node:child_process';
+import { platform } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = resolve(ROOT, '.env');
@@ -86,6 +88,86 @@ function isConfigured() {
   const match = CHAT_PROVIDERS.find(p => p.id === chatProvider);
   if (!match) return false;
   return Boolean(getVal(match.keyEnv));
+}
+
+// ─── 原生编译预检（better-sqlite3 用） ────────────────────────────────────
+// 检查 better-sqlite3 是否能被 require；不能则说明原生模块没成功构建。
+// 同时探测系统是否具备编译条件，给出可操作的修复建议（而不是让 npm install 失败一脸红字）。
+function checkBetterSqlite3() {
+  const modulePath = resolve(ROOT, 'node_modules', 'better-sqlite3');
+  if (!existsSync(modulePath)) return { installed: false };
+  // 尝试 require：检查 build/Release/better_sqlite3.node 是否能加载
+  try {
+    const bin = resolve(modulePath, 'build', 'Release', 'better_sqlite3.node');
+    if (!existsSync(bin)) return { installed: true, native_ok: false, reason: 'prebuild_missing' };
+    return { installed: true, native_ok: true };
+  } catch (e) {
+    return { installed: true, native_ok: false, reason: e.message };
+  }
+}
+
+function detectBuildTools() {
+  const checks = { python: null, cc: null };
+  for (const cmd of ['python3', 'python']) {
+    try {
+      const v = execFileSync(cmd, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf-8' }).trim();
+      if (v) { checks.python = `${cmd} (${v})`; break; }
+    } catch { /* try next */ }
+  }
+  for (const cmd of ['cc', 'gcc', 'clang']) {
+    try {
+      execFileSync(cmd, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      checks.cc = cmd;
+      break;
+    } catch { /* try next */ }
+  }
+  return checks;
+}
+
+function buildToolsHint() {
+  const p = platform();
+  if (p === 'darwin') {
+    return '  · macOS:   xcode-select --install              (装 Command Line Tools)';
+  }
+  if (p === 'linux') {
+    return '  · Debian/Ubuntu: sudo apt-get install -y python3 build-essential\n' +
+           '  · RHEL/CentOS:   sudo dnf install -y python3 gcc-c++ make';
+  }
+  if (p === 'win32') {
+    return '  · Windows: 推荐用 Docker 路径（docker compose up -d）跳过原生编译\n' +
+           '             或用 VS Build Tools + Python 3；详见 https://github.com/nodejs/node-gyp#on-windows';
+  }
+  return '  · 安装 python3 + 系统 C/C++ 编译器（gcc/clang）后重试';
+}
+
+function preflight() {
+  const s = checkBetterSqlite3();
+  if (s.native_ok) return; // 一切正常
+  console.log('\n🔧  原生模块预检');
+  console.log('─────────────────────────────────────────────');
+  if (!s.installed) {
+    console.log('  ⚠ better-sqlite3 尚未安装。请先执行：');
+    console.log('      npm install');
+    return;
+  }
+  // 已装但 .node 文件缺失 / 不能加载 — 几乎必然是编译失败
+  const tools = detectBuildTools();
+  console.log('  ⚠ 检测到 better-sqlite3 已安装但原生二进制不可用：');
+  console.log(`      reason=${s.reason}`);
+  console.log('');
+  console.log('  系统编译工具检测：');
+  console.log(`      python : ${tools.python || '✗ 未找到'}`);
+  console.log(`      cc/gcc : ${tools.cc    || '✗ 未找到'}`);
+  console.log('');
+  console.log('  修复建议：');
+  console.log(buildToolsHint());
+  console.log('');
+  console.log('  装好编译工具后重新执行：');
+  console.log('      rm -rf node_modules && npm install');
+  console.log('');
+  console.log('  或者直接走 Docker 路径绕过本地编译：');
+  console.log('      docker compose up -d');
+  console.log('');
 }
 
 // ─── 主流程 ────────────────────────────────────────────────────────────────
@@ -208,6 +290,9 @@ async function main() {
     console.log('       npm run setup -- --check        # 仅检测，已配置 exit 0');
     return;
   }
+  // 原生编译预检（仅信息性，不阻塞）
+  preflight();
+
   if (!isTty()) {
     runNonInteractive();
     return;

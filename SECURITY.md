@@ -17,7 +17,11 @@ Do not commit:
 
 ## Reporting Security Issues
 
-If you find a security issue, please report it through GitHub Security Advisories or open an issue with limited technical detail.
+If you find a security issue, please report it through one of the following channels:
+
+- **Email**: xiyuai@proton.me
+- **GitHub Security Advisories**: https://github.com/dimang01/xiyu-ai/security/advisories/new
+- Or open a GitHub issue with limited technical detail if the above are unavailable
 
 Do not publicly disclose exploitable vulnerabilities before they are reviewed.
 
