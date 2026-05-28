@@ -122,8 +122,12 @@ try {
 }
 
 // ─── 10. HTTP health / auth checks (via Node fetch if server running) ─────────
-const API_PORT = process.env.API_PORT || process.env.PORT || 3000;
-const BASE = `http://127.0.0.1:${API_PORT}`;
+// Priority: CHECK_BASE_URL > API_PORT > PORT > 3000
+const BASE = process.env.CHECK_BASE_URL
+  || (process.env.API_PORT ? `http://127.0.0.1:${process.env.API_PORT}` : null)
+  || (process.env.PORT     ? `http://127.0.0.1:${process.env.PORT}`     : null)
+  || 'http://127.0.0.1:3000';
+console.log(`\n[check:p0] HTTP 检查目标: ${BASE}`);
 
 try {
   const healthResp = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3000) });

@@ -443,6 +443,18 @@ function parsePromptSections(prompt) {
   return sections;
 }
 
+// Strip obvious secret patterns before returning prompt content to the client.
+// This is a defence-in-depth measure; ownership is already checked by requireOwnedCompanion.
+function redactSecretPatterns(text) {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/sk-proj-[A-Za-z0-9\-_]{20,}/g, '[REDACTED]')
+    .replace(/sk-[A-Za-z0-9]{10,}/g, '[REDACTED]')
+    .replace(/AIza[A-Za-z0-9\-_]{35}/g, '[REDACTED]')
+    .replace(/ghp_[A-Za-z0-9]{36}/g, '[REDACTED]')
+    .replace(/Bearer\s+[A-Za-z0-9\-_.~+/]{20,}/g, 'Bearer [REDACTED]');
+}
+
 function companionSummary(companion) {
   if (!companion) return null;
   const db = getDb();
@@ -2330,7 +2342,7 @@ router.put('/companions/:id/memories/:memoryId', requireAuth, (req, res) => {
 router.delete('/companions/:id/memories/:memoryId', requireAuth, (req, res) => {
   const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
-  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   softDeleteMemory(mid, id);
   log('info', `[API] 软删除记忆 companion=${id} mid=${mid}`);
   return ok(res, { deleted: true, memory_id: mid });
@@ -2352,7 +2364,7 @@ router.delete('/companions/:id/memories', requireAuth, (req, res) => {
 router.post('/companions/:id/memories/:memoryId/archive', requireAuth, (req, res) => {
   const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
-  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   archiveMemory(mid, id);
   return ok(res, { archived: true, memory_id: mid });
 });
@@ -2361,7 +2373,7 @@ router.post('/companions/:id/memories/:memoryId/archive', requireAuth, (req, res
 router.post('/companions/:id/memories/:memoryId/pin', requireAuth, (req, res) => {
   const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
-  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   patchMemory(mid, id, { pinned: 1 });
   return ok(res, { pinned: true, memory_id: mid });
 });
@@ -2370,7 +2382,7 @@ router.post('/companions/:id/memories/:memoryId/pin', requireAuth, (req, res) =>
 router.post('/companions/:id/memories/:memoryId/unpin', requireAuth, (req, res) => {
   const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
-  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   patchMemory(mid, id, { pinned: 0 });
   return ok(res, { pinned: false, memory_id: mid });
 });
@@ -2379,7 +2391,7 @@ router.post('/companions/:id/memories/:memoryId/unpin', requireAuth, (req, res) 
 router.post('/companions/:id/memories/:memoryId/lock', requireAuth, (req, res) => {
   const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
-  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   patchMemory(mid, id, { locked: 1 });
   return ok(res, { locked: true, memory_id: mid });
 });
@@ -2388,7 +2400,7 @@ router.post('/companions/:id/memories/:memoryId/lock', requireAuth, (req, res) =
 router.post('/companions/:id/memories/:memoryId/unlock', requireAuth, (req, res) => {
   const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
-  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   patchMemory(mid, id, { locked: 0 });
   return ok(res, { locked: false, memory_id: mid });
 });
@@ -2397,7 +2409,7 @@ router.post('/companions/:id/memories/:memoryId/unlock', requireAuth, (req, res)
 router.post('/companions/:id/memories/:memoryId/do-not-mention', requireAuth, (req, res) => {
   const id  = intId(req.params.id);       if (!id)  return err(res, 'id 无效');
   const mid = intId(req.params.memoryId); if (!mid) return err(res, 'memory id 无效');
-  requireOwnedCompanion(req, res, id); if (!getCompanionById(id)) return;
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const flag = req.body?.flag !== false ? 1 : 0;
   patchMemory(mid, id, { do_not_mention: flag });
   return ok(res, { do_not_mention: !!flag, memory_id: mid });
@@ -2410,7 +2422,7 @@ router.post('/companions/:id/memories/:memoryId/do-not-mention', requireAuth, (r
 // GET /api/companions/:id/user-profile
 router.get('/companions/:id/user-profile', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c  = requireCompanion(res, id); if (!c) return;
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
   const profile = getUserProfile(c.user_id, id);
   return ok(res, profile || {});
 });
@@ -2418,7 +2430,7 @@ router.get('/companions/:id/user-profile', requireAuth, (req, res) => {
 // PUT /api/companions/:id/user-profile
 router.put('/companions/:id/user-profile', requireAuth, (req, res) => {
   const id   = intId(req.params.id); if (!id) return err(res, 'id 无效');
-  const c    = requireCompanion(res, id); if (!c) return;
+  const c    = requireOwnedCompanion(req, res, id); if (!c) return;
   const data = req.body || {};
   if (Object.keys(data).length === 0) return err(res, '请求体为空');
   const profile = upsertUserProfile(c.user_id, id, data);
@@ -2463,10 +2475,11 @@ router.get('/companions/:id/prompt-debug', requireAuth, (req, res) => {
 
     // Parse the full prompt into labeled sections for the debug UI
     const sections = parsePromptSections(fullPrompt);
+    const safePrompt = redactSecretPatterns(fullPrompt);
 
     return ok(res, {
       sections,
-      full_prompt: fullPrompt,
+      full_prompt: safePrompt,
       redacted: true,
       warning: '调试用途 — 包含角色设定和记忆摘要，请勿分享。',
     });

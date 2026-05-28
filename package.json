@@ -12,7 +12,8 @@
     "setup:full": "bash scripts/setup.sh",
     "ilink:login": "node scripts/ilink_login.mjs",
     "doctor": "node scripts/doctor.mjs",
-    "check:p0": "node scripts/p0_regression_check.mjs"
+    "check:p0": "node scripts/p0_regression_check.mjs",
+    "smoke": "bash scripts/release_smoke_test.sh"
   },
   "keywords": [
     "ai-companion",
