@@ -210,16 +210,16 @@
           </div>
         </div>
 
-        <div class="relative grid grid-cols-3 gap-3 mt-7 pt-6 border-t border-line/70">
-          <div>
+        <div class="relative grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-3 mt-7 pt-6 border-t border-line/70">
+          <div class="min-w-0">
             <p class="text-[11px] text-mute font-semibold tracking-wider mb-1">她在做</p>
-            <p id="c-scene" class="text-[14px] font-semibold truncate">—</p>
+            <p id="c-scene" class="text-[14px] font-semibold leading-snug break-words">—</p>
           </div>
-          <div>
+          <div class="min-w-0">
             <p class="text-[11px] text-mute font-semibold tracking-wider mb-1">对话模式</p>
             <p id="c-mode" class="text-[14px] font-semibold"><i data-lucide="sparkles" class="inline w-3.5 h-3.5 align-[-2px] text-sakura-deep"></i> 自适应</p>
           </div>
-          <div>
+          <div class="min-w-0">
             <p class="text-[11px] text-mute font-semibold tracking-wider mb-1">长期记忆</p>
             <p id="c-mem" class="text-[14px] font-semibold">— 条</p>
           </div>
@@ -258,9 +258,9 @@
             </div>
             <p id="now-activity" class="text-[15px] font-semibold leading-snug">—</p>
             <p id="now-mood" class="text-[12px] text-sakura-deep font-medium mt-2 leading-relaxed">—</p>
-            <div class="mt-4 pt-4 border-t border-sakura-soft/60">
-              <p class="text-[10px] text-mute font-semibold tracking-wider mb-1">接下来</p>
-              <p id="now-next" class="text-[13px] font-medium text-ink/70">—</p>
+            <div id="now-prev-block" class="mt-4 pt-4 border-t border-sakura-soft/60 hidden">
+              <p class="text-[10px] text-mute font-semibold tracking-wider mb-1">刚才</p>
+              <p id="now-prev" class="text-[13px] font-medium text-ink/70">—</p>
             </div>
           </div>
         </div>
@@ -769,9 +769,14 @@
         // 同步 profile 顶部的"她在做"
         if (sceneEl) sceneEl.textContent = x.current_activity ? x.current_activity.activity : '今天还没开始活动';
         document.getElementById('now-mood').textContent = x.segment_mood || x.mood_arc || '';
-        document.getElementById('now-next').textContent = x.next_activity
-          ? `${x.next_activity.time} · ${x.next_activity.activity}`
-          : '今天的日程已经走完啦';
+        const prevBlock = document.getElementById('now-prev-block');
+        const prevEl = document.getElementById('now-prev');
+        if (x.previous_activity && prevEl) {
+          prevEl.textContent = `${x.previous_activity.time} · ${x.previous_activity.activity}`;
+          prevBlock?.classList.remove('hidden');
+        } else {
+          prevBlock?.classList.add('hidden');
+        }
         card.classList.remove('hidden');
       } catch (e) {
         console.warn('today:', e.message);

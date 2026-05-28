@@ -1707,13 +1707,17 @@ router.get('/companions/:id/today', requireAuth, (req, res) => {
   }).formatToParts(new Date()).filter(x => x.type !== 'literal').map(x => [x.type, x.value]));
   const nowMin = Number(p.hour) * 60 + Number(p.minute);
 
-  let currentActivity = null, nextActivity = null;
+  let currentActivity = null, nextActivity = null, previousActivity = null;
   if (sched?.items?.length) {
     for (const it of sched.items) {
       const m = (it.time || '').match(/^(\d{1,2}):(\d{2})/);
       const itMin = m ? Number(m[1]) * 60 + Number(m[2]) : -1;
-      if (itMin <= nowMin) currentActivity = it;
-      else if (!nextActivity) nextActivity = it;
+      if (itMin <= nowMin) {
+        previousActivity = currentActivity;
+        currentActivity = it;
+      } else if (!nextActivity) {
+        nextActivity = it;
+      }
     }
   }
 
@@ -1729,6 +1733,7 @@ router.get('/companions/:id/today', requireAuth, (req, res) => {
     now: `${String(Math.floor(nowMin/60)).padStart(2,'0')}:${String(nowMin%60).padStart(2,'0')}`,
     has_schedule: !!sched,
     current_activity: currentActivity,
+    previous_activity: previousActivity,
     next_activity: nextActivity,
     segment_mood: segmentMood,
     mood_arc: sched?.mood_arc || null,
