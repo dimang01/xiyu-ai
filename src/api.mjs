@@ -1093,31 +1093,33 @@ router.post('/billing/admin/grant-pro', (req, res) => {
 });
 
 // GET /api/me/companion
+// user_id 来源优先级：query.user_id > query.account_id > x-user-id 头 > req.authUser.id（兜底）
+// 微信绑定仅作为附加信息；没绑微信但有 companion 也返回 companion（前端 memories/dashboard 能用）。
 router.get('/me/companion', requireAuth, (req, res) => {
-  const accountId = intId(req.query.user_id ?? req.query.account_id ?? req.get('x-user-id'));
+  const accountId = intId(
+    req.query.user_id ?? req.query.account_id ?? req.get('x-user-id') ?? req.authUser?.id,
+  );
   if (!accountId) return authErr(res, '缺少 user_id');
 
   const account = getUserAccountById(accountId);
   if (!account) return authErr(res, '用户不存在', 404);
 
-  const binding = getWechatAccountByAccountId(accountId);
-  if (!binding?.wechat_user_id || !binding?.bot_id || binding.is_active === 0) {
-    return ok(res, null);
-  }
-
   const companion = getCompanionByAccountId(accountId);
   if (!companion) return ok(res, null);
+
+  const binding = getWechatAccountByAccountId(accountId);
+  const hasActiveBinding = Boolean(binding?.wechat_user_id && binding?.bot_id && binding.is_active !== 0);
 
   return ok(res, {
     companion_id: companion.id,
     companion: companionSummary(companion),
-    binding: {
+    binding: hasActiveBinding ? {
       account_id: binding.account_id,
       wechat_user_id: binding.wechat_user_id,
       bot_id: binding.bot_id,
       companion_id: companion.id,
       bound_at: binding.bound_at,
-    },
+    } : null,
   });
 });
 
