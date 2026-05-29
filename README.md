@@ -5,6 +5,7 @@
 **把大模型当作"有完整人生背景的虚拟个体"来调度的开源 AI 陪伴框架**
 *An open-source companion framework that treats the LLM as a virtual character with a full backstory.*
 
+[![Version](https://img.shields.io/badge/version-1.3.0-FF8FB8.svg)](https://github.com/dimang01/xiyu-ai/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node.js-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Status: Experimental](https://img.shields.io/badge/Status-Experimental-orange.svg)](#-known-limitations)
@@ -31,6 +32,18 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 > 不需要装 Node、不需要 clone 代码、不需要编辑 `.env`。**只要装了 Docker 就行。**
 > 推荐先用 DeepSeek（注册送额度，国内可访问）或智谱 GLM-4-Flash（免费）跑通流程。
 > 详细说明（Docker Compose、本地裸跑、生产部署）见下面的 [🚀 一键启动](#-一键启动) 章节。
+
+---
+
+### 🆕 v1.3.0 更新
+
+| 新增 | 说明 |
+|------|------|
+| 🪟 **液态玻璃 UI** | 全站换上苹果风 Liquid Glass 视觉：毛玻璃卡片、漂浮光斑背景、丝滑微动效。纯 CSS 层（`public/app/glass.css`），不改任何业务逻辑 |
+| 📔 **她的日记** | 她每天深夜用第一人称写下和你相处的心里话，带心情标签；`/app/diary.html` 翻日记本式阅读页，Pro 还有周记 |
+| 🎂 **纪念日主动祝福** | 生日 / 纪念日 / 节日到期当天主动发祝福；自动登记「认识 100 天 / 在一起一周年」里程碑，当天只发一次 |
+| ⚡ **默认更生动** | 对话默认采样调亮（temperature 0.8 / top_p 0.95 / 上下文 16 轮），回复更自然连贯 |
+| 🩹 **缓存修复** | Service Worker 改为 HTML network-first，修掉「更新后页面被旧缓存挡住」的问题 |
 
 ---
 
@@ -101,7 +114,8 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | 🛡️ **Persona Guard** | 回复后一致性校验 — 自动检测"我是 AI"、客服话术、阶段违规；轻问题后处理，重问题重生成 |
 | 🎭 **情绪状态机** | 7 维度：affection / trust / dependency / possessiveness / security / energy / mood；规则驱动实时更新 |
 | 💬 **多 Provider** | chat / image / vision / ASR / embedding 五大能力各自独立可换，零代码改动 |
-| 🎛️ **完整 Dashboard** | 好感度进度 / 关系阶段 / "她现在在做什么" / 时间轴 / 头像管理 / CP 卡片 / **记忆管理入口** |
+| 🪟 **液态玻璃 UI** *(v1.3.0 新)* | 苹果风 Liquid Glass 视觉层（`/app/glass.css`）：半透明毛玻璃卡片 + 漂浮光斑背景 + 丝滑微动效；纯 CSS 增强，所有核心页面统一观感，尊重「减少动态效果」无障碍设置 |
+| 🎛️ **完整 Dashboard** | 好感度进度 / 关系阶段 / "她现在在做什么" / 时间轴 / 头像管理 / CP 卡片 / **记忆管理入口** / **她的日记入口** |
 | 🗂️ **记忆管理面板** | `/app/memories.html` — 可视化查看、筛选、新增、编辑、置顶、锁定、归档、删除所有记忆 |
 | 🧪 **网页 Playground** | 不接微信也能在浏览器里跟 AI 真聊 — 跑的是和微信入站完全相同的人设 / 记忆 / 情绪管线 |
 | 📱 **微信对接** | 网页扫码即可绑定 — 后端运行时直接向腾讯 iLink 申请二维码，**无需预填 ILINK_\* 环境变量**（需要你的微信号在腾讯 iLink/ClawBot 已准入） |
