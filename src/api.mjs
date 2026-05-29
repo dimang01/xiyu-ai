@@ -1837,6 +1837,9 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
 
     if (configured) {
       const info = { configured: true, label: entry.label };
+      // 模型预设列表（公开元信息，前端用来 build 下拉），匿名也返回
+      if (Array.isArray(entry.models) && entry.models.length) info.models = entry.models;
+      if (entry.defaultModel) info.default_model = entry.defaultModel;
       if (isAuthed) {
         info.source     = envVal ? 'env' : 'app_settings';
         info.masked_key = maskApiKey(rawKey);
@@ -1848,6 +1851,8 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
       providers[id] = info;
     } else {
       const info = { configured: false, label: entry.label };
+      if (Array.isArray(entry.models) && entry.models.length) info.models = entry.models;
+      if (entry.defaultModel) info.default_model = entry.defaultModel;
       // 自定义 provider 即使未完全配置，也回显已填部分给已登录用户做编辑
       if (isAuthed && entry.custom) {
         if (customBaseURL) info.base_url = customBaseURL;
@@ -1857,6 +1862,11 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
       providers[id] = info;
     }
   }
+  // 当前 CHAT_MODEL override（已登录返回）
+  let currentChatModel = '';
+  try {
+    currentChatModel = process.env.CHAT_MODEL || getAppSetting('CHAT_MODEL') || '';
+  } catch {}
   // 附加：可选能力 vision / asr 的当前状态
   // 匿名只返回 enabled + label；已登录额外返回 model + masked_key
   function buildOptionalSection(REG, providerEnvKey, modelEnvKey, active) {
@@ -1879,6 +1889,8 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
   const asrActive    = getActiveAsrProvider();
   return ok(res, {
     chat_provider: active.id,
+    chat_model: active.model || '',
+    chat_model_override: isAuthed ? (currentChatModel || null) : null,
     providers,
     vision: buildOptionalSection(VISION_REGISTRY, 'VISION_PROVIDER', 'VISION_MODEL', visionActive),
     asr:    buildOptionalSection(ASR_REGISTRY,    'ASR_PROVIDER',    'ASR_MODEL',    asrActive),
@@ -1949,7 +1961,9 @@ router.post('/setup/provider-config',
       deleteAppSetting(entry.apiKeyEnv);
       log('info', `[Setup] provider-config: ${name} API key 已清除`);
     }
-    // 自定义兼容 provider：保存 base_url / model
+    // 模型处理：
+    //   - openai-compatible: 写到自家的 OPENAI_COMPATIBLE_MODEL（custom path）
+    //   - 其它 provider: 写到全局 CHAT_MODEL（chat.mjs activeModel 会读它）
     let baseUrlSaved = false;
     let modelSaved   = false;
     if (entry.custom) {
@@ -1970,6 +1984,15 @@ router.post('/setup/provider-config',
           setAppSetting(entry.modelEnv, trimmedModel, { secret: 0 });
           modelSaved = true;
         }
+      }
+    } else if (typeof model === 'string') {
+      // 非 custom provider：model 字段写到全局 CHAT_MODEL，clear 时删除
+      const trimmedModel = model.trim();
+      if (trimmedModel) {
+        setAppSetting('CHAT_MODEL', trimmedModel, { secret: 0 });
+        modelSaved = true;
+      } else if (model === '' && req.body?.clear_model === true) {
+        deleteAppSetting('CHAT_MODEL');
       }
     }
     return ok(res, {

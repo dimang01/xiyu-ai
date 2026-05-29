@@ -311,9 +311,30 @@
     lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
 
     // ─── Auth guard ────────────────────────────────────────────────────────
-    const user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
+    // 如果 token 在但 user 不在（早期 setup wizard 漏存了 xiyu_user），
+    // 异步从 /api/auth/me 回填一次，避免无谓地弹回登录页。
+    let user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
     const token = localStorage.getItem('xiyu_token') || '';
-    if (!user || !token) location.href = '/app/auth.html';
+    if (!token) location.href = '/app/auth.html';
+    if (token && !user) {
+      // 用占位 user 让初始化代码不崩；/auth/me 回来后再覆盖
+      user = { id: 0, username: '账号' };
+      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok && d.data?.authenticated && d.data?.user) {
+            const u = { id: d.data.user.id, username: d.data.user.display_name };
+            localStorage.setItem('xiyu_user', JSON.stringify(u));
+            user.id = u.id; user.username = u.username;
+            const badge = document.getElementById('user-badge');
+            if (badge) badge.textContent = u.username;
+          } else {
+            localStorage.removeItem('xiyu_token');
+            location.href = '/app/auth.html';
+          }
+        })
+        .catch(() => { /* 网络瞬时失败先不强弹，给用户机会 */ });
+    }
 
     const _origFetch = window.fetch;
     window.fetch = function(url, init = {}) {

@@ -28,6 +28,7 @@ export const REGISTRY = {
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     label: 'DeepSeek',
     link: 'https://platform.deepseek.com/api_keys',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
     recommended: true,
   },
   openai: {
@@ -36,6 +37,7 @@ export const REGISTRY = {
     apiKeyEnv: 'OPENAI_API_KEY',
     label: 'OpenAI (ChatGPT)',
     link: 'https://platform.openai.com/api-keys',
+    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4-turbo', 'o4-mini'],
   },
   anthropic: {
     // Anthropic 走原生协议（非 OpenAI 兼容），baseURL 仅作展示
@@ -44,6 +46,7 @@ export const REGISTRY = {
     apiKeyEnv: 'ANTHROPIC_API_KEY',
     label: 'Anthropic Claude',
     link: 'https://console.anthropic.com/',
+    models: ['claude-sonnet-4-6', 'claude-opus-4', 'claude-haiku-4-5'],
     native: true,
   },
   gemini: {
@@ -53,6 +56,7 @@ export const REGISTRY = {
     apiKeyEnv: 'GEMINI_API_KEY',
     label: 'Google Gemini',
     link: 'https://aistudio.google.com/apikey',
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'],
     native: true,
   },
   xai: {
@@ -61,6 +65,7 @@ export const REGISTRY = {
     apiKeyEnv: 'XAI_API_KEY',
     label: 'xAI Grok',
     link: 'https://console.x.ai/',
+    models: ['grok-2-latest', 'grok-2-vision-latest', 'grok-beta'],
   },
   zhipu: {
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
@@ -68,6 +73,7 @@ export const REGISTRY = {
     apiKeyEnv: 'ZHIPU_API_KEY',
     label: '智谱 GLM',
     link: 'https://open.bigmodel.cn/usercenter/apikeys',
+    models: ['glm-4-flash', 'glm-4.5', 'glm-4.5-air', 'glm-4-plus', 'glm-4-air'],
   },
   doubao: {
     // 注意：CHAT_MODEL 必须是火山方舟控制台里的"接入点 ID"（ep-xxx）
@@ -77,6 +83,7 @@ export const REGISTRY = {
     label: '豆包 (Volcengine Ark)',
     link: 'https://console.volcengine.com/ark',
     note: 'CHAT_MODEL 必须填火山方舟接入点 ID（ep-xxx）',
+    models: [],  // 必须自定义接入点 ID
   },
   qwen: {
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -84,6 +91,7 @@ export const REGISTRY = {
     apiKeyEnv: 'QWEN_API_KEY',
     label: '通义千问 (DashScope)',
     link: 'https://dashscope.console.aliyun.com/apiKey',
+    models: ['qwen-plus', 'qwen-max', 'qwen-turbo', 'qwen2.5-72b-instruct', 'qwen2.5-7b-instruct'],
   },
   kimi: {
     baseURL: 'https://api.moonshot.cn/v1',
@@ -91,6 +99,7 @@ export const REGISTRY = {
     apiKeyEnv: 'KIMI_API_KEY',
     label: 'Kimi (Moonshot)',
     link: 'https://platform.moonshot.cn/console/api-keys',
+    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k', 'kimi-k2-0905-preview'],
   },
   wenxin: {
     baseURL: 'https://qianfan.baidubce.com/v2',
@@ -98,6 +107,23 @@ export const REGISTRY = {
     apiKeyEnv: 'WENXIN_API_KEY',
     label: '文心一言 (百度千帆)',
     link: 'https://qianfan.cloud.baidu.com/',
+    models: ['ernie-4.0-8k', 'ernie-4.0-turbo-8k', 'ernie-speed-128k', 'ernie-tiny-8k'],
+  },
+  minimax: {
+    baseURL: 'https://api.minimax.chat/v1',
+    defaultModel: 'MiniMax-Text-01',
+    apiKeyEnv: 'MINIMAX_API_KEY',
+    label: 'MiniMax 海螺',
+    link: 'https://platform.minimaxi.com/',
+    models: ['MiniMax-Text-01', 'abab6.5s-chat', 'abab6.5-chat', 'abab5.5-chat'],
+  },
+  stepfun: {
+    baseURL: 'https://api.stepfun.com/v1',
+    defaultModel: 'step-2-16k',
+    apiKeyEnv: 'STEPFUN_API_KEY',
+    label: '阶跃星辰 StepFun',
+    link: 'https://platform.stepfun.com/',
+    models: ['step-2-16k', 'step-1-8k', 'step-1-32k', 'step-1v-8k'],
   },
   // 通用 OpenAI 兼容网关：用户自定义 Base URL + Model + API Key。
   // 适用于 OpenRouter / SiliconFlow / One API / New API / LiteLLM /
@@ -117,13 +143,19 @@ export const REGISTRY = {
 
 // ─── 动态读取：env 优先，其次 app_settings ─────────────────────────────────
 
-function getActiveProviderName() {
-  if (process.env.CHAT_PROVIDER) return process.env.CHAT_PROVIDER.toLowerCase();
+// 通用：env > app_settings > '' 优先级
+function readSetting(key) {
+  if (process.env[key]) return process.env[key];
   try {
-    const stored = getAppSetting('CHAT_PROVIDER');
-    if (stored) return stored.toLowerCase();
+    const v = getAppSetting(key);
+    if (v) return v;
   } catch {}
-  return 'deepseek';
+  return '';
+}
+
+function getActiveProviderName() {
+  const v = readSetting('CHAT_PROVIDER');
+  return v ? v.toLowerCase() : 'deepseek';
 }
 
 function getApiKeyForEntry(entry) {
@@ -276,13 +308,11 @@ function getOpenAIClientFor(name) {
 
 function activeModel(name) {
   if (!name) name = getActiveProviderName();
-  if (name === 'anthropic') return process.env.CHAT_MODEL || REGISTRY.anthropic.defaultModel;
-  if (name === 'gemini')    return process.env.CHAT_MODEL || REGISTRY.gemini.defaultModel;
   const entry = REGISTRY[name];
-  if (entry?.custom) {
-    return process.env.CHAT_MODEL || getDynamicModel(entry) || '';
-  }
-  return process.env.CHAT_MODEL || entry?.defaultModel || '';
+  const overrideModel = readSetting('CHAT_MODEL');
+  if (overrideModel) return overrideModel;
+  if (entry?.custom) return getDynamicModel(entry) || '';
+  return entry?.defaultModel || '';
 }
 
 // ─── 统一对外接口 ──────────────────────────────────────────────────────────
