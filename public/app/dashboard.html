@@ -99,6 +99,63 @@
     /* Reveal 动画 */
     .reveal { opacity:0; transform: translateY(16px); transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1); }
     .reveal.in { opacity:1; transform: translateY(0); }
+
+    /* ── 模型设置抽屉（右滑） ─────────────────────────────────────────── */
+    .model-mask {
+      position: fixed; inset: 0; background: rgba(29,29,31,0.3);
+      backdrop-filter: blur(4px); z-index: 50;
+      opacity: 0; pointer-events: none; transition: opacity .25s;
+    }
+    .model-mask.open { opacity: 1; pointer-events: auto; }
+    .model-drawer {
+      position: fixed; right: 0; top: 0; bottom: 0;
+      width: min(440px, 92vw); background: #fff;
+      box-shadow: -12px 0 48px rgba(0,0,0,.08);
+      transform: translateX(100%); transition: transform .3s cubic-bezier(.16,1,.3,1);
+      z-index: 51; overflow-y: auto; overscroll-behavior: contain;
+    }
+    .model-drawer.open { transform: translateX(0); }
+    .ms-section { padding: 16px; border-radius: 14px; background: #FAFAFA; margin-bottom: 12px; }
+    .ms-label { font-size: 12px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px; display: block; }
+    .ms-input {
+      width: 100%; padding: 9px 13px; font-size: 14px;
+      border: 1.5px solid #E5E7EB; border-radius: 10px; outline: none;
+      transition: border .15s; background: #fff;
+    }
+    .ms-input:focus { border-color: #FF8FB8; }
+    .ms-select { appearance: none; padding-right: 32px; cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%2386868B' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center;
+    }
+    .ms-btn-primary {
+      background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%);
+      color: #fff; padding: 10px 22px; border-radius: 9999px;
+      font-size: 14px; font-weight: 700; transition: all .15s;
+    }
+    .ms-btn-primary:hover:not(:disabled) { box-shadow: 0 8px 24px rgba(255,143,184,.32); transform: translateY(-1px); }
+    .ms-btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+    .ms-btn-outline {
+      border: 1.5px solid #FF8FB8; color: #FF8FB8; padding: 9px 20px;
+      border-radius: 9999px; font-size: 14px; font-weight: 600; background: transparent;
+      transition: all .15s;
+    }
+    .ms-btn-outline:hover:not(:disabled) { background: #FFE8F2; }
+    .ms-btn-outline:disabled { opacity:.5; cursor:not-allowed; }
+    .ms-msg-ok  { color:#28A745; font-size:13px; }
+    .ms-msg-err { color:#D63B3B; font-size:13px; }
+    .ms-msg-info{ color:#86868B; font-size:13px; }
+    .ms-status-chip { font-size:11px; font-weight:600; padding:3px 10px; border-radius:9999px; }
+    .ms-status-ok   { background:#E3F8E5; color:#28A745; }
+    .ms-status-off  { background:#F5F5F7; color:#86868B; }
+    /* Header 上的 ⚙ 模型按钮 */
+    .header-model-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 9999px;
+      background: #FFE8F2; color: #FF6FA3;
+      font-size: 12px; font-weight: 600; transition: all .15s;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .header-model-btn:hover { background: #FFD1E5; }
   </style>
   <link rel="manifest" href="/manifest.webmanifest" />
 </head>
@@ -112,6 +169,9 @@
         <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
       </a>
       <div class="flex items-center gap-4">
+        <button id="btn-open-model" class="header-model-btn" title="切换 AI 模型">
+          <span>⚙</span><span id="header-model-label">AI 模型</span>
+        </button>
         <span id="user-name" class="text-[13px] font-medium text-mute"></span>
         <span id="plan-badge" class="text-[11px] font-bold px-2 py-0.5 rounded-full pro-chip">内测 Pro</span>
         <a id="btn-upgrade" href="/app/upgrade.html" class="hidden text-[12px] font-semibold text-mute hover:text-ink transition-colors">了解套餐</a>
@@ -475,6 +535,80 @@
 
     </section>
   </main>
+
+  <!-- ─── 模型设置抽屉 ────────────────────────────────────────────────── -->
+  <div id="model-mask" class="model-mask"></div>
+  <aside id="model-drawer" class="model-drawer" aria-label="模型设置">
+    <div class="sticky top-0 bg-white border-b border-line z-10 px-5 py-4 flex items-center justify-between">
+      <h2 class="text-[16px] font-bold">⚙ 模型设置</h2>
+      <button id="ms-close" class="text-mute hover:text-ink text-2xl leading-none" aria-label="关闭">×</button>
+    </div>
+    <div class="p-5">
+      <!-- Chat —— 主切换 -->
+      <div class="ms-section">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-[14px] font-bold">💬 对话模型 Chat</div>
+          <span id="ms-chat-state" class="ms-status-chip ms-status-off">未配置</span>
+        </div>
+        <div class="mb-3">
+          <label class="ms-label">Provider</label>
+          <select id="ms-chat-provider" class="ms-input ms-select">
+            <option value="">请选择…</option>
+          </select>
+        </div>
+        <!-- 非 custom provider 显示 Model 下拉 -->
+        <div class="mb-3 hidden" id="ms-chat-model-row">
+          <label class="ms-label">Model</label>
+          <select id="ms-chat-model-select" class="ms-input ms-select mb-2">
+            <option value="__default__">使用默认</option>
+          </select>
+          <input id="ms-chat-model-custom" class="ms-input hidden" type="text" placeholder="自定义模型 ID" autocomplete="off" />
+        </div>
+        <!-- openai-compatible 显示 Base URL + Model -->
+        <div class="mb-3 hidden" id="ms-chat-custom-row">
+          <label class="ms-label">Base URL</label>
+          <input id="ms-chat-baseurl" class="ms-input mb-2" type="text" placeholder="https://openrouter.ai/api/v1" autocomplete="off" spellcheck="false" />
+          <label class="ms-label">Model</label>
+          <input id="ms-chat-custom-model" class="ms-input" type="text" placeholder="deepseek/deepseek-chat" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="mb-3">
+          <label class="ms-label">API Key（已有可留空）</label>
+          <input id="ms-chat-key" class="ms-input" type="password" placeholder="粘贴新 Key 来替换" autocomplete="off" />
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          <button class="ms-btn-primary" id="ms-chat-save">保存</button>
+          <button class="ms-btn-outline" id="ms-chat-test">🔌 测试连通</button>
+        </div>
+        <p id="ms-chat-msg" class="mt-2 ms-msg-info"></p>
+      </div>
+
+      <!-- 其它能力（vision / asr / search）状态 -->
+      <div class="ms-section">
+        <div class="text-[13px] font-bold mb-3">其它能力</div>
+        <div class="space-y-2 text-[13px]">
+          <div class="flex items-center justify-between">
+            <span>🖼️ 图片理解</span>
+            <span id="ms-vision-info" class="text-mute">—</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>🎙️ 语音识别</span>
+            <span id="ms-asr-info" class="text-mute">—</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>🌐 联网搜索</span>
+            <span id="ms-search-info" class="text-mute">—</span>
+          </div>
+        </div>
+        <a href="/app/setup.html" class="block mt-4 text-center text-[13px] font-semibold text-sakura-deep hover:underline">
+          完整配置（在 Setup Wizard 里改） →
+        </a>
+      </div>
+
+      <p class="text-[12px] text-mute text-center">
+        保存后立即生效，不用重启服务。Key 仅存在本地 SQLite。
+      </p>
+    </div>
+  </aside>
 
   <!-- 头像更换弹窗 -->
   <div id="avatar-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1456,6 +1590,251 @@
       console.error(e);
     });
   </script>
+
+  <!-- ─── 模型设置抽屉 JS ──────────────────────────────────────────────── -->
+  <script>
+  (function() {
+    const MS = {
+      providers: {},          // provider id -> {label, models[], default_model, configured, custom, ...}
+      activeChat: '',
+      activeChatModel: '',
+      open: false,
+    };
+
+    const mask    = document.getElementById('model-mask');
+    const drawer  = document.getElementById('model-drawer');
+    const openBtn = document.getElementById('btn-open-model');
+    const closeBtn= document.getElementById('ms-close');
+    const headerLabel = document.getElementById('header-model-label');
+
+    function openDrawer() {
+      mask.classList.add('open');
+      drawer.classList.add('open');
+      MS.open = true;
+      refreshAll();
+    }
+    function closeDrawer() {
+      mask.classList.remove('open');
+      drawer.classList.remove('open');
+      MS.open = false;
+    }
+    openBtn.addEventListener('click', openDrawer);
+    closeBtn.addEventListener('click', closeDrawer);
+    mask.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && MS.open) closeDrawer(); });
+
+    function msMsg(text, kind='info') {
+      const el = document.getElementById('ms-chat-msg');
+      el.className = 'mt-2 ms-msg-' + kind;
+      el.textContent = text;
+    }
+
+    function isCustom(id) { return id === 'openai-compatible'; }
+
+    function tokenHeaders() {
+      const token = localStorage.getItem('xiyu_token') || '';
+      return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+    }
+
+    async function refreshAll() {
+      try {
+        const r = await fetch('/api/setup/provider-status', { headers: tokenHeaders() });
+        const d = await r.json();
+        if (!d.ok) { msMsg('加载失败：' + (d.message || ''), 'err'); return; }
+        const data = d.data;
+        MS.providers = data.providers || {};
+        MS.activeChat = data.chat_provider || '';
+        MS.activeChatModel = data.chat_model_override || '';
+        renderChatSection();
+        renderOptional(data.vision, data.asr, data.search);
+        updateHeaderLabel(MS.activeChat, data.chat_model || '');
+      } catch (e) { msMsg('加载失败：' + e.message, 'err'); }
+    }
+
+    function renderChatSection() {
+      const sel = document.getElementById('ms-chat-provider');
+      sel.innerHTML = '<option value="">请选择…</option>';
+      for (const [id, info] of Object.entries(MS.providers)) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = info.label + (id === MS.activeChat ? ' · 当前' : '');
+        sel.appendChild(opt);
+      }
+      sel.value = MS.activeChat || '';
+
+      const stateChip = document.getElementById('ms-chat-state');
+      const activeInfo = MS.providers[MS.activeChat];
+      if (activeInfo?.configured) {
+        stateChip.textContent = '已配置';
+        stateChip.className = 'ms-status-chip ms-status-ok';
+      } else {
+        stateChip.textContent = '未配置';
+        stateChip.className = 'ms-status-chip ms-status-off';
+      }
+      renderChatModelRow(MS.activeChat, MS.activeChatModel);
+      // Custom row 回填
+      if (isCustom(MS.activeChat)) {
+        document.getElementById('ms-chat-baseurl').value = activeInfo?.base_url || '';
+        document.getElementById('ms-chat-custom-model').value = activeInfo?.model || '';
+      }
+      document.getElementById('ms-chat-key').value = '';
+    }
+
+    function renderChatModelRow(providerId, presetModel) {
+      const modelRow = document.getElementById('ms-chat-model-row');
+      const customRow = document.getElementById('ms-chat-custom-row');
+      modelRow.classList.add('hidden');
+      customRow.classList.add('hidden');
+      if (!providerId) return;
+      if (isCustom(providerId)) {
+        customRow.classList.remove('hidden');
+        return;
+      }
+      const info = MS.providers[providerId] || {};
+      const models = Array.isArray(info.models) ? info.models : [];
+      const defaultModel = info.default_model || '';
+      const sel = document.getElementById('ms-chat-model-select');
+      const input = document.getElementById('ms-chat-model-custom');
+      sel.innerHTML = '';
+      const optD = document.createElement('option');
+      optD.value = '__default__';
+      optD.textContent = defaultModel ? `使用默认（${defaultModel}）` : '使用默认';
+      sel.appendChild(optD);
+      for (const m of models) {
+        const o = document.createElement('option');
+        o.value = m;
+        o.textContent = m === defaultModel ? `${m} · 默认` : m;
+        sel.appendChild(o);
+      }
+      const optC = document.createElement('option');
+      optC.value = '__custom__';
+      optC.textContent = '自定义模型 ID…';
+      sel.appendChild(optC);
+
+      if (presetModel && presetModel !== defaultModel) {
+        if (models.includes(presetModel)) {
+          sel.value = presetModel;
+          input.value = '';
+          input.classList.add('hidden');
+        } else {
+          sel.value = '__custom__';
+          input.value = presetModel;
+          input.classList.remove('hidden');
+        }
+      } else {
+        sel.value = '__default__';
+        input.value = '';
+        input.classList.add('hidden');
+      }
+      modelRow.classList.remove('hidden');
+    }
+
+    function renderOptional(vision, asr, search) {
+      const v = document.getElementById('ms-vision-info');
+      const a = document.getElementById('ms-asr-info');
+      const s = document.getElementById('ms-search-info');
+      if (vision) v.textContent = vision.active_configured ? `${vision.active}（${vision.active_model || '默认'}）` : '未启用';
+      if (asr)    a.textContent = asr.active_configured    ? `${asr.active}（${asr.active_model || '默认'}）`    : '未启用';
+      if (search) s.textContent = search.active_configured ? `${search.active}` : '未启用';
+    }
+
+    function updateHeaderLabel(provider, model) {
+      if (!provider) { headerLabel.textContent = 'AI 模型'; return; }
+      const label = MS.providers[provider]?.label || provider;
+      const short = label.length > 14 ? label.slice(0, 13) + '…' : label;
+      headerLabel.textContent = model ? `${short} · ${model}` : short;
+    }
+
+    document.getElementById('ms-chat-provider').addEventListener('change', (e) => {
+      const id = e.target.value;
+      renderChatModelRow(id, '');
+      // 切换 provider 时清空 base_url/model 表单（除非有已保存值）
+      if (isCustom(id)) {
+        const info = MS.providers[id] || {};
+        document.getElementById('ms-chat-baseurl').value = info.base_url || '';
+        document.getElementById('ms-chat-custom-model').value = info.model || '';
+      }
+    });
+    document.getElementById('ms-chat-model-select').addEventListener('change', (e) => {
+      const input = document.getElementById('ms-chat-model-custom');
+      if (e.target.value === '__custom__') {
+        input.classList.remove('hidden'); input.focus();
+      } else {
+        input.classList.add('hidden');
+      }
+    });
+
+    function readChosenModel() {
+      const sel = document.getElementById('ms-chat-model-select');
+      if (sel.parentElement.classList.contains('hidden')) return undefined;
+      const v = sel.value;
+      if (v === '__default__') return '';
+      if (v === '__custom__') return document.getElementById('ms-chat-model-custom').value.trim();
+      return v;
+    }
+
+    document.getElementById('ms-chat-save').addEventListener('click', async () => {
+      const provider = document.getElementById('ms-chat-provider').value;
+      if (!provider) { msMsg('请先选 Provider', 'err'); return; }
+      const apiKey = document.getElementById('ms-chat-key').value;
+      const payload = { chat_provider: provider, api_key: apiKey };
+      if (isCustom(provider)) {
+        const baseUrl = document.getElementById('ms-chat-baseurl').value.trim();
+        const model = document.getElementById('ms-chat-custom-model').value.trim();
+        if (!baseUrl) { msMsg('请填 Base URL', 'err'); return; }
+        if (!/^https?:\/\//i.test(baseUrl)) { msMsg('Base URL 必须 http(s)://', 'err'); return; }
+        if (!model) { msMsg('请填 Model', 'err'); return; }
+        payload.base_url = baseUrl;
+        payload.model = model;
+      } else {
+        const chosen = readChosenModel();
+        if (chosen !== undefined) {
+          payload.model = chosen;
+          if (chosen === '') payload.clear_model = true;
+        }
+      }
+      msMsg('保存中…', 'info');
+      try {
+        const r = await fetch('/api/setup/provider-config', {
+          method: 'POST', headers: tokenHeaders(), body: JSON.stringify(payload),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          const parts = [d.data.label];
+          if (d.data.key_saved) parts.push('含 Key');
+          if (d.data.base_url_saved) parts.push('Base URL');
+          if (d.data.model_saved) parts.push('Model');
+          msMsg(`✅ 已保存 ${parts.join(' · ')}`, 'ok');
+          await refreshAll();
+        } else {
+          msMsg('❌ ' + (d.error || d.message || '保存失败'), 'err');
+        }
+      } catch (e) { msMsg('❌ ' + e.message, 'err'); }
+    });
+
+    document.getElementById('ms-chat-test').addEventListener('click', async () => {
+      const provider = document.getElementById('ms-chat-provider').value;
+      if (!provider) { msMsg('请先选 Provider', 'err'); return; }
+      msMsg('测试中…', 'info');
+      try {
+        const r = await fetch('/api/setup/test-provider', {
+          method: 'POST', headers: tokenHeaders(),
+          body: JSON.stringify({ provider, capability: 'chat' }),
+        });
+        const d = await r.json();
+        if (d.ok && d.data?.ok) {
+          msMsg(`✅ 连通成功！${d.data.label || provider} ${d.data.latency_ms ?? '--'}ms`, 'ok');
+        } else {
+          msMsg('❌ ' + (d.data?.error || d.error || d.message || '连通失败').slice(0, 120), 'err');
+        }
+      } catch (e) { msMsg('❌ ' + e.message, 'err'); }
+    });
+
+    // dashboard 加载完后异步 refresh 一次，让 header 显示当前 provider
+    setTimeout(refreshAll, 800);
+  })();
+  </script>
+
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
