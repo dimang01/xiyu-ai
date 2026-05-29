@@ -53,6 +53,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 ### 目录
 
+- [🆕 v1.3.0 更新](#-v130-更新)
 - [⚡ 一句话介绍](#-一句话介绍)
 - [🎯 项目定位](#-项目定位)
 - [✨ 核心特性](#-核心特性)
@@ -685,6 +686,7 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 
 ### Table of Contents
 
+- [🆕 What's New in v1.3.0](#-whats-new-in-v130)
 - [⚡ TL;DR](#-tldr)
 - [🎯 Project Scope](#-project-scope)
 - [✨ Features](#-features)
@@ -702,6 +704,18 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 - [🤝 Contributing & Roadmap](#-contributing--roadmap)
 - [📬 Contact](#-contact)
 - [📄 License](#-license)
+
+---
+
+### 🆕 What's New in v1.3.0
+
+| New | Description |
+|------|-------------|
+| 🪟 **Liquid Glass UI** | Apple-style Liquid Glass refresh: frosted-glass cards, drifting color orbs, silky micro-interactions. Pure CSS layer (`public/app/glass.css`); zero business-logic changes |
+| 📔 **Her Diary** | She writes a first-person diary every night reflecting on your day together, with mood tag; readable at `/app/diary.html`. Pro users also get a weekly entry |
+| 🎂 **Anniversary Proactive Greetings** | Birthdays / anniversaries / holidays get a warm proactive message on the day; auto-registered milestones (100 days, 1-year together) included, exactly one greeting per occasion |
+| ⚡ **Livelier Default Tuning** | Default sampling bumped (temperature 0.8 / top_p 0.95 / 16-turn context) for more natural, connected replies |
+| 🩹 **SW Cache Hotfix** | Service Worker switched to network-first for HTML — fresh deploys no longer hide behind stale cached pages |
 
 ---
 
@@ -741,11 +755,14 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 | 📅 **Schedule system** | 8–12 timed activities generated every day at 00:30, weekday/weekend aware, three mood segments, self-healing on failure |
 | 💞 **5-stage relationship** | Stranger → friend → flirting → lover → deep love, with distinct forms of address and conversational depth |
 | 🔄 **Proactive engine v2** | Motivation-score-driven triggers (missing / emotion / time); quiet/normal/clingy intensity; anti-spam backoff |
+| 🎂 **Anniversary greetings** *(v1.3.0)* | She proactively sends a heartfelt message on birthdays / anniversaries / holidays; auto-registered milestones (100 days, 1-year together); exactly once per occasion, editable in reminders |
 | 🧬 **Memory v2** | 7-layer taxonomy × 0–5 weight × forgetting curve; pin / lock / archive / do-not-mention; sensitive-content filter; deduplication |
 | 🛡️ **Persona Guard** | Post-generation consistency check — catches AI self-disclosure, customer-service phrases, stage violations; auto-repairs minor issues, regenerates on major ones |
 | 🎭 **Emotion state machine** | 7 dimensions: affection / trust / dependency / possessiveness / security / energy / mood; rule-driven real-time updates |
 | 💬 **Multi-provider** | chat / image / vision / ASR / embedding — each capability independently swappable, no code changes |
-| 🎛️ **Full dashboard** | Affection progress, relationship stage, "what she's doing right now", timeline, avatar manager, shareable CP-card, **memory panel entry** |
+| 🪟 **Liquid Glass UI** *(v1.3.0)* | Apple-style Liquid Glass visual layer (`/app/glass.css`): frosted cards, drifting color orbs, silky micro-interactions across all core pages; respects `prefers-reduced-motion` |
+| 📔 **Her Diary** *(v1.3.0)* | She writes a first-person diary every night reflecting on your day together, with mood tag; readable at `/app/diary.html` (`GET /api/companions/:id/diary`). Pro users also get a weekly entry |
+| 🎛️ **Full dashboard** | Affection progress, relationship stage, "what she's doing right now", timeline, avatar manager, shareable CP-card, **memory panel entry**, **diary entry** |
 | 🗂️ **Memory Control Panel** | `/app/memories.html` — visual memory browser: filter by layer/status, add, edit, pin, lock, archive, delete |
 | 🧪 **Browser playground** | Chat with the AI in the browser without WeChat — runs the same persona/memory/emotion pipeline as inbound WeChat messages |
 | 📱 **WeChat integration** | In-browser QR binding — backend requests the QR from iLink at runtime; **no `ILINK_*` env vars to pre-configure** (requires Tencent iLink/ClawBot approval on your WeChat account) |
