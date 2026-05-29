@@ -120,6 +120,9 @@ npm start
 
 **网页向导**会引导你：① 创建本地账号 → ② 选 Chat Provider → ③ 填 API Key（保存到本地 SQLite，不写 `.env`）→ ④ 测试连通 → ⑤ 创建角色。
 
+> **当前 Web Setup Wizard 优先支持 Chat Provider 的网页配置。**
+> Image / Vision / ASR / Embedding 的完整网页配置将在后续版本补齐；高级用户仍可继续通过 `.env` 配置这些能力。
+
 `npm run setup` 也做原生模块预检（better-sqlite3），缺编译工具时给出针对你 OS 的修复命令。
 
 高级用户仍可直接编辑 `.env`，环境变量优先于 Web 设置。
@@ -718,6 +721,9 @@ npm start
 ```
 
 The **web wizard** guides you through: ① create local account → ② pick Chat Provider → ③ paste API Key (stored in local SQLite, not `.env`) → ④ test connection → ⑤ create AI character.
+
+> **The current Web Setup Wizard focuses on Chat Provider configuration.**
+> Full web configuration for Image / Vision / ASR / Embedding will be added later. Advanced users can still configure these capabilities through `.env`.
 
 `npm run setup` also runs a native-module preflight (better-sqlite3). Missing build tools get OS-specific fix commands instead of a wall of red.
 

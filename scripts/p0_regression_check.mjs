@@ -309,6 +309,11 @@ try {
     apiSrc.includes("'/setup/provider-config',\n  requireAuth") ||
     apiSrc.includes("'/setup/provider-config',\n  requireAuth,") ||
     apiSrc.includes("provider-config',\n  requireAuth"));
+  check('api.mjs /setup/provider-status 使用 softAuth',
+    apiSrc.includes("'/setup/provider-status', softAuth") ||
+    apiSrc.includes("'/setup/provider-status',\n  softAuth"));
+  check('api.mjs /setup/test-provider 含匿名访问限制逻辑',
+    apiSrc.includes('countAllAccounts') && apiSrc.includes('isLocalhost'));
 } catch (e) {
   check('api.mjs setup 路由静态检查', false, e.message);
 }
@@ -324,18 +329,24 @@ try {
   const hasApiKey = /sk-[a-zA-Z0-9]{10}|Bearer [a-zA-Z0-9]{10}/.test(bodyStr);
   check('/api/setup/status 不泄露 secret', !hasApiKey);
 
-  // provider-status 不含完整 key（如果存在，masked_key 应该含 ···）
+  // provider-status 匿名访问：不含 masked_key、source，不含完整 key
   const psResp = await fetch(`${BASE}/api/setup/provider-status`, { signal: AbortSignal.timeout(3000) });
   check('/api/setup/provider-status 返回 200', psResp.status === 200);
   const psBody = await psResp.json();
   if (psBody.ok && psBody.data?.providers) {
     let leaksFullKey = false;
+    let hasMaskedKey = false;
+    let hasSource = false;
     for (const [, pInfo] of Object.entries(psBody.data.providers)) {
       if (pInfo.masked_key && pInfo.masked_key.length > 20 && !pInfo.masked_key.includes('···')) {
         leaksFullKey = true;
       }
+      if ('masked_key' in pInfo) hasMaskedKey = true;
+      if ('source' in pInfo) hasSource = true;
     }
-    check('/api/setup/provider-status masked_key 不含完整 key', !leaksFullKey);
+    check('/api/setup/provider-status 匿名时不含完整 key', !leaksFullKey);
+    check('/api/setup/provider-status 匿名时不返回 masked_key 字段', !hasMaskedKey);
+    check('/api/setup/provider-status 匿名时不返回 source 字段', !hasSource);
   }
 
   // provider-config 未登录时返回 401
@@ -348,7 +359,7 @@ try {
   check('未登录 POST /api/setup/provider-config 返回 401/403', pcResp.status === 401 || pcResp.status === 403,
     `status=${pcResp.status}`);
 
-  // test-provider 未配置 key 时友好返回（不是 500）
+  // test-provider：已初始化或非本地时未登录应返回 401/403（不是 500）；友好返回不是 500
   const tpResp = await fetch(`${BASE}/api/setup/test-provider`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -356,11 +367,19 @@ try {
     signal: AbortSignal.timeout(20_000),
   });
   const tpStatus = tpResp.status;
-  check('/api/setup/test-provider 未配置时不是 500', tpStatus !== 500, `status=${tpStatus}`);
-  if (tpStatus === 200) {
+  check('/api/setup/test-provider 响应不是 500', tpStatus !== 500, `status=${tpStatus}`);
+  if (tpStatus === 401 || tpStatus === 403) {
+    let tpErrBody;
+    try { tpErrBody = await tpResp.json(); } catch {}
+    check('/api/setup/test-provider 401 含友好消息',
+      typeof tpErrBody?.message === 'string' && tpErrBody.message.length > 0,
+      `message=${JSON.stringify(tpErrBody?.message)}`);
+  } else if (tpStatus === 200) {
     const tpBody = await tpResp.json();
-    check('/api/setup/test-provider 返回 ok 字段', 'ok' in (tpBody.data || tpBody),
-      `body=${JSON.stringify(tpBody).slice(0, 80)}`);
+    const tpBodyStr = JSON.stringify(tpBody);
+    const hasFullKey = /sk-[a-zA-Z0-9]{20,}/.test(tpBodyStr);
+    check('/api/setup/test-provider 响应不含完整 API key', !hasFullKey,
+      `body=${tpBodyStr.slice(0, 80)}`);
   }
 } catch (e) {
   const isTimeout = e.name === 'TimeoutError' || e.code === 'ECONNREFUSED';

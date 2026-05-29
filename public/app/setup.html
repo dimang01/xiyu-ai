@@ -323,7 +323,9 @@ document.getElementById('s1-btn-next').addEventListener('click', () => goStep(2)
 // ─── Step 2 ───────────────────────────────────────────────────────────────
 async function loadProviderStatus() {
   try {
-    const r = await fetch('/api/setup/provider-status');
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const r = await fetch('/api/setup/provider-status', { headers });
     const d = await r.json();
     if (!d.ok) return;
     const active = d.data.chat_provider;
@@ -332,8 +334,14 @@ async function loadProviderStatus() {
     if (pInfo?.configured) {
       cur.classList.remove('hidden');
       document.getElementById('s2-cur-label').textContent = pInfo.label || active;
-      document.getElementById('s2-cur-source').textContent = pInfo.source === 'env' ? '环境变量 (.env)' : '数据库 (Setup 向导)';
-      document.getElementById('s2-cur-masked').textContent = pInfo.masked_key || '****';
+      // source 和 masked_key 仅登录后返回
+      if (pInfo.source) {
+        document.getElementById('s2-cur-source').textContent =
+          pInfo.source === 'env' ? '环境变量 (.env)' : '数据库 (Setup 向导)';
+      } else {
+        document.getElementById('s2-cur-source').textContent = '已配置（登录后可查看来源）';
+      }
+      document.getElementById('s2-cur-masked').textContent = pInfo.masked_key || '（登录后可查看）';
       // 预选当前 provider
       const sel = document.getElementById('s2-provider');
       if (sel.querySelector(`option[value="${active}"]`)) sel.value = active;
@@ -407,11 +415,21 @@ document.getElementById('s3-btn-test').addEventListener('click', async () => {
     const sd = await sr.json();
     const provider = sd.data?.chat_provider || 'deepseek';
 
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const r = await fetch('/api/setup/test-provider', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ provider }),
     });
+    // 处理需要登录的情况
+    if (r.status === 401 || r.status === 403) {
+      msg.className = 'mt-3 msg-err';
+      msg.textContent = '请先登录后再测试 Provider 配置。（返回 Step 1 登录）';
+      return;
+    }
     const d = await r.json();
     if (d.ok && d.data?.ok) {
       msg.className = 'mt-3 msg-ok';

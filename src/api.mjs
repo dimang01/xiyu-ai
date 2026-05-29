@@ -1787,8 +1787,11 @@ router.get('/setup/status', (_req, res) => {
   });
 });
 
-// GET /api/setup/provider-status — 各 provider 配置状态（不泄露完整 key）
-router.get('/setup/provider-status', (_req, res) => {
+// GET /api/setup/provider-status — 各 provider 配置状态
+// 未登录：只返回 configured 布尔值，不返回 masked_key / source（防信息泄露）
+// 已登录：额外返回 masked_key 和 source
+router.get('/setup/provider-status', softAuth, (req, res) => {
+  const isAuthed = Boolean(req.authUser);
   const active = getActiveChatProvider();
   const providers = {};
   for (const [id, entry] of Object.entries(CHAT_REGISTRY)) {
@@ -1796,12 +1799,12 @@ router.get('/setup/provider-status', (_req, res) => {
     const dbVal   = envVal ? '' : (getAppSetting(entry.apiKeyEnv) || '');
     const rawKey  = envVal || dbVal;
     if (rawKey) {
-      providers[id] = {
-        configured: true,
-        source: envVal ? 'env' : 'app_settings',
-        masked_key: maskApiKey(rawKey),
-        label: entry.label,
-      };
+      const info = { configured: true, label: entry.label };
+      if (isAuthed) {
+        info.source     = envVal ? 'env' : 'app_settings';
+        info.masked_key = maskApiKey(rawKey);
+      }
+      providers[id] = info;
     } else {
       providers[id] = { configured: false, label: entry.label };
     }
@@ -1839,23 +1842,36 @@ router.post('/setup/provider-config',
   },
 );
 
-// POST /api/setup/test-provider — 测试指定 provider 连通性（无需登录，限速）
+// POST /api/setup/test-provider — 测试指定 provider 连通性
+// 允许匿名访问的唯一场景：AUTH_MODE!=email + user_count=0 + 请求来自 localhost
+// 其他情况一律 requireAuth
 router.post('/setup/test-provider',
   rateLimit({ scope: 'test-provider', maxPerWindow: 10, windowMs: 60_000, message: '测试过于频繁，请稍后再试' }),
+  softAuth,
   async (req, res) => {
+    // 权限检查
+    if (!req.authUser) {
+      const ip = req.ip || req.socket?.remoteAddress || '';
+      const isLocalhost = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip);
+      const isLocalMode = (process.env.AUTH_MODE || 'local').toLowerCase() !== 'email';
+      let userCount = 0;
+      try { userCount = countAllAccounts(); } catch {}
+      // 仅首次本地初始化阶段（user_count=0 + 本地请求 + local 模式）允许匿名
+      if (!isLocalhost || !isLocalMode || userCount > 0) {
+        return res.status(401).json({ ok: false, success: false, message: '请先登录后再测试 Provider 配置' });
+      }
+    }
     const { provider } = req.body || {};
     if (!provider || typeof provider !== 'string') return err(res, 'provider 不能为空');
     const name = provider.toLowerCase().trim();
-    if (!CHAT_REGISTRY[name]) {
-      return err(res, `未知 provider: ${name}`);
-    }
+    if (!CHAT_REGISTRY[name]) return err(res, `未知 provider: ${name}`);
     try {
       const { testChatProvider } = await import('./providers/chat.mjs');
       const result = await testChatProvider(name);
       return ok(res, result);
     } catch (e) {
       const msg = String(e?.message || 'unknown error').slice(0, 200);
-      log('warn', `[Setup] test-provider ${name} 失败: ${msg}`);
+      log('warn', `[Setup] test-provider ${name} 失败（已隐藏详情）`);
       return res.status(200).json({ ok: false, error: msg });
     }
   },
