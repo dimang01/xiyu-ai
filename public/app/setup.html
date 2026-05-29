@@ -246,6 +246,84 @@
       </div>
       <p id="s2-msg" class="mt-3 msg-info"></p>
 
+      <!-- ── 可选能力：图片理解 / 语音识别 ── -->
+      <details id="s2-optional" class="mt-6 pt-4 border-t border-line">
+        <summary class="cursor-pointer text-[13px] font-semibold text-sakura-deep">
+          可选：图片理解 / 语音识别 <span class="text-mute font-normal">（不配也能聊天）</span>
+        </summary>
+        <div class="mt-4 space-y-5">
+
+          <!-- 图片理解（vision） -->
+          <div class="p-4 rounded-xl bg-cloud">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-[14px] font-bold">🖼️ 图片理解（vision）</h3>
+              <span id="s2-vision-state" class="text-[12px] text-mute">未配置</span>
+            </div>
+            <p class="text-[12px] text-mute mb-3">让 AI 看懂用户发来的图片。不配也行，发图时会回一句"看不到图"。</p>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Provider</label>
+              <select id="s2-vision-provider" class="input">
+                <option value="">不启用</option>
+                <option value="zhipu">智谱 GLM-4V</option>
+                <option value="openai">OpenAI gpt-4o-mini</option>
+                <option value="qwen">通义千问 VL</option>
+                <option value="doubao">豆包视觉 (Ark)</option>
+                <option value="anthropic">Anthropic Claude</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Model（选填）</label>
+              <input id="s2-vision-model" class="input font-mono" type="text"
+                     placeholder="留空使用该 provider 默认模型" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="mb-3">
+              <label class="block text-[12px] font-semibold mb-1">API Key（选填）</label>
+              <input id="s2-vision-key" class="input font-mono" type="password"
+                     placeholder="若 Step 2 已配同 provider 的 Key，可留空复用" autocomplete="off" />
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <button class="btn-outline" id="s2-vision-save" style="padding:6px 16px;font-size:13px">保存图片理解</button>
+              <button class="btn-ghost"   id="s2-vision-clear">清除</button>
+            </div>
+            <p id="s2-vision-msg" class="mt-2 msg-info"></p>
+          </div>
+
+          <!-- 语音识别（asr） -->
+          <div class="p-4 rounded-xl bg-cloud">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-[14px] font-bold">🎙️ 语音识别（asr）</h3>
+              <span id="s2-asr-state" class="text-[12px] text-mute">未配置</span>
+            </div>
+            <p class="text-[12px] text-mute mb-3">让 AI 听懂用户发来的语音。不配也行，会回一句"听不到声音"。</p>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Provider</label>
+              <select id="s2-asr-provider" class="input">
+                <option value="">不启用</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI Whisper</option>
+                <option value="qwen">通义千问 paraformer</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Model（选填）</label>
+              <input id="s2-asr-model" class="input font-mono" type="text"
+                     placeholder="留空使用该 provider 默认模型" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="mb-3">
+              <label class="block text-[12px] font-semibold mb-1">API Key（选填）</label>
+              <input id="s2-asr-key" class="input font-mono" type="password"
+                     placeholder="若 Step 2 已配同 provider 的 Key，可留空复用" autocomplete="off" />
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <button class="btn-outline" id="s2-asr-save" style="padding:6px 16px;font-size:13px">保存语音识别</button>
+              <button class="btn-ghost"   id="s2-asr-clear">清除</button>
+            </div>
+            <p id="s2-asr-msg" class="mt-2 msg-info"></p>
+          </div>
+
+        </div>
+      </details>
+
       <div class="mt-5 pt-4 border-t border-line flex gap-3 items-center">
         <button class="btn-primary" id="s2-btn-next" disabled>下一步 →</button>
         <span id="s2-next-hint" class="gate-hint">请先保存 Provider 配置</span>
@@ -255,11 +333,14 @@
     <!-- ── Step 3：测试连通 ── -->
     <section class="panel card p-6 mb-4" data-panel="3">
       <h2 class="text-[16px] font-bold mb-1">Step 3：测试连通性</h2>
-      <p class="text-[13px] text-mute mb-4">向当前 provider 发一次极短的 ping，验证 Key 是否有效。</p>
+      <p class="text-[13px] text-mute mb-4">挨个 ping 一下你配过的 Provider，确认 Key 没填错。</p>
 
       <div id="s3-provider-info" class="mb-4 p-3 rounded-xl bg-cloud text-[13px]">
         当前 Provider：<span id="s3-provider-name" class="font-semibold">—</span>
       </div>
+
+      <!-- 多项测试结果显示 -->
+      <div id="s3-results" class="mb-3 space-y-2"></div>
 
       <div class="flex gap-3 flex-wrap">
         <button class="btn-primary" id="s3-btn-test">🔌 测试连通性</button>
@@ -534,6 +615,8 @@ async function refreshStep2() {
       updateStep2NextBtn(false);
     }
   } catch {}
+  // 顺带刷新可选能力区域
+  refreshOptional();
 }
 
 function updateStep2NextBtn(enabled) {
@@ -648,6 +731,101 @@ document.getElementById('s2-btn-next').addEventListener('click', () => {
   if (S.providerSaved) goStep(3);
 });
 
+// ─── Step 2 可选能力：vision / asr ────────────────────────────────────────
+// 每个能力独立保存到 app_settings；不阻塞主流程；Step 3 测试会一并 ping。
+S.visionConfigured = false;
+S.asrConfigured    = false;
+S.visionProvider   = '';
+S.asrProvider      = '';
+
+async function refreshOptional() {
+  try {
+    const r = await fetch('/api/setup/provider-status', { headers: authHeaders() });
+    const d = await r.json();
+    if (!d.ok) return;
+    const v = d.data?.vision;
+    const a = d.data?.asr;
+    if (v) {
+      S.visionConfigured = Boolean(v.active_configured);
+      S.visionProvider   = v.active || '';
+      const sel = document.getElementById('s2-vision-provider');
+      if (sel.querySelector(`option[value="${v.active}"]`)) sel.value = v.active;
+      document.getElementById('s2-vision-model').value = v.active_model || '';
+      document.getElementById('s2-vision-state').textContent =
+        v.active_configured ? `已启用：${v.active}（${v.active_model || '默认模型'}）` : '未配置';
+    }
+    if (a) {
+      S.asrConfigured = Boolean(a.active_configured);
+      S.asrProvider   = a.active || '';
+      const sel = document.getElementById('s2-asr-provider');
+      if (sel.querySelector(`option[value="${a.active}"]`)) sel.value = a.active;
+      document.getElementById('s2-asr-model').value = a.active_model || '';
+      document.getElementById('s2-asr-state').textContent =
+        a.active_configured ? `已启用：${a.active}（${a.active_model || '默认模型'}）` : '未配置';
+    }
+  } catch {}
+}
+
+async function saveOptional(capability) {
+  const prefix = capability === 'vision' ? 's2-vision' : 's2-asr';
+  const provider = document.getElementById(`${prefix}-provider`).value;
+  const model    = document.getElementById(`${prefix}-model`).value.trim();
+  const apiKey   = document.getElementById(`${prefix}-key`).value;
+  const msgId    = `${prefix}-msg`;
+  if (!provider) {
+    setMsg(msgId, '请选择 Provider，或点"清除"关闭该能力', 'err');
+    return;
+  }
+  setMsg(msgId, '保存中…', 'info');
+  try {
+    const r = await fetch('/api/setup/provider-config', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ capability, provider, model, api_key: apiKey }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const parts = [d.data.label];
+      if (d.data.model_saved) parts.push('含 Model');
+      if (d.data.key_saved)   parts.push('含 API Key');
+      setMsg(msgId, `✅ 已保存 ${parts.join(' · ')}`, 'ok');
+      await refreshOptional();
+    } else {
+      setMsg(msgId, '❌ ' + (d.error || d.message || '保存失败'), 'err');
+    }
+  } catch (e) {
+    setMsg(msgId, '❌ ' + e.message, 'err');
+  }
+}
+
+async function clearOptional(capability) {
+  const msgId = capability === 'vision' ? 's2-vision-msg' : 's2-asr-msg';
+  setMsg(msgId, '清除中…', 'info');
+  try {
+    const r = await fetch('/api/setup/provider-config', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ capability, clear: true }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      setMsg(msgId, '✅ 已清除', 'ok');
+      const prefix = capability === 'vision' ? 's2-vision' : 's2-asr';
+      document.getElementById(`${prefix}-provider`).value = '';
+      document.getElementById(`${prefix}-model`).value = '';
+      document.getElementById(`${prefix}-key`).value = '';
+      await refreshOptional();
+    } else {
+      setMsg(msgId, '❌ ' + (d.error || d.message || '清除失败'), 'err');
+    }
+  } catch (e) { setMsg(msgId, '❌ ' + e.message, 'err'); }
+}
+
+document.getElementById('s2-vision-save').addEventListener('click', () => saveOptional('vision'));
+document.getElementById('s2-asr-save').addEventListener('click', () => saveOptional('asr'));
+document.getElementById('s2-vision-clear').addEventListener('click', () => clearOptional('vision'));
+document.getElementById('s2-asr-clear').addEventListener('click', () => clearOptional('asr'));
+
 // ─── Step 3 ───────────────────────────────────────────────────────────────
 function refreshStep3() {
   // 刷新 provider 名称
@@ -681,7 +859,8 @@ document.getElementById('s3-btn-test').addEventListener('click', async () => {
     btn.disabled = false;
     return;
   }
-  // 获取当前活跃 provider
+  // 收集所有要测试的项：chat（必测）+ 已配 vision + 已配 asr
+  const items = [];
   let provider = S.activeProvider;
   if (!provider) {
     try {
@@ -691,39 +870,66 @@ document.getElementById('s3-btn-test').addEventListener('click', async () => {
       S.activeProvider = provider;
     } catch {}
   }
-  try {
-    const r = await fetch('/api/setup/test-provider', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ provider }),
-    });
-    if (r.status === 401 || r.status === 403) {
-      setMsg('s3-msg', '会话已失效，请刷新页面重新登录。', 'err');
-      btn.disabled = false;
-      return;
-    }
-    const d = await r.json();
-    if (d.ok && d.data?.ok) {
-      setMsg('s3-msg',
-        `✅ 连通成功！${d.data.label || provider} 延迟 ${d.data.latency_ms ?? '--'}ms`,
-        'ok');
-      S.testPassed = true;
-      updateStep3NextBtn();
-    } else {
-      const errMsg = d.data?.error || d.error || d.message || '连通失败';
-      if (S.providerSaved) {
-        setMsg('s3-msg',
-          `❌ ${errMsg}。\n可检查 API Key 是否正确，或点击"跳过测试"继续。`,
-          'err');
-      } else {
-        setMsg('s3-msg', `❌ ${errMsg}，请先在 Step 2 保存 Provider API Key。`, 'err');
-      }
-    }
-  } catch (e) {
-    setMsg('s3-msg', '❌ ' + e.message, 'err');
-  } finally {
-    btn.disabled = false;
+  items.push({ capability: 'chat', provider, label: 'Chat（' + provider + '）' });
+  if (S.visionConfigured && S.visionProvider) {
+    items.push({ capability: 'vision', provider: S.visionProvider, label: '图片理解（' + S.visionProvider + '）' });
   }
+  if (S.asrConfigured && S.asrProvider) {
+    items.push({ capability: 'asr', provider: S.asrProvider, label: '语音识别（' + S.asrProvider + '）' });
+  }
+
+  // 渲染待测项
+  const resultsEl = document.getElementById('s3-results');
+  resultsEl.innerHTML = '';
+  const rowEls = items.map((it) => {
+    const row = document.createElement('div');
+    row.className = 'p-3 rounded-xl bg-cloud text-[13px] flex items-center justify-between';
+    row.innerHTML = `<span><b>${it.label}</b></span><span class="text-mute">⏳ 测试中…</span>`;
+    resultsEl.appendChild(row);
+    return row;
+  });
+
+  let allChatOk = false;
+  let anyFail   = false;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    try {
+      const r = await fetch('/api/setup/test-provider', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ provider: it.provider, capability: it.capability }),
+      });
+      if (r.status === 401 || r.status === 403) {
+        setMsg('s3-msg', '会话已失效，请刷新页面重新登录。', 'err');
+        btn.disabled = false;
+        return;
+      }
+      const d = await r.json();
+      const okFlag = d.ok && d.data?.ok;
+      const detail = okFlag
+        ? `✅ ${d.data.latency_ms ?? '--'}ms${d.data.warn ? ' (' + d.data.warn + ')' : ''}`
+        : '❌ ' + (d.data?.error || d.error || d.message || '失败').slice(0, 80);
+      rowEls[i].lastElementChild.textContent = detail;
+      rowEls[i].lastElementChild.className = okFlag ? 'msg-ok' : 'msg-err';
+      if (okFlag && it.capability === 'chat') allChatOk = true;
+      if (!okFlag) anyFail = true;
+    } catch (e) {
+      rowEls[i].lastElementChild.textContent = '❌ ' + e.message;
+      rowEls[i].lastElementChild.className = 'msg-err';
+      anyFail = true;
+    }
+  }
+
+  if (allChatOk) {
+    S.testPassed = true;
+    setMsg('s3-msg', anyFail
+      ? '主 Chat Provider 连通成功；个别可选能力失败，可回 Step 2 修一下或继续。'
+      : '✅ 全部连通成功！', anyFail ? 'warn' : 'ok');
+    updateStep3NextBtn();
+  } else {
+    setMsg('s3-msg', '❌ Chat Provider 连通失败，请检查 API Key 或点击"跳过测试"。', 'err');
+  }
+  btn.disabled = false;
 });
 
 document.getElementById('s3-btn-skip').addEventListener('click', () => {
