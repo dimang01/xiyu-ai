@@ -331,9 +331,11 @@ function activeModel(name) {
 export async function chatComplete({
   system,
   messages,
-  temperature = 0.7,
-  max_tokens = 2000,
-  top_p = 0.9,
+  // v1.2.10: 与 companions 表 DEFAULT 对齐 — 0.8 / 3000 / 0.95。
+  // 这里仅作兜底（caller 通常会传 companion.temperature 等显式值）。
+  temperature = 0.8,
+  max_tokens = 3000,
+  top_p = 0.95,
   timeout_ms = 30_000,
 } = {}) {
   const name = getActiveProviderName();
