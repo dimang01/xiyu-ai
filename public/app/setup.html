@@ -204,6 +204,8 @@
           <option value="doubao">豆包 (Volcengine Ark)</option>
           <option value="wenxin">文心一言 (百度千帆)</option>
           <option value="xai">xAI Grok</option>
+          <option value="minimax">MiniMax 海螺</option>
+          <option value="stepfun">阶跃星辰 StepFun</option>
           <option value="openai-compatible">OpenAI Compatible · 自定义网关</option>
         </select>
       </div>
@@ -211,6 +213,17 @@
       <div id="s2-link-row" class="mb-3 text-[13px] hidden">
         申请 Key：<a id="s2-link" class="link" href="#" target="_blank" rel="noopener">点击前往</a>
         <span id="s2-note" class="text-mute ml-2"></span>
+      </div>
+
+      <!-- 通用 Model 选择（非 openai-compatible 时显示） -->
+      <div id="s2-model-row" class="mb-3 hidden">
+        <label class="block text-[13px] font-semibold mb-1">Model</label>
+        <select id="s2-model-select" class="input mb-2">
+          <option value="__default__">使用默认</option>
+        </select>
+        <input id="s2-model-custom" class="input font-mono hidden" type="text"
+               placeholder="填入自定义模型 ID" autocomplete="off" spellcheck="false" />
+        <p class="mt-1 text-[12px] text-mute">选"自定义"可填该 provider 任意可用模型 ID（如最新发布的型号）。</p>
       </div>
 
       <!-- 仅 openai-compatible 显示 -->
@@ -487,6 +500,10 @@ function getToken() {
 function saveToken(token) {
   localStorage.setItem('xiyu_token', token);
 }
+function saveUser(user) {
+  // 让 /app/create.html / dashboard.html 等页面的 token + user 检查通过
+  if (user) localStorage.setItem('xiyu_user', JSON.stringify(user));
+}
 
 // ─── 工具函数 ─────────────────────────────────────────────────────────────
 function setMsg(id, text, type = 'info') {
@@ -577,8 +594,14 @@ async function refreshStep2() {
     const r = await fetch('/api/setup/provider-status', { headers: { Authorization: `Bearer ${getToken()}` } });
     const d = await r.json();
     if (!d.ok) return;
+    // 把后端返回的 models / default_model 灌入前端缓存
+    for (const [pid, info] of Object.entries(d.data.providers || {})) {
+      if (Array.isArray(info.models)) PROVIDER_MODELS[pid] = info.models;
+      if (info.default_model)         PROVIDER_DEFAULT_MODEL[pid] = info.default_model;
+    }
     const active = d.data.chat_provider;
     const pInfo  = d.data.providers?.[active];
+    const activeModel = d.data.chat_model_override || d.data.chat_model || '';
     S.activeProvider = active || '';
     const cur = document.getElementById('s2-current');
     if (pInfo?.configured) {
@@ -601,6 +624,8 @@ async function refreshStep2() {
       if (isCustomProvider(active)) {
         if (pInfo.base_url) document.getElementById('s2-base-url').value = pInfo.base_url;
         if (pInfo.model)    document.getElementById('s2-model').value    = pInfo.model;
+      } else {
+        renderModelRow(active, activeModel);
       }
       updateStep2NextBtn(true);
     } else {
@@ -611,6 +636,8 @@ async function refreshStep2() {
       if (active && isCustomProvider(active) && pInfo) {
         if (pInfo.base_url) document.getElementById('s2-base-url').value = pInfo.base_url;
         if (pInfo.model)    document.getElementById('s2-model').value    = pInfo.model;
+      } else if (active && !isCustomProvider(active)) {
+        renderModelRow(active, activeModel);
       }
       updateStep2NextBtn(false);
     }
@@ -635,6 +662,89 @@ function toggleCustomRow(id) {
   const show = isCustomProvider(id);
   customRow.classList.toggle('hidden', !show);
   if (show) renderOaiPresets();
+}
+
+// 用 provider-status 返回的 models 数组渲染下拉
+// PROVIDER_MODELS 在 init() 拉 provider-status 时填充：{ deepseek: ['deepseek-chat', ...], ... }
+const PROVIDER_MODELS = Object.create(null);
+const PROVIDER_DEFAULT_MODEL = Object.create(null);
+
+function renderModelRow(providerId, presetActiveModel) {
+  const row = document.getElementById('s2-model-row');
+  if (!row) return;
+  // openai-compatible 走自己的 base_url + model 输入，不显示通用 model 行
+  if (!providerId || isCustomProvider(providerId)) {
+    row.classList.add('hidden');
+    return;
+  }
+  const models = PROVIDER_MODELS[providerId] || [];
+  const defaultModel = PROVIDER_DEFAULT_MODEL[providerId] || '';
+  const sel = document.getElementById('s2-model-select');
+  const input = document.getElementById('s2-model-custom');
+  sel.innerHTML = '';
+
+  // 第一项：使用默认
+  const optDefault = document.createElement('option');
+  optDefault.value = '__default__';
+  optDefault.textContent = defaultModel ? `使用默认（${defaultModel}）` : '使用默认';
+  sel.appendChild(optDefault);
+
+  // 预设模型
+  for (const m of models) {
+    const o = document.createElement('option');
+    o.value = m;
+    o.textContent = m === defaultModel ? `${m} · 默认` : m;
+    sel.appendChild(o);
+  }
+  // 自定义
+  const optCustom = document.createElement('option');
+  optCustom.value = '__custom__';
+  optCustom.textContent = '自定义模型 ID…';
+  sel.appendChild(optCustom);
+
+  // 选中：尽量匹配 presetActiveModel
+  if (presetActiveModel && presetActiveModel !== defaultModel) {
+    if (models.includes(presetActiveModel)) {
+      sel.value = presetActiveModel;
+      input.value = '';
+      input.classList.add('hidden');
+    } else {
+      sel.value = '__custom__';
+      input.value = presetActiveModel;
+      input.classList.remove('hidden');
+    }
+  } else {
+    sel.value = '__default__';
+    input.value = '';
+    input.classList.add('hidden');
+  }
+
+  row.classList.remove('hidden');
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 's2-model-select') {
+    const input = document.getElementById('s2-model-custom');
+    if (e.target.value === '__custom__') {
+      input.classList.remove('hidden');
+      input.focus();
+    } else {
+      input.classList.add('hidden');
+    }
+  }
+});
+
+// 把 select+input 解析为发送给后端的 model 字符串
+//   __default__ → '' (清空 CHAT_MODEL，让 chat.mjs 用 default)
+//   __custom__  → input 的值（trim 过）
+//   其它       → 选中的模型 ID
+function readChosenModel() {
+  const sel = document.getElementById('s2-model-select');
+  if (!sel || sel.classList.contains('hidden') && sel.parentElement.classList.contains('hidden')) return undefined;
+  const v = sel.value;
+  if (v === '__default__') return '';
+  if (v === '__custom__') return document.getElementById('s2-model-custom').value.trim();
+  return v;
 }
 
 function renderOaiPresets() {
@@ -679,6 +789,8 @@ document.getElementById('s2-provider').addEventListener('change', (e) => {
     linkRow.classList.add('hidden');
   }
   toggleCustomRow(id);
+  // 同步刷新 Model 下拉
+  renderModelRow(id, '');
 });
 
 document.getElementById('s2-btn-save').addEventListener('click', async () => {
@@ -696,6 +808,13 @@ document.getElementById('s2-btn-save').addEventListener('click', async () => {
     if (!model) { setMsg('s2-msg', '请填写 Model', 'err'); return; }
     payload.base_url = baseUrl;
     payload.model    = model;
+  } else {
+    // 通用 provider：把 Model 下拉选择带上
+    const chosen = readChosenModel();
+    if (chosen !== undefined) {
+      payload.model = chosen;
+      if (chosen === '') payload.clear_model = true;  // 让后端删除 CHAT_MODEL
+    }
   }
   const token = getToken();
   if (!token) { setMsg('s2-msg', '会话已失效，请刷新页面重新登录', 'err'); return; }
@@ -1082,6 +1201,7 @@ document.getElementById('init-btn').addEventListener('click', async () => {
     const d = await r.json();
     if (d.ok && d.token) {
       saveToken(d.token);
+      saveUser(d.user);  // ← 让 /app/create.html 等页面不会以为没登录而跳 auth
       setMsg('init-msg', '✅ 账号创建成功，即将进入配置向导…', 'ok');
       // 更新状态，不刷新页面
       S.authenticated = true;
