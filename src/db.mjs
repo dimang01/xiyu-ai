@@ -44,6 +44,7 @@ export function getDb() {
     migrateProactiveEngineV2();
     migrateEmotionHistory();
     migrateP2Tables();
+    migrateReminderPush();
     migrateAppSettings();
   }
   return db;
@@ -2729,6 +2730,64 @@ function isReminderDue(reminder, today) {
 export function getDueReminders(companionId, today = localDateString()) {
   const list = getReminders(companionId, 300);
   return list.filter(r => isReminderDue(r, today));
+}
+
+// ─── Reminder 主动推送支持 ─────────────────────────────────────────────────────
+// 提醒表早就存在，但此前只查不推、也从不标记 last_triggered_at（导致去重失效）。
+// 这里补上：标记已触发 + 自动登记关系纪念日（认识100天 / 在一起一周年）。
+function migrateReminderPush() {
+  // 防止 ensureRelationshipReminders 在用户删除自动提醒后反复重建。
+  addColIfMissing('companions', 'relationship_reminders_seeded', 'INTEGER DEFAULT 0');
+}
+
+export function markRemindersTriggered(companionId, ids, dateKey) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+  const db = getDb();
+  // 用 dateKey 对齐时间戳，保证 isReminderDue 的 sameDay(last_triggered_at, today) 命中。
+  const ts = `${dateKey} ${new Date().toISOString().slice(11, 19)}`;
+  const stmt = db.prepare(`
+    UPDATE companion_reminders
+    SET last_triggered_at = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE companion_id = ? AND id = ?
+  `);
+  const tx = db.transaction(arr => { for (const id of arr) stmt.run(ts, companionId, id); });
+  tx(ids);
+  return ids.length;
+}
+
+function fmtYmd(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// 第一次见到某个 companion 时，自动登记两条关系里程碑提醒（用户可在提醒页编辑/删除/关闭）。
+// 用 once + 未来具体日期，避免 yearly 规则在"创建当天"误触发（yearly 只比对 MM-DD）。
+export function ensureRelationshipReminders(companion) {
+  if (!companion || companion.relationship_reminders_seeded) return false;
+  const db = getDb();
+  const markSeeded = () => db.prepare('UPDATE companions SET relationship_reminders_seeded = 1 WHERE id = ?').run(companion.id);
+
+  const raw = companion.created_at;
+  if (!raw) { markSeeded(); return false; }
+  const created = new Date(String(raw).replace(' ', 'T') + (String(raw).includes('Z') ? '' : 'Z'));
+  if (isNaN(created.getTime())) { markSeeded(); return false; }
+
+  const day100 = new Date(created.getTime() + 100 * 86400_000);
+  const year1  = new Date(created.getTime() + 365 * 86400_000);
+  const rows = [
+    { title: '认识 100 天 💕', reminder_type: 'anniversary', date: fmtYmd(day100), repeat_rule: 'once', message_template: '今天是我们认识 100 天的日子～' },
+    { title: '在一起一周年 🎉', reminder_type: 'anniversary', date: fmtYmd(year1),  repeat_rule: 'once', message_template: '今天是我们认识满一年的纪念日～' },
+  ];
+  const ins = db.prepare(`
+    INSERT INTO companion_reminders (companion_id, title, reminder_type, date, repeat_rule, message_template, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+  `);
+  const tx = db.transaction(() => {
+    for (const r of rows) ins.run(companion.id, r.title, r.reminder_type, r.date, r.repeat_rule, r.message_template);
+    markSeeded();
+  });
+  tx();
+  return true;
 }
 
 // ─── user_profiles ────────────────────────────────────────────────────────────

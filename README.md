@@ -96,6 +96,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | 📅 **日程系统** | 每天 00:30 cron 生成 8–12 段日程，区分工作日 / 周末，三段情绪段，调度失败自动自愈 |
 | 💞 **5 阶段关系** | 陌生人 → 朋友 → 暧昧 → 恋人 → 深爱，每阶段称呼 / 撒娇 / 话题深度差异化 |
 | 🔄 **主动消息 v2** | 早安 / 晚安 / 日间随机 / 主动告白 / 场景照；基于 motivation score 动态触发；支持 quiet/normal/clingy 强度；防骚扰冷却 |
+| 🎂 **纪念日主动祝福** | 生日 / 纪念日 / 节日到期当天她会主动发走心祝福；自动登记「认识 100 天 / 在一起一周年」里程碑；当天只发一次，可在提醒里编辑或关闭 |
 | 🧬 **记忆 v2** | 7 层分类 × 0–5 权重 × 遗忘曲线；pin / lock / archive / do-not-mention；敏感内容过滤；去重 |
 | 🛡️ **Persona Guard** | 回复后一致性校验 — 自动检测"我是 AI"、客服话术、阶段违规；轻问题后处理，重问题重生成 |
 | 🎭 **情绪状态机** | 7 维度：affection / trust / dependency / possessiveness / security / energy / mood；规则驱动实时更新 |
