@@ -303,7 +303,9 @@ ${recentBlock}
   }
 
   // ── 15. 最近对话上下文 ─────────────────────────────────────────────────────
-  const contextTurns = recentTurns.slice(-12).filter(t => t?.content);
+  // v1.2.10: 12 → 16 轮，配合 bot.mjs 取数上限同步上调，让连续对话感更强。
+  // 每行已被 slice(0,240) 截短，整段开销可控（约 +1KB）。
+  const contextTurns = recentTurns.slice(-16).filter(t => t?.content);
   if (contextTurns.length > 0) {
     const roleLabel = { user: '他', assistant: '你', system: '系统' };
     const lines = contextTurns.map(t => {

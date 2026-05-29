@@ -315,7 +315,9 @@ export async function handleMessage(rawMsg, botContext = {}) {
       }
     }
     const userProfile = getUserProfile(companion.user_id, companion.id);
-    const recentTurns = getConversationContext(companion.id, 10);
+    // v1.2.10: 10 → 16 轮，对话连续感明显更好；companion.mjs 系统提示里的
+    // slice 已同步上调到 -16，多取的 6 轮全部进 prompt。
+    const recentTurns = getConversationContext(companion.id, 16);
 
     if (memories.length > 0) {
       log('debug', `[Bot] 召回 ${memories.length} 条记忆`);

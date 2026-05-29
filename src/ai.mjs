@@ -188,7 +188,9 @@ export async function embedText(text) {
 // ─── 对话回复 ─────────────────────────────────────────────────────────────
 
 export async function generateReply(personaPrompt, history, userMessage, params = {}, ctx = {}) {
-  const { temperature = 0.7, max_tokens = 2000, top_p = 0.9 } = params;
+  // v1.2.10: 兜底默认与 companions 表 DEFAULT 对齐 (0.8 / 3000 / 0.95)，
+  // 让回复更有创意、空间更宽、用词更自然。caller 显式传值会优先。
+  const { temperature = 0.8, max_tokens = 3000, top_p = 0.95 } = params;
   const { accountId = null } = ctx;
 
   const messages = [];

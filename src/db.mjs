@@ -264,9 +264,12 @@ function initSchema() {
       chat_mode_active TEXT DEFAULT '日常聊天',
 
       -- 模型参数
-      temperature REAL DEFAULT 0.7,
-      max_tokens INTEGER DEFAULT 2000,
-      top_p REAL DEFAULT 0.9,
+      -- v1.2.10: 默认从 (0.7 / 2000 / 0.9) 调到 (0.8 / 3000 / 0.95)，更有创意、
+      -- 回复空间更宽、用词更自然；仍在保守范围，不会胡说。已存在的 companion
+      -- 保留各自调好的值（CREATE TABLE DEFAULT 只对新行生效），不会被覆盖。
+      temperature REAL DEFAULT 0.8,
+      max_tokens INTEGER DEFAULT 3000,
+      top_p REAL DEFAULT 0.95,
 
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
