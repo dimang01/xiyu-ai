@@ -334,6 +334,43 @@
             <p id="s2-asr-msg" class="mt-2 msg-info"></p>
           </div>
 
+          <!-- 联网搜索（search） -->
+          <div class="p-4 rounded-xl bg-cloud">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-[14px] font-bold">🌐 联网搜索（search）</h3>
+              <span id="s2-search-state" class="text-[12px] text-mute">未配置</span>
+            </div>
+            <p class="text-[12px] text-mute mb-3">
+              开启后，遇到「最近 / 今天的 xxx」类问题，系统会悄悄搜一下再回答，对用户透明。不配也行，AI 就只用自己的知识回答。
+            </p>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Provider</label>
+              <select id="s2-search-provider" class="input">
+                <option value="">不启用</option>
+                <option value="tavily">Tavily · 推荐（送 1000 次/月）</option>
+                <option value="brave">Brave Search（送 2000 次/月）</option>
+                <option value="serpapi">SerpAPI（送 100 次/月）</option>
+                <option value="searxng">SearXNG · 自托管</option>
+              </select>
+            </div>
+            <div class="mb-2 hidden" id="s2-search-baseurl-row">
+              <label class="block text-[12px] font-semibold mb-1">Base URL</label>
+              <input id="s2-search-baseurl" class="input font-mono" type="text"
+                     placeholder="https://your-searxng.example.com" autocomplete="off" spellcheck="false" />
+              <p class="mt-1 text-[12px] text-mute">SearXNG 实例必须支持 JSON 格式输出。</p>
+            </div>
+            <div class="mb-3" id="s2-search-key-row">
+              <label class="block text-[12px] font-semibold mb-1">API Key（选填，已有不重填）</label>
+              <input id="s2-search-key" class="input font-mono" type="password"
+                     placeholder="粘贴 API Key" autocomplete="off" />
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <button class="btn-outline" id="s2-search-save" style="padding:6px 16px;font-size:13px">保存联网搜索</button>
+              <button class="btn-ghost"   id="s2-search-clear">清除</button>
+            </div>
+            <p id="s2-search-msg" class="mt-2 msg-info"></p>
+          </div>
+
         </div>
       </details>
 
@@ -882,6 +919,8 @@ async function refreshOptional() {
       document.getElementById('s2-asr-state').textContent =
         a.active_configured ? `已启用：${a.active}（${a.active_model || '默认模型'}）` : '未配置';
     }
+    const s = d.data?.search;
+    if (s) refreshSearchUI(s.active, s.active_configured, s.providers);
   } catch {}
 }
 
@@ -945,6 +984,95 @@ document.getElementById('s2-asr-save').addEventListener('click', () => saveOptio
 document.getElementById('s2-vision-clear').addEventListener('click', () => clearOptional('vision'));
 document.getElementById('s2-asr-clear').addEventListener('click', () => clearOptional('asr'));
 
+// ─── 联网搜索（search） ───────────────────────────────────────────────────
+S.searchConfigured = false;
+S.searchProvider   = '';
+
+function refreshSearchUI(activeProvider, configured, providersMap) {
+  S.searchConfigured = Boolean(configured);
+  S.searchProvider   = activeProvider || '';
+  const sel = document.getElementById('s2-search-provider');
+  if (sel && sel.querySelector(`option[value="${activeProvider}"]`)) sel.value = activeProvider;
+  document.getElementById('s2-search-state').textContent =
+    configured ? `已启用：${activeProvider}` : '未配置';
+  toggleSearchInputs(sel?.value || '');
+  // 回显 base_url（已登录时返回）
+  if (activeProvider === 'searxng' && providersMap?.searxng?.base_url) {
+    document.getElementById('s2-search-baseurl').value = providersMap.searxng.base_url;
+  }
+}
+
+function toggleSearchInputs(providerId) {
+  const isSearxng = providerId === 'searxng';
+  document.getElementById('s2-search-baseurl-row').classList.toggle('hidden', !isSearxng);
+  // SearXNG 不需要 API key
+  document.getElementById('s2-search-key-row').classList.toggle('hidden', isSearxng);
+}
+
+document.getElementById('s2-search-provider').addEventListener('change', (e) => {
+  toggleSearchInputs(e.target.value);
+});
+
+async function saveSearch() {
+  const provider = document.getElementById('s2-search-provider').value;
+  if (!provider) {
+    setMsg('s2-search-msg', '请选择 Provider，或点"清除"关闭', 'err');
+    return;
+  }
+  const payload = { capability: 'search', provider };
+  if (provider === 'searxng') {
+    const baseUrl = document.getElementById('s2-search-baseurl').value.trim();
+    if (!baseUrl) { setMsg('s2-search-msg', '请填写 Base URL', 'err'); return; }
+    if (!/^https?:\/\//i.test(baseUrl)) { setMsg('s2-search-msg', 'Base URL 必须 http(s):// 开头', 'err'); return; }
+    payload.base_url = baseUrl;
+  } else {
+    payload.api_key = document.getElementById('s2-search-key').value;
+  }
+  setMsg('s2-search-msg', '保存中…', 'info');
+  try {
+    const r = await fetch('/api/setup/provider-config', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const parts = [d.data.label];
+      if (d.data.key_saved)      parts.push('含 API Key');
+      if (d.data.base_url_saved) parts.push('Base URL');
+      setMsg('s2-search-msg', `✅ 已保存 ${parts.join(' · ')}`, 'ok');
+      await refreshOptional();
+    } else {
+      setMsg('s2-search-msg', '❌ ' + (d.error || d.message || '保存失败'), 'err');
+    }
+  } catch (e) { setMsg('s2-search-msg', '❌ ' + e.message, 'err'); }
+}
+
+async function clearSearch() {
+  setMsg('s2-search-msg', '清除中…', 'info');
+  try {
+    const r = await fetch('/api/setup/provider-config', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ capability: 'search', clear: true }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('s2-search-provider').value = '';
+      document.getElementById('s2-search-baseurl').value = '';
+      document.getElementById('s2-search-key').value = '';
+      toggleSearchInputs('');
+      setMsg('s2-search-msg', '✅ 已清除', 'ok');
+      await refreshOptional();
+    } else {
+      setMsg('s2-search-msg', '❌ ' + (d.error || d.message || '清除失败'), 'err');
+    }
+  } catch (e) { setMsg('s2-search-msg', '❌ ' + e.message, 'err'); }
+}
+
+document.getElementById('s2-search-save').addEventListener('click', saveSearch);
+document.getElementById('s2-search-clear').addEventListener('click', clearSearch);
+
 // ─── Step 3 ───────────────────────────────────────────────────────────────
 function refreshStep3() {
   // 刷新 provider 名称
@@ -995,6 +1123,9 @@ document.getElementById('s3-btn-test').addEventListener('click', async () => {
   }
   if (S.asrConfigured && S.asrProvider) {
     items.push({ capability: 'asr', provider: S.asrProvider, label: '语音识别（' + S.asrProvider + '）' });
+  }
+  if (S.searchConfigured && S.searchProvider) {
+    items.push({ capability: 'search', provider: S.searchProvider, label: '联网搜索（' + S.searchProvider + '）' });
   }
 
   // 渲染待测项
