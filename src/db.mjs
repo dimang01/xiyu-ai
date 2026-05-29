@@ -44,6 +44,7 @@ export function getDb() {
     migrateProactiveEngineV2();
     migrateEmotionHistory();
     migrateP2Tables();
+    migrateAppSettings();
   }
   return db;
 }
@@ -774,6 +775,18 @@ function migrateP2Tables() {
       ON memory_relations(source_entity_id);
     CREATE INDEX IF NOT EXISTS idx_memory_relations_target
       ON memory_relations(target_entity_id);
+  `);
+}
+
+function migrateAppSettings() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      value_type TEXT NOT NULL DEFAULT 'string',
+      secret INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 }
 
@@ -2973,4 +2986,38 @@ export function upsertEmotionState(companionId, fields) {
   db.prepare(`UPDATE companion_emotion_state SET ${sets}, updated_at = ? WHERE companion_id = ?`)
     .run(...Object.values(fields), now, companionId);
   return db.prepare('SELECT * FROM companion_emotion_state WHERE companion_id = ?').get(companionId);
+}
+
+// ─── App Settings accessors ───────────────────────────────────────────────────
+// secret=1 的设置不通过普通 API 明文返回，value 不写日志。
+
+export function getAppSetting(key) {
+  try {
+    const row = getDb().prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+    return row ? row.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function setAppSetting(key, value, { secret = 0, valueType = 'string' } = {}) {
+  getDb().prepare(`
+    INSERT INTO app_settings (key, value, value_type, secret, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET
+      value      = excluded.value,
+      value_type = excluded.value_type,
+      secret     = excluded.secret,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(key, value == null ? null : String(value), valueType, secret ? 1 : 0);
+}
+
+export function deleteAppSetting(key) {
+  getDb().prepare('DELETE FROM app_settings WHERE key = ?').run(key);
+}
+
+export function listPublicAppSettings() {
+  return getDb()
+    .prepare('SELECT key, value, value_type, updated_at FROM app_settings WHERE secret = 0 ORDER BY key')
+    .all();
 }
