@@ -168,7 +168,8 @@
           <option value="deepseek">DeepSeek ★ 推荐入门</option>
           <option value="openai">OpenAI (ChatGPT)</option>
           <option value="anthropic">Anthropic Claude</option>
-          <option value="zhipu">智谱 GLM</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="zhipu">智谱 GLM · 免费</option>
           <option value="qwen">通义千问 (DashScope)</option>
           <option value="kimi">Kimi (Moonshot)</option>
           <option value="doubao">豆包 (Volcengine Ark)</option>
@@ -186,10 +187,15 @@
       <!-- 仅 openai-compatible 显示 -->
       <div id="s2-custom-row" class="hidden">
         <div class="mb-3">
+          <label class="block text-[13px] font-semibold mb-1">快捷预设</label>
+          <div id="s2-preset-row" class="flex gap-2 flex-wrap"></div>
+          <p class="mt-1 text-[12px] text-mute">点一个常见网关，自动填好 Base URL 和示例 Model，再填 Key 就行。</p>
+        </div>
+        <div class="mb-3">
           <label class="block text-[13px] font-semibold mb-1">Base URL</label>
           <input id="s2-base-url" class="input font-mono" type="text"
                  placeholder="https://openrouter.ai/api/v1" autocomplete="off" spellcheck="false" />
-          <p class="mt-1 text-[12px] text-mute">兼容 OpenAI Chat Completions 协议的端点。例：OpenRouter / SiliconFlow / One API / LiteLLM / LM Studio。</p>
+          <p class="mt-1 text-[12px] text-mute">兼容 OpenAI Chat Completions 协议的端点。</p>
         </div>
         <div class="mb-3">
           <label class="block text-[13px] font-semibold mb-1">Model</label>
@@ -267,20 +273,39 @@
     <!-- ── Step 5：绑定微信（可选）── -->
     <section class="panel card p-6 mb-4" data-panel="5">
       <h2 class="text-[16px] font-bold mb-1">Step 5：绑定微信（可选）</h2>
-      <p class="text-[13px] text-mute mb-4">如需通过微信与 AI 聊天，扫码绑定即可。无微信接入也能正常用网页版。</p>
+      <p class="text-[13px] text-mute mb-4">不想让她接入微信？跳过这一步也能正常用网页版聊天。</p>
 
-      <div class="p-4 rounded-xl bg-cloud mb-4 text-[13px]">
-        <p class="font-semibold mb-2">绑定步骤：</p>
-        <ol class="space-y-1 text-mute">
-          <li>1. 前往 <a href="/app/bind.html" class="link">/app/bind.html</a> 网页扫码</li>
-          <li>2. 微信扫描页面上的二维码</li>
-          <li>3. 扫码后自动绑定，无需填任何配置文件</li>
+      <!-- 状态 A：还没开始 -->
+      <div id="s5-idle" class="p-4 rounded-xl bg-cloud mb-4 text-[13px]">
+        <p class="font-semibold mb-2">扫码绑定流程：</p>
+        <ol class="space-y-1 text-mute mb-3">
+          <li>1. 点下方按钮生成专属二维码</li>
+          <li>2. 微信扫码添加「溪语AI」为好友</li>
+          <li>3. 等待页面提示"绑定成功"</li>
         </ol>
+        <button class="btn-primary" id="s5-btn-start">🪪 生成二维码并开始绑定</button>
+        <p class="mt-2 text-[12px] text-mute">若服务端未配置 iLink 凭据，按钮会提示"微信功能未启用"，可跳过此步骤。</p>
+      </div>
+
+      <!-- 状态 B：正在绑定 / 已生成 QR -->
+      <div id="s5-active" class="hidden p-4 rounded-xl bg-white border border-line mb-4 text-center">
+        <img id="s5-qr-img" alt="微信绑定二维码" class="w-[200px] h-[200px] mx-auto rounded-xl shadow-sm" />
+        <p id="s5-status" class="mt-3 text-[13px] msg-info">等待扫码…</p>
+        <p id="s5-expire" class="mt-1 text-[12px] text-mute"></p>
+        <div class="mt-3 flex gap-2 justify-center flex-wrap">
+          <button class="btn-outline" id="s5-btn-refresh">刷新二维码</button>
+          <a href="/app/bind.html" class="btn-ghost" target="_blank" rel="noopener">在独立窗口打开</a>
+        </div>
+      </div>
+
+      <!-- 状态 C：绑定成功 -->
+      <div id="s5-done" class="hidden p-4 rounded-xl bg-emerald-50 mb-4 text-center text-[13px] text-emerald-700">
+        ✅ 微信绑定成功！可以直接在微信里和她聊天了。
       </div>
 
       <div class="flex gap-3 flex-wrap mb-6">
-        <a href="/app/bind.html" class="btn-primary inline-block">前往微信扫码绑定</a>
         <button class="btn-outline" id="s5-btn-back">← 上一步</button>
+        <button class="btn-ghost" id="s5-btn-skip">跳过此步</button>
       </div>
 
       <div class="pt-4 border-t border-line">
@@ -300,6 +325,7 @@ const PROVIDER_META = {
   deepseek:  { link: 'https://platform.deepseek.com/api_keys',           note: '' },
   openai:    { link: 'https://platform.openai.com/api-keys',             note: '' },
   anthropic: { link: 'https://console.anthropic.com/',                   note: '' },
+  gemini:    { link: 'https://aistudio.google.com/apikey',               note: '默认模型 gemini-2.5-flash，可在 .env 中用 CHAT_MODEL 覆盖' },
   zhipu:     { link: 'https://open.bigmodel.cn/usercenter/apikeys',      note: '' },
   qwen:      { link: 'https://dashscope.console.aliyun.com/apiKey',      note: '' },
   kimi:      { link: 'https://platform.moonshot.cn/console/api-keys',    note: '' },
@@ -308,6 +334,19 @@ const PROVIDER_META = {
   xai:       { link: 'https://console.x.ai/',                            note: '' },
   'openai-compatible': { link: '', note: '通用 OpenAI 兼容网关（OpenRouter / SiliconFlow / One API / LiteLLM 等），需自定义 Base URL + Model' },
 };
+
+// ─── OpenAI Compatible 快捷预设 ────────────────────────────────────────────
+// 仅预填 Base URL 和示例 Model；API Key 仍需用户自己粘贴。
+// 示例 Model 选有免费/低价额度的，便于跑通；用户随时可改。
+const OAI_COMPAT_PRESETS = [
+  { id: 'openrouter',   label: 'OpenRouter',   baseURL: 'https://openrouter.ai/api/v1',                model: 'deepseek/deepseek-chat' },
+  { id: 'siliconflow',  label: 'SiliconFlow',  baseURL: 'https://api.siliconflow.cn/v1',               model: 'deepseek-ai/DeepSeek-V3' },
+  { id: 'groq',         label: 'Groq',         baseURL: 'https://api.groq.com/openai/v1',              model: 'llama-3.3-70b-versatile' },
+  { id: 'together',     label: 'Together',     baseURL: 'https://api.together.xyz/v1',                 model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+  { id: 'mistral',      label: 'Mistral',      baseURL: 'https://api.mistral.ai/v1',                   model: 'mistral-small-latest' },
+  { id: 'lmstudio',     label: 'LM Studio',    baseURL: 'http://localhost:1234/v1',                    model: 'local-model' },
+  { id: 'ollama',       label: 'Ollama',       baseURL: 'http://localhost:11434/v1',                   model: 'llama3.2' },
+];
 
 // ─── 全局状态 ─────────────────────────────────────────────────────────────
 const S = {
@@ -475,7 +514,30 @@ function isCustomProvider(id) { return id === 'openai-compatible'; }
 function toggleCustomRow(id) {
   const customRow = document.getElementById('s2-custom-row');
   if (!customRow) return;
-  customRow.classList.toggle('hidden', !isCustomProvider(id));
+  const show = isCustomProvider(id);
+  customRow.classList.toggle('hidden', !show);
+  if (show) renderOaiPresets();
+}
+
+function renderOaiPresets() {
+  const row = document.getElementById('s2-preset-row');
+  if (!row || row.dataset.rendered === '1') return;
+  row.dataset.rendered = '1';
+  row.innerHTML = '';
+  for (const p of OAI_COMPAT_PRESETS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn-outline';
+    b.style.padding = '5px 12px';
+    b.style.fontSize = '12px';
+    b.textContent = p.label;
+    b.addEventListener('click', () => {
+      document.getElementById('s2-base-url').value = p.baseURL;
+      document.getElementById('s2-model').value    = p.model;
+      setMsg('s2-msg', `已填入 ${p.label} 的 Base URL 和示例 Model，再粘贴 API Key 即可保存。`, 'info');
+    });
+    row.appendChild(b);
+  }
 }
 
 document.getElementById('s2-provider').addEventListener('change', (e) => {
@@ -659,8 +721,106 @@ document.getElementById('s4-btn-back').addEventListener('click', () => goStep(3)
 document.getElementById('s4-btn-done').addEventListener('click', () => goStep(5));
 document.getElementById('s4-btn-skip').addEventListener('click', () => goStep(5));
 
-// ─── Step 5 ───────────────────────────────────────────────────────────────
-document.getElementById('s5-btn-back').addEventListener('click', () => goStep(4));
+// ─── Step 5：微信绑定（嵌入式扫码） ───────────────────────────────────────
+// 与 /app/bind.html 走同一套 API：POST /api/wechat/bind-session（rebind=true，
+// 兼容首次绑定与重新绑定）；轮询 GET /api/wechat/bind-session/:id 拿 status。
+const Bind = {
+  sessionId: null,
+  pollTimer: null,
+  expireTimer: null,
+  expireAtMs: 0,
+};
+function bindShow(state) {
+  for (const id of ['s5-idle','s5-active','s5-done']) {
+    document.getElementById(id).classList.toggle('hidden', `s5-${state}` !== id);
+  }
+}
+function bindStopTimers() {
+  if (Bind.pollTimer)   { clearTimeout(Bind.pollTimer);    Bind.pollTimer = null; }
+  if (Bind.expireTimer) { clearInterval(Bind.expireTimer); Bind.expireTimer = null; }
+}
+function bindMsg(text, kind = 'info') {
+  const el = document.getElementById('s5-status');
+  el.className = 'mt-3 msg-' + kind;
+  el.textContent = text;
+}
+function bindUpdateExpire() {
+  const el = document.getElementById('s5-expire');
+  if (!Bind.expireAtMs) { el.textContent = ''; return; }
+  const sec = Math.max(0, Math.floor((Bind.expireAtMs - Date.now()) / 1000));
+  el.textContent = sec > 0 ? `二维码 ${sec}s 后过期` : '二维码已过期，请刷新';
+  if (sec <= 0) bindStopTimers();
+}
+async function bindStart() {
+  bindStopTimers();
+  const userId = S.user?.id;
+  if (!userId) {
+    bindShow('idle');
+    setMsg('init-msg', '请先登录后再绑定微信', 'err');
+    return;
+  }
+  bindShow('active');
+  bindMsg('生成二维码中…', 'info');
+  try {
+    const r = await fetch('/api/wechat/bind-session', {
+      method: 'POST',
+      headers: authHeaders({ 'x-user-id': String(userId) }),
+      cache: 'no-store',
+      body: JSON.stringify({ user_id: userId, rebind: true }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      // 服务端未配 iLink 时给一个友好提示，让用户跳过
+      const msg = d.message || d.error || '生成失败';
+      bindShow('idle');
+      const idle = document.getElementById('s5-idle');
+      const hint = document.createElement('p');
+      hint.className = 'mt-2 msg-err';
+      hint.textContent = '微信功能未启用或暂不可用：' + msg + '。建议跳过此步骤，直接进入控制台。';
+      // 避免重复
+      idle.querySelectorAll('.msg-err').forEach(n => n.remove());
+      idle.appendChild(hint);
+      return;
+    }
+    const p = d.data || d;
+    Bind.sessionId   = p.session_id;
+    Bind.expireAtMs  = Date.now() + Number(p.expires_in || 300) * 1000;
+    document.getElementById('s5-qr-img').src = p.qr_base64 || p.qr_url || '';
+    bindMsg('扫码并在手机上点「确认登录」', 'info');
+    bindUpdateExpire();
+    Bind.expireTimer = setInterval(bindUpdateExpire, 1000);
+    bindPoll();
+  } catch (e) {
+    bindShow('idle');
+    setMsg('init-msg', '微信绑定请求失败：' + e.message, 'err');
+  }
+}
+async function bindPoll() {
+  if (!Bind.sessionId) return;
+  try {
+    const r = await fetch('/api/wechat/bind-session/' + encodeURIComponent(Bind.sessionId) + '?rebind=true',
+      { headers: authHeaders(), cache: 'no-store' });
+    const d = await r.json().catch(() => ({}));
+    const status = d.data?.status || 'pending';
+    if (status === 'success') {
+      bindStopTimers();
+      bindShow('done');
+      return;
+    }
+    if (status === 'scanned') bindMsg('已扫码，等待手机确认…', 'info');
+    else if (status === 'expired') { bindStopTimers(); bindShow('idle'); return; }
+    Bind.pollTimer = setTimeout(bindPoll, 2500);
+  } catch {
+    Bind.pollTimer = setTimeout(bindPoll, 4000);
+  }
+}
+document.getElementById('s5-btn-back').addEventListener('click', () => { bindStopTimers(); goStep(4); });
+document.getElementById('s5-btn-start').addEventListener('click', bindStart);
+document.getElementById('s5-btn-refresh').addEventListener('click', bindStart);
+document.getElementById('s5-btn-skip').addEventListener('click', () => {
+  bindStopTimers();
+  window.location.href = '/app/dashboard.html';
+});
 
 // ─── 状态 A：创建本地账号 ─────────────────────────────────────────────────
 document.getElementById('init-btn').addEventListener('click', async () => {
