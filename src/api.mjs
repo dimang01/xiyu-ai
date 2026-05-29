@@ -154,6 +154,7 @@ import {
   isCompanionOwnedByAccount,
   getEmotionState, upsertEmotionState,
   getEmotionHistoryTrend,
+  getDiaryEntries, countDiaryEntries,
   getAppSetting, setAppSetting, deleteAppSetting,
 } from './db.mjs';
 import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, normalizeMemoryWeight } from './memory_v2.mjs';
@@ -2897,6 +2898,19 @@ router.get('/companions/:id/emotion-trend', requireAuth, (req, res) => {
   const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
   const points = getEmotionTrend(id, { days });
   return ok(res, { days, points });
+});
+
+// GET /api/companions/:id/diary?limit=30&offset=0&kind=daily|weekly
+// 「她的日记」只读视图。日记由 plan_tasks 的每日/每周 cron 自动生成（src/diary.mjs）。
+router.get('/companions/:id/diary', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 30));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  const kind   = (req.query.kind === 'daily' || req.query.kind === 'weekly') ? req.query.kind : null;
+  const entries = getDiaryEntries(id, { limit, offset, kind });
+  const total   = countDiaryEntries(id, { kind });
+  return ok(res, { total, limit, offset, kind: kind || 'all', entries });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
