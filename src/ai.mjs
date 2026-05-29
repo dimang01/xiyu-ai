@@ -22,6 +22,7 @@ import { imageGenerate } from './providers/image.mjs';
 import { visionRecognize } from './providers/vision.mjs';
 import { asrRecognize } from './providers/asr.mjs';
 import { embedText as _embedText } from './providers/embedding.mjs';
+import { shouldSearch, webSearch, formatSearchContext } from './web_search.mjs';
 
 // ─── 图像生成 ─────────────────────────────────────────────────────────────
 
@@ -200,11 +201,31 @@ export async function generateReply(personaPrompt, history, userMessage, params 
   }
   messages.push({ role: 'user', content: userMessage });
 
+  // ─── 可选：联网搜索（对用户透明） ───────────────────────────────────────
+  // 仅当用户消息看起来是「时效相关 + 询问语气」时才搜，否则零开销跳过。
+  // 搜失败 / 未配置 search provider 时静默继续，不影响主对话。
+  let effectiveSystem = personaPrompt;
+  try {
+    const judge = shouldSearch(userMessage);
+    if (judge.search) {
+      const sr = await webSearch(userMessage, { maxResults: 5, timeoutMs: 6000 });
+      if (sr.ok && sr.results.length > 0) {
+        const ctxBlock = formatSearchContext(userMessage, sr.results);
+        if (ctxBlock) {
+          effectiveSystem = `${personaPrompt}\n\n${ctxBlock}`;
+          log('debug', `[ai] web_search injected hits=${sr.results.length} provider=${sr.provider}`);
+        }
+      }
+    }
+  } catch (e) {
+    log('warn', `[ai] web_search 调用异常: ${e.message}`);
+  }
+
   log('debug', `[ai] chat messages=${messages.length} temp=${temperature}`);
   const FALLBACK = '嗯…我刚刚有点走神，等我一下下，再跟你说～';
   try {
     const { text, usage } = await chatComplete({
-      system: personaPrompt,
+      system: effectiveSystem,
       messages,
       temperature,
       max_tokens,

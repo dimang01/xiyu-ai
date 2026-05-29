@@ -83,6 +83,7 @@ import { getActiveImageProvider } from './providers/image.mjs';
 import { getActiveVisionProvider, REGISTRY as VISION_REGISTRY } from './providers/vision.mjs';
 import { getActiveAsrProvider, REGISTRY as ASR_REGISTRY } from './providers/asr.mjs';
 import { getActiveEmbeddingProvider } from './providers/embedding.mjs';
+import { getActiveSearchProvider, REGISTRY as SEARCH_REGISTRY } from './web_search.mjs';
 import {
   buildCompanionExport, validateCompanionImport, importCompanionForUser,
   MAX_IMPORT_BYTES,
@@ -1889,6 +1890,23 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
   }
   const visionActive = getActiveVisionProvider();
   const asrActive    = getActiveAsrProvider();
+  // 联网搜索 search section（独立结构：无 model 概念，custom provider 是 searxng 用 base URL）
+  const searchActive = getActiveSearchProvider();
+  const searchProviders = {};
+  for (const [id, entry] of Object.entries(SEARCH_REGISTRY)) {
+    const envKey = entry.apiKeyEnv ? (process.env[entry.apiKeyEnv] || getAppSetting(entry.apiKeyEnv) || '') : '';
+    const baseURL = entry.baseURLEnv ? (process.env[entry.baseURLEnv] || getAppSetting(entry.baseURLEnv) || '') : '';
+    const configured = entry.custom ? Boolean(baseURL) : Boolean(envKey);
+    const info = { label: entry.label, configured };
+    if (entry.custom) info.requires_base_url = true;
+    if (entry.note) info.note = entry.note;
+    if (isAuthed) {
+      if (envKey)  info.masked_key = maskApiKey(envKey);
+      if (baseURL) info.base_url   = baseURL;
+    }
+    searchProviders[id] = info;
+  }
+
   return ok(res, {
     chat_provider: active.id,
     chat_model: active.model || '',
@@ -1896,6 +1914,11 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
     providers,
     vision: buildOptionalSection(VISION_REGISTRY, 'VISION_PROVIDER', 'VISION_MODEL', visionActive),
     asr:    buildOptionalSection(ASR_REGISTRY,    'ASR_PROVIDER',    'ASR_MODEL',    asrActive),
+    search: {
+      active: searchActive.id,
+      active_configured: Boolean(searchActive.configured),
+      providers: searchProviders,
+    },
   });
 });
 
@@ -1941,6 +1964,52 @@ router.post('/setup/provider-config',
         label: pEntry.label,
         model_saved: Boolean(trimmedModel),
         key_saved: keySaved,
+      });
+    }
+
+    // ── 联网搜索：capability=search ──────────────────────────────────────
+    // 字段：{ capability:'search', provider, api_key?, base_url?, clear? }
+    if (capability === 'search') {
+      const { provider, api_key, base_url, clear = false } = req.body || {};
+      if (clear) {
+        deleteAppSetting('SEARCH_PROVIDER');
+        log('info', '[Setup] provider-config: search 已清除');
+        return ok(res, { capability: 'search', cleared: true });
+      }
+      if (!provider || typeof provider !== 'string') return err(res, 'provider 不能为空');
+      const pName = provider.toLowerCase().trim();
+      if (!SEARCH_REGISTRY[pName]) return err(res, `未知 search provider: ${pName}`);
+      const pEntry = SEARCH_REGISTRY[pName];
+      setAppSetting('SEARCH_PROVIDER', pName, { secret: 0 });
+
+      let keySaved = false;
+      let baseUrlSaved = false;
+      // SearXNG 自托管：只接受 base URL（http(s)://）
+      if (pEntry.custom) {
+        if (typeof base_url !== 'string' || !base_url.trim()) {
+          return err(res, `${pEntry.label} 需要 base_url`);
+        }
+        const trimmedBase = base_url.trim();
+        if (!/^https?:\/\/[^\s]+$/i.test(trimmedBase)) {
+          return err(res, 'base_url 必须是合法的 http(s) URL');
+        }
+        setAppSetting(pEntry.baseURLEnv, trimmedBase, { secret: 0 });
+        baseUrlSaved = true;
+      } else {
+        // 其它 provider：用 API key
+        const trimmedKey = typeof api_key === 'string' ? api_key.trim() : '';
+        if (trimmedKey.length >= 8) {
+          setAppSetting(pEntry.apiKeyEnv, trimmedKey, { secret: 1 });
+          keySaved = true;
+          log('info', `[Setup] provider-config: search/${pName} ${pEntry.apiKeyEnv} 已更新（已隐藏）`);
+        }
+      }
+      return ok(res, {
+        capability: 'search',
+        provider: pName,
+        label: pEntry.label,
+        key_saved: keySaved,
+        base_url_saved: baseUrlSaved,
       });
     }
 
@@ -2033,6 +2102,7 @@ router.post('/setup/test-provider',
 
     const REG = cap === 'vision' ? VISION_REGISTRY
               : cap === 'asr'    ? ASR_REGISTRY
+              : cap === 'search' ? SEARCH_REGISTRY
               : CHAT_REGISTRY;
     if (!REG[name]) return err(res, `未知 ${cap} provider: ${name}`);
 
@@ -2044,6 +2114,9 @@ router.post('/setup/test-provider',
       } else if (cap === 'asr') {
         const { testAsrProvider } = await import('./providers/asr.mjs');
         result = await testAsrProvider(name);
+      } else if (cap === 'search') {
+        const { testSearchProvider } = await import('./web_search.mjs');
+        result = await testSearchProvider(name);
       } else {
         const { testChatProvider } = await import('./providers/chat.mjs');
         result = await testChatProvider(name);
