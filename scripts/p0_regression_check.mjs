@@ -314,8 +314,70 @@ try {
     apiSrc.includes("'/setup/provider-status',\n  softAuth"));
   check('api.mjs /setup/test-provider 含匿名访问限制逻辑',
     apiSrc.includes('countAllAccounts') && apiSrc.includes('isLocalhost'));
+  check('api.mjs 包含 /auth/me 路由',
+    apiSrc.includes("'/auth/me'") || apiSrc.includes('"/auth/me"'));
+  check('api.mjs /auth/me 使用 softAuth',
+    apiSrc.includes("'/auth/me', softAuth") || apiSrc.includes('"/auth/me", softAuth'));
+  check('api.mjs /auth/me 不返回 password',
+    (() => {
+      // 只检查 /auth/me 路由体内（到第一个 });  为止），不含后续代码
+      const start = apiSrc.indexOf("'/auth/me'");
+      const end   = apiSrc.indexOf('});', start) + 3;
+      const meBlock = apiSrc.slice(start, end);
+      // 路由体内不应出现 password_hash；注释或响应字段名含 password 均为误判
+      return !meBlock.includes('password_hash') && !meBlock.includes("'password'") && !meBlock.includes('"password"');
+    })());
+  check('api.mjs 包含 /setup/local-account 路由',
+    apiSrc.includes("'/setup/local-account'"));
+  check('api.mjs /setup/local-account 检查 user_count=0',
+    apiSrc.includes("'/setup/local-account'") && apiSrc.includes('userCount > 0'));
+  check('api.mjs /setup/status 返回 auth_mode 字段',
+    apiSrc.includes('auth_mode:'));
+  check('api.mjs /setup/status 返回 initialized 字段',
+    apiSrc.includes('initialized,') || apiSrc.includes('initialized:'));
 } catch (e) {
   check('api.mjs setup 路由静态检查', false, e.message);
+}
+
+// ─── 15. setup.html / auth.html 静态检查 ─────────────────────────────────
+try {
+  const { readFileSync } = await import('node:fs');
+  const setupSrc = readFileSync(path.join(ROOT, 'public/app/setup.html'), 'utf-8');
+  const authSrc  = readFileSync(path.join(ROOT, 'public/app/auth.html'), 'utf-8');
+
+  // setup.html 不得出现邮箱验证码发送逻辑
+  check('setup.html 不包含 send-code 邮件逻辑',
+    !setupSrc.includes('send-code') && !setupSrc.includes('sendCode') &&
+    !setupSrc.includes('验证码') && !setupSrc.includes('email') ||
+    // 允许 "email mode" 提示文字，但不允许实际调用
+    (!setupSrc.includes('/api/auth/send-code') && !setupSrc.includes("purpose: 'register'")));
+
+  // setup.html 必须有状态判断关键词
+  check('setup.html 包含 auth_mode 状态判断', setupSrc.includes('auth_mode'));
+  check('setup.html 包含 initialized 状态判断', setupSrc.includes('initialized'));
+  check('setup.html 包含 authenticated 状态判断', setupSrc.includes('authenticated'));
+
+  // setup.html 有 local-account 调用
+  check('setup.html 调用 /api/setup/local-account', setupSrc.includes('/api/setup/local-account'));
+
+  // setup.html Step 2 按钮有 gate 条件
+  check('setup.html s2-btn-next 有 disabled gate',
+    setupSrc.includes('s2-btn-next') && setupSrc.includes('providerSaved'));
+  // setup.html Step 3 按钮有 gate 条件
+  check('setup.html s3-btn-next 有 disabled gate',
+    setupSrc.includes('s3-btn-next') && (setupSrc.includes('testPassed') || setupSrc.includes('testSkipped')));
+
+  // setup.html 处理 401/403
+  check('setup.html 处理 401/403 友好提示',
+    setupSrc.includes('401') && setupSrc.includes('403'));
+
+  // auth.html 在 local 模式下有去 setup 的提示
+  check('auth.html 包含 local 模式 setup 引导',
+    authSrc.includes('/app/setup.html') && authSrc.includes('local'));
+  check('auth.html local 未初始化时隐藏注册 tab',
+    authSrc.includes('tabReg.style.display') || authSrc.includes("display = 'none'"));
+} catch (e) {
+  check('setup/auth.html 静态检查', false, e.message);
 }
 
 // ─── 14. HTTP Setup API checks (via Node fetch if server running) ─────────────
@@ -348,6 +410,38 @@ try {
     check('/api/setup/provider-status 匿名时不返回 masked_key 字段', !hasMaskedKey);
     check('/api/setup/provider-status 匿名时不返回 source 字段', !hasSource);
   }
+
+  // setup/status 应包含 auth_mode 和 initialized 字段
+  check('/api/setup/status 含 auth_mode 字段',
+    typeof setupStatusBody.data?.auth_mode === 'string',
+    `auth_mode=${JSON.stringify(setupStatusBody.data?.auth_mode)}`);
+  check('/api/setup/status 含 initialized 字段',
+    typeof setupStatusBody.data?.initialized === 'boolean',
+    `initialized=${JSON.stringify(setupStatusBody.data?.initialized)}`);
+
+  // /api/auth/me 未登录时返回 authenticated=false（不是 500）
+  const meResp = await fetch(`${BASE}/api/auth/me`, { signal: AbortSignal.timeout(3000) });
+  check('/api/auth/me 未登录返回 200（不是 500）', meResp.status === 200,
+    `status=${meResp.status}`);
+  const meBody = await meResp.json();
+  check('/api/auth/me 未登录时 authenticated=false',
+    meBody.data?.authenticated === false,
+    `authenticated=${JSON.stringify(meBody.data?.authenticated)}`);
+  check('/api/auth/me 不含 password 字段',
+    !JSON.stringify(meBody).toLowerCase().includes('password'),
+    `body snippet=${JSON.stringify(meBody).slice(0, 80)}`);
+
+  // /api/setup/local-account 在系统已初始化时返回 403（不是 500）
+  // 注意：此 check 只适用于系统已有账号的场景（check 时服务器已运行且 DB 可能已有账号）
+  const laResp = await fetch(`${BASE}/api/setup/local-account`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'testuser99', password: 'testpass99' }),
+    signal: AbortSignal.timeout(5000),
+  });
+  const laStatus = laResp.status;
+  check('/api/setup/local-account 在已初始化时返回 403 或 201（不是 500）',
+    laStatus !== 500, `status=${laStatus}`);
 
   // provider-config 未登录时返回 401
   const pcResp = await fetch(`${BASE}/api/setup/provider-config`, {

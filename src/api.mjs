@@ -710,6 +710,21 @@ router.post('/auth/login',
   }
 });
 
+// GET /api/auth/me — 返回当前登录状态（不含 password / secret / API key）
+router.get('/auth/me', softAuth, (req, res) => {
+  if (!req.authUser) return res.json({ ok: true, data: { authenticated: false } });
+  return res.json({
+    ok: true,
+    data: {
+      authenticated: true,
+      user: {
+        id: req.authUser.id,
+        display_name: req.authUser.username || String(req.authUser.id),
+      },
+    },
+  });
+});
+
 // POST /api/auth/reset-password — 通过邮箱验证码重置密码
 router.post('/auth/reset-password',
   rateLimit({ scope: 'reset-password', maxPerWindow: 10, windowMs: 60 * 60 * 1000, message: '操作过于频繁，请稍后再试' }),
@@ -1778,12 +1793,19 @@ router.get('/setup/status', (_req, res) => {
   const hasEnvKey  = keyEnv ? Boolean(process.env[keyEnv]) : false;
   const hasDbKey   = keyEnv && !hasEnvKey ? Boolean(getAppSetting(keyEnv)) : false;
   const configured = hasEnvKey || hasDbKey;
+  // 是否有至少一个账号（判断系统是否已初始化，只返回布尔值，不返回实际数量）
+  let initialized = false;
+  try { initialized = countAllAccounts() > 0; } catch {}
+  // auth 模式：只返回 'local' 或 'email'，不泄露其他配置
+  const authMode = (process.env.AUTH_MODE || 'local').toLowerCase() === 'email' ? 'email' : 'local';
   return ok(res, {
     setup_required: !configured,
     chat_provider: chat.id,
     chat_label: chat.label,
     configured,
     source: hasEnvKey ? 'env' : hasDbKey ? 'app_settings' : 'missing',
+    auth_mode: authMode,
+    initialized,
   });
 });
 
@@ -1873,6 +1895,62 @@ router.post('/setup/test-provider',
       const msg = String(e?.message || 'unknown error').slice(0, 200);
       log('warn', `[Setup] test-provider ${name} 失败（已隐藏详情）`);
       return res.status(200).json({ ok: false, error: msg });
+    }
+  },
+);
+
+// POST /api/setup/local-account — 首次本地部署时创建第一个账号（无需登录）
+// 仅允许：AUTH_MODE=local 且 user_count=0
+router.post('/setup/local-account',
+  rateLimit({ scope: 'local-account', maxPerWindow: 5, windowMs: 60 * 60 * 1000, message: '操作过于频繁，请稍后再试' }),
+  async (req, res) => {
+    const authMode = (process.env.AUTH_MODE || 'local').toLowerCase();
+    if (authMode === 'email') {
+      return res.status(403).json({ ok: false, message: '当前为邮箱登录模式，请前往 /app/auth.html 注册账号' });
+    }
+    let userCount = 0;
+    try { userCount = countAllAccounts(); } catch {}
+    if (userCount > 0) {
+      return res.status(403).json({ ok: false, message: '系统已完成初始化，请登录现有账号' });
+    }
+    const rawUsername = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+    const password    = typeof req.body?.password === 'string' ? req.body.password        : '';
+    const username    = rawUsername.toLowerCase();
+    if (!username || username.length < 3 || username.length > 32) {
+      return res.status(400).json({ ok: false, message: '用户名须为 3–32 位' });
+    }
+    if (!/^[a-zA-Z0-9_]{3,32}$/.test(rawUsername)) {
+      return res.status(400).json({ ok: false, message: '用户名只能包含字母、数字、下划线（3–32 位）' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ ok: false, message: '本地登录密码至少 6 位' });
+    }
+    try {
+      if (getUserAccountByUsername(username)) {
+        return res.status(409).json({ ok: false, message: '用户名已存在' });
+      }
+      const passwordHash = await hashPassword(password);
+      // 本地模式不需要真实邮箱；占位邮箱满足 NOT NULL UNIQUE 约束
+      const user = createUserAccount({
+        username,
+        email: `${username}@localhost.local`,
+        passwordHash,
+        termsVersion: null,
+      });
+      const token = signToken({ id: user.id, username: user.username });
+      log('info', `[API] 本地首次账号已创建 user_id=${user.id}`);
+      return res.status(201).json({
+        ok: true,
+        message: '本地账号创建成功',
+        token,
+        user: { id: user.id, display_name: user.username },
+      });
+    } catch (e) {
+      if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return res.status(409).json({ ok: false, message: '用户名已存在' });
+      }
+      log('error', `[API] local-account 失败: ${e.message}`);
+      return res.status(500).json({ ok: false, message: '创建失败，请稍后再试' });
     }
   },
 );

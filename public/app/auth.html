@@ -300,6 +300,40 @@
       setTimeout(() => { location.href = '/app/create.html'; }, 600);
     });
 
+    // ─── Local 模式感知 ─────────────────────────────────────────────────────
+    // 根据 /api/setup/status 中的 auth_mode / initialized 字段给出提示
+    (async function checkLocalMode() {
+      try {
+        const r = await fetch('/api/setup/status');
+        const d = await r.json();
+        if (!d.ok) return;
+        const mode        = d.data?.auth_mode;
+        const initialized = d.data?.initialized;
+
+        if (mode === 'local' && !initialized) {
+          // 首次本地初始化 → 引导去 setup.html
+          const banner = document.createElement('div');
+          banner.className = 'mb-6 p-4 rounded-2xl text-[13px] text-center font-medium';
+          banner.style.background = '#FFE8F2';
+          banner.style.color = '#FF6FA3';
+          banner.innerHTML =
+            '当前为本地初始化模式，系统尚未创建账号。<br>' +
+            '<a href="/app/setup.html" style="font-weight:700;text-decoration:underline">前往配置向导创建本地账号 →</a>';
+          document.querySelector('main .w-full').prepend(banner);
+        } else if (mode === 'local' && initialized) {
+          // 本地模式已初始化 → 隐藏"注册"tab，只允许登录
+          tabReg.style.display = 'none';
+          const note = document.createElement('div');
+          note.className = 'mb-4 px-3 py-2 rounded-xl text-[12px] text-center';
+          note.style.background = '#FAFAFA';
+          note.style.color = '#86868B';
+          note.textContent = '本地模式：使用本地账号登录。如需邮箱注册，请在 .env 中设置 AUTH_MODE=email。';
+          document.getElementById('form-login').parentElement.insertBefore(note, document.getElementById('form-login'));
+        }
+        // AUTH_MODE=email：保持默认行为（邮箱验证码注册可用）
+      } catch {}
+    })();
+
     // ─── 登录 ───────────────────────────────────────────────────────────────
     formLogin.addEventListener('submit', async (e) => {
       e.preventDefault();
