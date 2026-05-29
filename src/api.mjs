@@ -80,8 +80,8 @@ import { buildImageReactionText, computeRelationshipStage, extractImageMemories 
 import { generatePersonaFacts, generateAvatarCandidates, embedText } from './ai.mjs';
 import { getActiveChatProvider, REGISTRY as CHAT_REGISTRY } from './providers/chat.mjs';
 import { getActiveImageProvider } from './providers/image.mjs';
-import { getActiveVisionProvider } from './providers/vision.mjs';
-import { getActiveAsrProvider } from './providers/asr.mjs';
+import { getActiveVisionProvider, REGISTRY as VISION_REGISTRY } from './providers/vision.mjs';
+import { getActiveAsrProvider, REGISTRY as ASR_REGISTRY } from './providers/asr.mjs';
 import { getActiveEmbeddingProvider } from './providers/embedding.mjs';
 import {
   buildCompanionExport, validateCompanionImport, importCompanionForUser,
@@ -1857,13 +1857,80 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
       providers[id] = info;
     }
   }
-  return ok(res, { chat_provider: active.id, providers });
+  // 附加：可选能力 vision / asr 的当前状态
+  // 匿名只返回 enabled + label；已登录额外返回 model + masked_key
+  function buildOptionalSection(REG, providerEnvKey, modelEnvKey, active) {
+    const items = {};
+    for (const [id, entry] of Object.entries(REG)) {
+      const rawKey = process.env[entry.apiKeyEnv] || (entry.apiKeyEnv ? getAppSetting(entry.apiKeyEnv) : '') || '';
+      const info = { label: entry.label, configured: Boolean(rawKey) };
+      if (entry.stub) info.stub = true;
+      if (isAuthed && rawKey) info.masked_key = maskApiKey(rawKey);
+      items[id] = info;
+    }
+    return {
+      active: active.id,
+      active_model: active.model,
+      active_configured: Boolean(active.configured),
+      providers: items,
+    };
+  }
+  const visionActive = getActiveVisionProvider();
+  const asrActive    = getActiveAsrProvider();
+  return ok(res, {
+    chat_provider: active.id,
+    providers,
+    vision: buildOptionalSection(VISION_REGISTRY, 'VISION_PROVIDER', 'VISION_MODEL', visionActive),
+    asr:    buildOptionalSection(ASR_REGISTRY,    'ASR_PROVIDER',    'ASR_MODEL',    asrActive),
+  });
 });
 
 // POST /api/setup/provider-config — 保存 chat provider + API key（需登录）
 router.post('/setup/provider-config',
   requireAuth,
   async (req, res) => {
+    const capability = (req.body?.capability || 'chat').toLowerCase();
+
+    // ── 可选能力：vision / asr ────────────────────────────────────────────
+    // 字段：{ capability: 'vision'|'asr', provider, model?, api_key?, clear? }
+    // 保存：<CAP>_PROVIDER（非 secret） + <CAP>_MODEL（非 secret） +
+    //       <entry.apiKeyEnv>（secret，对应 provider 共用 key，如 ZHIPU_API_KEY）
+    if (capability === 'vision' || capability === 'asr') {
+      const REG = capability === 'vision' ? VISION_REGISTRY : ASR_REGISTRY;
+      const PROVIDER_KEY = capability === 'vision' ? 'VISION_PROVIDER' : 'ASR_PROVIDER';
+      const MODEL_KEY    = capability === 'vision' ? 'VISION_MODEL'    : 'ASR_MODEL';
+      const { provider, api_key, model, clear = false } = req.body || {};
+      if (clear) {
+        deleteAppSetting(PROVIDER_KEY);
+        deleteAppSetting(MODEL_KEY);
+        log('info', `[Setup] provider-config: ${capability} 已清除`);
+        return ok(res, { capability, cleared: true });
+      }
+      if (!provider || typeof provider !== 'string') return err(res, 'provider 不能为空');
+      const pName = provider.toLowerCase().trim();
+      if (!REG[pName]) return err(res, `未知 ${capability} provider: ${pName}`);
+      const pEntry = REG[pName];
+      if (pEntry.stub) return err(res, `${pEntry.label} 当前仅为占位实现`);
+      setAppSetting(PROVIDER_KEY, pName, { secret: 0 });
+      const trimmedModel = typeof model === 'string' ? model.trim() : '';
+      if (trimmedModel) setAppSetting(MODEL_KEY, trimmedModel, { secret: 0 });
+      const trimmedKey = typeof api_key === 'string' ? api_key.trim() : '';
+      let keySaved = false;
+      if (trimmedKey.length >= 8) {
+        setAppSetting(pEntry.apiKeyEnv, trimmedKey, { secret: 1 });
+        keySaved = true;
+        log('info', `[Setup] provider-config: ${capability}/${pName} ${pEntry.apiKeyEnv} 已更新（已隐藏）`);
+      }
+      return ok(res, {
+        capability,
+        provider: pName,
+        label: pEntry.label,
+        model_saved: Boolean(trimmedModel),
+        key_saved: keySaved,
+      });
+    }
+
+    // ── Chat（默认）──────────────────────────────────────────────────────
     const { chat_provider, api_key, clear_key = false, base_url, model } = req.body || {};
     if (!chat_provider || typeof chat_provider !== 'string') return err(res, 'chat_provider 不能为空');
     const name = chat_provider.toLowerCase().trim();
@@ -1934,17 +2001,32 @@ router.post('/setup/test-provider',
         return res.status(401).json({ ok: false, success: false, message: '请先登录后再测试 Provider 配置' });
       }
     }
-    const { provider } = req.body || {};
+    const { provider, capability = 'chat' } = req.body || {};
     if (!provider || typeof provider !== 'string') return err(res, 'provider 不能为空');
     const name = provider.toLowerCase().trim();
-    if (!CHAT_REGISTRY[name]) return err(res, `未知 provider: ${name}`);
+    const cap  = String(capability).toLowerCase();
+
+    const REG = cap === 'vision' ? VISION_REGISTRY
+              : cap === 'asr'    ? ASR_REGISTRY
+              : CHAT_REGISTRY;
+    if (!REG[name]) return err(res, `未知 ${cap} provider: ${name}`);
+
     try {
-      const { testChatProvider } = await import('./providers/chat.mjs');
-      const result = await testChatProvider(name);
+      let result;
+      if (cap === 'vision') {
+        const { testVisionProvider } = await import('./providers/vision.mjs');
+        result = await testVisionProvider(name);
+      } else if (cap === 'asr') {
+        const { testAsrProvider } = await import('./providers/asr.mjs');
+        result = await testAsrProvider(name);
+      } else {
+        const { testChatProvider } = await import('./providers/chat.mjs');
+        result = await testChatProvider(name);
+      }
       return ok(res, result);
     } catch (e) {
       const msg = String(e?.message || 'unknown error').slice(0, 200);
-      log('warn', `[Setup] test-provider ${name} 失败（已隐藏详情）`);
+      log('warn', `[Setup] test-provider ${cap}/${name} 失败（已隐藏详情）`);
       return res.status(200).json({ ok: false, error: msg });
     }
   },
