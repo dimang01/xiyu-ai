@@ -184,14 +184,32 @@ const LAYER_COLORS = {
 const SOURCE_LABELS = { auto: '自动', user: '手动', system: '系统', summary: '总结', reflection: '反思', imported: '导入' };
 
 // ─── Init ─────────────────────────────────────────────────────────────────
+function disableInteractions(reasonHtml) {
+  // 没有 companion 时把 filter / 搜索 / 翻页 / 新增按钮全禁掉，避免点了之后弹 "id 无效"
+  document.querySelectorAll('button, input').forEach(el => { el.disabled = true; el.classList.add('opacity-50','cursor-not-allowed'); });
+  const main = document.querySelector('main') || document.body;
+  const banner = document.createElement('div');
+  banner.className = 'mx-auto mt-8 max-w-md p-5 rounded-2xl bg-pink-50 text-pink-700 text-sm text-center';
+  banner.innerHTML = reasonHtml;
+  main.prepend(banner);
+}
+
 async function init() {
   token = localStorage.getItem('xiyu_token');
   if (!token) { location.href = '/app/auth.html'; return; }
 
-  // Get companion ID from dashboard
-  const cInfo = await apiFetch('/api/me/companion');
+  // 用户对象（兼容老 setup wizard 漏存 xiyu_user 的场景）
+  const userObj = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
+  const userId = userObj?.id;
+  const query = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+
+  const cInfo = await apiFetch('/api/me/companion' + query);
   if (!cInfo?.data?.companion_id) {
-    showToast('请先绑定微信并创建 AI 伴侣');
+    // 真没有伴侣 → 给个直达 Setup Wizard 的引导，并禁用所有交互
+    disableInteractions(
+      '还没有 AI 伴侣，所以这里没有记忆。<br><br>' +
+      '<a href="/app/create.html" class="inline-block mt-2 px-5 py-2 rounded-full bg-pink-500 text-white font-semibold">去创建 AI 角色 →</a>'
+    );
     return;
   }
   companionId = cInfo.data.companion_id;

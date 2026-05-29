@@ -586,9 +586,30 @@
   <script>
     lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
 
-    const user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
+    let user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
     const token = localStorage.getItem('xiyu_token') || '';
-    if (!user || !token) { location.href = '/app/auth.html'; }
+    if (!token) { location.href = '/app/auth.html'; }
+    // 兼容老 setup wizard 漏存 xiyu_user 的场景：从 /api/auth/me 回填
+    if (token && !user) {
+      user = { id: 0, username: '账号' };
+      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok && d.data?.authenticated && d.data?.user) {
+            const u = { id: d.data.user.id, username: d.data.user.display_name };
+            localStorage.setItem('xiyu_user', JSON.stringify(u));
+            user.id = u.id; user.username = u.username;
+            const nameEl = document.getElementById('user-name');
+            const greetEl = document.getElementById('greet-name');
+            if (nameEl)  nameEl.textContent  = u.username;
+            if (greetEl) greetEl.textContent = u.username;
+          } else {
+            localStorage.removeItem('xiyu_token');
+            location.href = '/app/auth.html';
+          }
+        })
+        .catch(() => { /* 网络瞬时失败先不弹 */ });
+    }
 
     // 全局 fetch 包装：自动加 Authorization + 处理 401 → 跳登录
     const _origFetch = window.fetch;
