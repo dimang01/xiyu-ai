@@ -1,0 +1,176 @@
+/* ============================================================================
+ * 溪语 AI · Liquid Glass 主题层 (v1.3.0)
+ *
+ * 一个纯视觉的"苹果液态玻璃"增强层：升级背景光晕、把白底卡片 / 导航 / 按钮 /
+ * 输入框统一玻璃化、加丝滑微动效。只需在页面 <head> 引入这一个文件即可，
+ * 不依赖任何 HTML 结构或 JS 改动。
+ *
+ * 设计原则：
+ *   - 半透明 + backdrop-blur + 高光描边 + 柔和多层投影 = 玻璃质感
+ *   - 背景漂浮的彩色光斑透过玻璃，才有"液态"通透感
+ *   - 所有交互走统一的丝滑缓动，hover 轻浮起、active 回弹
+ *   - 覆盖 Tailwind utility 时才用 !important，尽量克制
+ *
+ * Copyright (c) 2026 溪语 AI Contributors. MIT License.
+ * ========================================================================== */
+
+:root {
+  --glass-bg:        rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  --glass-bg-soft:   rgba(255, 255, 255, 0.42);
+  --glass-border:    rgba(255, 255, 255, 0.65);
+  --glass-blur:      22px;
+  --glass-shadow:
+    0 10px 36px rgba(31, 38, 135, 0.10),
+    0 2px 8px rgba(255, 143, 184, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.25);
+  --glass-shadow-hover:
+    0 18px 50px rgba(31, 38, 135, 0.16),
+    0 4px 14px rgba(255, 143, 184, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --ease-silk: cubic-bezier(0.22, 1, 0.36, 1);
+  --sakura:      #FFB6D9;
+  --sakura-deep: #FF8FB8;
+}
+
+/* ── 液态背景：固定的漂浮光斑层，透过玻璃卡片显出通透感 ───────────────────── */
+body {
+  position: relative;
+  background-color: #FAF7FB;
+}
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -2;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.55;
+  pointer-events: none;
+  will-change: transform;
+}
+body::before {
+  width: 52vw; height: 52vw;
+  max-width: 720px; max-height: 720px;
+  top: -14vw; left: -10vw;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 182, 217, 0.85), rgba(255, 182, 217, 0) 70%);
+  animation: glass-drift-a 26s var(--ease-silk) infinite alternate;
+}
+body::after {
+  width: 46vw; height: 46vw;
+  max-width: 640px; max-height: 640px;
+  bottom: -16vw; right: -12vw;
+  background: radial-gradient(circle at 60% 60%, rgba(178, 201, 255, 0.7), rgba(178, 201, 255, 0) 70%);
+  animation: glass-drift-b 32s var(--ease-silk) infinite alternate;
+}
+@keyframes glass-drift-a {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(8vw, 10vh, 0) scale(1.18); }
+}
+@keyframes glass-drift-b {
+  0%   { transform: translate3d(0, 0, 0) scale(1.05); }
+  100% { transform: translate3d(-7vw, -8vh, 0) scale(1); }
+}
+
+/* ── 玻璃卡片：命中现有的 shadow-sakura / shadow-card 容器 + .glass 工具类 ── */
+.shadow-sakura,
+.shadow-card,
+.glass {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+  transition: box-shadow 0.45s var(--ease-silk), transform 0.45s var(--ease-silk);
+}
+.glass-strong { background: var(--glass-bg-strong) !important; }
+.glass-soft   { background: var(--glass-bg-soft) !important; }
+
+/* 卡片 hover 时轻轻浮起（仅给明确可交互/链接卡片，避免大面板乱动） */
+a.shadow-sakura:hover,
+a.shadow-card:hover,
+button.shadow-sakura:hover,
+.glass-hover:hover {
+  box-shadow: var(--glass-shadow-hover) !important;
+  transform: translateY(-2px);
+}
+
+/* ── 玻璃导航栏 ─────────────────────────────────────────────────────────── */
+header.sticky,
+nav.sticky,
+.glass-nav {
+  background: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55) !important;
+  box-shadow: 0 4px 20px rgba(31, 38, 135, 0.05);
+}
+
+/* ── 玻璃输入 / 文本域 / 选择框 ─────────────────────────────────────────── */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+textarea,
+select {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: box-shadow 0.3s var(--ease-silk), border-color 0.3s var(--ease-silk), background 0.3s var(--ease-silk);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+textarea:focus,
+select:focus {
+  background: rgba(255, 255, 255, 0.78) !important;
+  box-shadow: 0 0 0 4px rgba(255, 182, 217, 0.28);
+  outline: none !important;
+}
+
+/* ── 玻璃按钮：粉色主按钮加渐变高光 + 丝滑浮动；其余按钮统一缓动 ─────────── */
+button, a, .btn { transition: transform 0.3s var(--ease-silk), box-shadow 0.3s var(--ease-silk), filter 0.3s var(--ease-silk); }
+
+.bg-sakura,
+.bg-sakura-deep,
+button.bg-sakura,
+.btn-primary {
+  background-image: linear-gradient(135deg, #FFC2E0 0%, #FF8FB8 100%) !important;
+  box-shadow: 0 8px 22px rgba(255, 143, 184, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
+}
+.bg-sakura:hover,
+.bg-sakura-deep:hover,
+button.bg-sakura:hover,
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(255, 143, 184, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+  filter: saturate(1.05);
+}
+.bg-sakura:active,
+button.bg-sakura:active,
+.btn-primary:active { transform: translateY(0) scale(0.985); }
+
+/* ── 玻璃滚动条 ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 143, 184, 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 143, 184, 0.6); background-clip: content-box; }
+
+/* ── 进场淡入：让首屏更"丝滑"地浮现 ─────────────────────────────────────── */
+@keyframes glass-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+main > *, section, .glass, .shadow-sakura, .shadow-card {
+  animation: glass-fade-in 0.6s var(--ease-silk) both;
+}
+
+/* ── 无障碍：尊重"减少动态效果"系统设置 ───────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after,
+  main > *, section, .glass, .shadow-sakura, .shadow-card {
+    animation: none !important;
+  }
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
