@@ -1820,15 +1820,41 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
     const envVal  = process.env[entry.apiKeyEnv] || '';
     const dbVal   = envVal ? '' : (getAppSetting(entry.apiKeyEnv) || '');
     const rawKey  = envVal || dbVal;
-    if (rawKey) {
+    // 自定义兼容 provider 需要额外的 base_url + model 状态
+    let customBaseURL = '';
+    let customModel   = '';
+    if (entry.custom) {
+      if (entry.baseURLEnv) {
+        customBaseURL = process.env[entry.baseURLEnv] || getAppSetting(entry.baseURLEnv) || '';
+      }
+      if (entry.modelEnv) {
+        customModel = process.env[entry.modelEnv] || getAppSetting(entry.modelEnv) || '';
+      }
+    }
+    const configured = entry.custom
+      ? Boolean(rawKey && customBaseURL && customModel)
+      : Boolean(rawKey);
+
+    if (configured) {
       const info = { configured: true, label: entry.label };
       if (isAuthed) {
         info.source     = envVal ? 'env' : 'app_settings';
         info.masked_key = maskApiKey(rawKey);
+        if (entry.custom) {
+          info.base_url = customBaseURL;
+          info.model    = customModel;
+        }
       }
       providers[id] = info;
     } else {
-      providers[id] = { configured: false, label: entry.label };
+      const info = { configured: false, label: entry.label };
+      // 自定义 provider 即使未完全配置，也回显已填部分给已登录用户做编辑
+      if (isAuthed && entry.custom) {
+        if (customBaseURL) info.base_url = customBaseURL;
+        if (customModel)   info.model    = customModel;
+        if (rawKey)        info.masked_key = maskApiKey(rawKey);
+      }
+      providers[id] = info;
     }
   }
   return ok(res, { chat_provider: active.id, providers });
@@ -1838,7 +1864,7 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
 router.post('/setup/provider-config',
   requireAuth,
   async (req, res) => {
-    const { chat_provider, api_key, clear_key = false } = req.body || {};
+    const { chat_provider, api_key, clear_key = false, base_url, model } = req.body || {};
     if (!chat_provider || typeof chat_provider !== 'string') return err(res, 'chat_provider 不能为空');
     const name = chat_provider.toLowerCase().trim();
     if (!CHAT_REGISTRY[name]) {
@@ -1856,10 +1882,35 @@ router.post('/setup/provider-config',
       deleteAppSetting(entry.apiKeyEnv);
       log('info', `[Setup] provider-config: ${name} API key 已清除`);
     }
+    // 自定义兼容 provider：保存 base_url / model
+    let baseUrlSaved = false;
+    let modelSaved   = false;
+    if (entry.custom) {
+      if (entry.baseURLEnv && typeof base_url === 'string') {
+        const trimmedBase = base_url.trim();
+        if (trimmedBase) {
+          // 基本校验：必须是 http(s) URL
+          if (!/^https?:\/\/[^\s]+$/i.test(trimmedBase)) {
+            return err(res, 'base_url 必须是合法的 http(s) URL');
+          }
+          setAppSetting(entry.baseURLEnv, trimmedBase, { secret: 0 });
+          baseUrlSaved = true;
+        }
+      }
+      if (entry.modelEnv && typeof model === 'string') {
+        const trimmedModel = model.trim();
+        if (trimmedModel) {
+          setAppSetting(entry.modelEnv, trimmedModel, { secret: 0 });
+          modelSaved = true;
+        }
+      }
+    }
     return ok(res, {
       chat_provider: name,
       label: entry.label,
       key_saved: trimmedKey.length >= 8,
+      base_url_saved: baseUrlSaved,
+      model_saved: modelSaved,
     });
   },
 );

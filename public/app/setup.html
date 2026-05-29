@@ -174,12 +174,29 @@
           <option value="doubao">豆包 (Volcengine Ark)</option>
           <option value="wenxin">文心一言 (百度千帆)</option>
           <option value="xai">xAI Grok</option>
+          <option value="openai-compatible">OpenAI Compatible · 自定义网关</option>
         </select>
       </div>
 
       <div id="s2-link-row" class="mb-3 text-[13px] hidden">
         申请 Key：<a id="s2-link" class="link" href="#" target="_blank" rel="noopener">点击前往</a>
         <span id="s2-note" class="text-mute ml-2"></span>
+      </div>
+
+      <!-- 仅 openai-compatible 显示 -->
+      <div id="s2-custom-row" class="hidden">
+        <div class="mb-3">
+          <label class="block text-[13px] font-semibold mb-1">Base URL</label>
+          <input id="s2-base-url" class="input font-mono" type="text"
+                 placeholder="https://openrouter.ai/api/v1" autocomplete="off" spellcheck="false" />
+          <p class="mt-1 text-[12px] text-mute">兼容 OpenAI Chat Completions 协议的端点。例：OpenRouter / SiliconFlow / One API / LiteLLM / LM Studio。</p>
+        </div>
+        <div class="mb-3">
+          <label class="block text-[13px] font-semibold mb-1">Model</label>
+          <input id="s2-model" class="input font-mono" type="text"
+                 placeholder="例：deepseek/deepseek-chat 或 gpt-4o-mini" autocomplete="off" spellcheck="false" />
+          <p class="mt-1 text-[12px] text-mute">由你的网关决定的模型 ID，必须填。</p>
+        </div>
       </div>
 
       <div class="mb-4">
@@ -289,6 +306,7 @@ const PROVIDER_META = {
   doubao:    { link: 'https://console.volcengine.com/ark',               note: '⚠ 需填火山方舟接入点 ID（CHAT_MODEL=ep-xxx）' },
   wenxin:    { link: 'https://qianfan.cloud.baidu.com/',                 note: '' },
   xai:       { link: 'https://console.x.ai/',                            note: '' },
+  'openai-compatible': { link: '', note: '通用 OpenAI 兼容网关（OpenRouter / SiliconFlow / One API / LiteLLM 等），需自定义 Base URL + Model' },
 };
 
 // ─── 全局状态 ─────────────────────────────────────────────────────────────
@@ -414,19 +432,31 @@ async function refreshStep2() {
       document.getElementById('s2-cur-label').textContent = pInfo.label || active;
       // masked_key 和 source 仅登录时返回，缺失时降级显示
       const detailEl = document.getElementById('s2-cur-detail');
-      if (pInfo.source || pInfo.masked_key) {
-        const src = pInfo.source === 'env' ? ' · 来源：环境变量' :
-                    pInfo.source === 'app_settings' ? ' · 来源：数据库' : '';
-        const key = pInfo.masked_key ? ` · Key：${pInfo.masked_key}` : '';
-        detailEl.textContent = src + key;
-      } else {
-        detailEl.textContent = ' · 已配置';
-      }
-      // 预选
+      const segs = [];
+      if (pInfo.source === 'env')           segs.push('来源：环境变量');
+      else if (pInfo.source === 'app_settings') segs.push('来源：数据库');
+      if (pInfo.masked_key) segs.push(`Key：${pInfo.masked_key}`);
+      if (pInfo.base_url)   segs.push(`Base URL：${pInfo.base_url}`);
+      if (pInfo.model)      segs.push(`Model：${pInfo.model}`);
+      detailEl.textContent = segs.length ? ' · ' + segs.join(' · ') : ' · 已配置';
+      // 预选 & 同步自定义字段
       const sel = document.getElementById('s2-provider');
       if (sel.querySelector(`option[value="${active}"]`)) sel.value = active;
+      toggleCustomRow(active);
+      if (isCustomProvider(active)) {
+        if (pInfo.base_url) document.getElementById('s2-base-url').value = pInfo.base_url;
+        if (pInfo.model)    document.getElementById('s2-model').value    = pInfo.model;
+      }
       updateStep2NextBtn(true);
     } else {
+      // 即便未完全配置，也回显已填字段（仅限自定义 provider）
+      const sel = document.getElementById('s2-provider');
+      if (active && sel.querySelector(`option[value="${active}"]`)) sel.value = active;
+      toggleCustomRow(active);
+      if (active && isCustomProvider(active) && pInfo) {
+        if (pInfo.base_url) document.getElementById('s2-base-url').value = pInfo.base_url;
+        if (pInfo.model)    document.getElementById('s2-model').value    = pInfo.model;
+      }
       updateStep2NextBtn(false);
     }
   } catch {}
@@ -440,25 +470,55 @@ function updateStep2NextBtn(enabled) {
   if (enabled) S.providerSaved = true;
 }
 
+function isCustomProvider(id) { return id === 'openai-compatible'; }
+
+function toggleCustomRow(id) {
+  const customRow = document.getElementById('s2-custom-row');
+  if (!customRow) return;
+  customRow.classList.toggle('hidden', !isCustomProvider(id));
+}
+
 document.getElementById('s2-provider').addEventListener('change', (e) => {
   const id   = e.target.value;
   const meta = PROVIDER_META[id];
   const linkRow = document.getElementById('s2-link-row');
   if (meta && id) {
-    linkRow.classList.remove('hidden');
-    document.getElementById('s2-link').href = meta.link;
-    document.getElementById('s2-link').textContent = meta.link.replace('https://', '');
-    document.getElementById('s2-note').textContent = meta.note;
+    // 自定义网关没有官方申请链接，只显示说明
+    if (meta.link) {
+      linkRow.classList.remove('hidden');
+      document.getElementById('s2-link').href = meta.link;
+      document.getElementById('s2-link').textContent = meta.link.replace('https://', '');
+      document.getElementById('s2-note').textContent = meta.note || '';
+    } else if (meta.note) {
+      linkRow.classList.remove('hidden');
+      document.getElementById('s2-link').removeAttribute('href');
+      document.getElementById('s2-link').textContent = '';
+      document.getElementById('s2-note').textContent = meta.note;
+    } else {
+      linkRow.classList.add('hidden');
+    }
   } else {
     linkRow.classList.add('hidden');
   }
+  toggleCustomRow(id);
 });
 
 document.getElementById('s2-btn-save').addEventListener('click', async () => {
   const provider = document.getElementById('s2-provider').value;
   const apiKey   = document.getElementById('s2-apikey').value;
-  const msg      = document.getElementById('s2-msg');
   if (!provider) { setMsg('s2-msg', '请选择 Provider', 'err'); return; }
+  const payload = { chat_provider: provider, api_key: apiKey };
+  if (isCustomProvider(provider)) {
+    const baseUrl = document.getElementById('s2-base-url').value.trim();
+    const model   = document.getElementById('s2-model').value.trim();
+    if (!baseUrl) { setMsg('s2-msg', '请填写 Base URL', 'err'); return; }
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      setMsg('s2-msg', 'Base URL 必须是 http(s):// 开头', 'err'); return;
+    }
+    if (!model) { setMsg('s2-msg', '请填写 Model', 'err'); return; }
+    payload.base_url = baseUrl;
+    payload.model    = model;
+  }
   const token = getToken();
   if (!token) { setMsg('s2-msg', '会话已失效，请刷新页面重新登录', 'err'); return; }
   setMsg('s2-msg', '保存中…', 'info');
@@ -466,7 +526,7 @@ document.getElementById('s2-btn-save').addEventListener('click', async () => {
     const r = await fetch('/api/setup/provider-config', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ chat_provider: provider, api_key: apiKey }),
+      body: JSON.stringify(payload),
     });
     if (r.status === 401 || r.status === 403) {
       setMsg('s2-msg', '会话已失效，请刷新页面重新登录', 'err');
@@ -474,9 +534,12 @@ document.getElementById('s2-btn-save').addEventListener('click', async () => {
     }
     const d = await r.json();
     if (d.ok) {
-      setMsg('s2-msg',
-        `✅ 已保存 ${d.data.label}${d.data.key_saved ? '（含 API Key）' : '（未修改旧 Key）'}`,
-        'ok');
+      const parts = [];
+      if (d.data.key_saved) parts.push('含 API Key');
+      else parts.push('未修改旧 Key');
+      if (d.data.base_url_saved) parts.push('Base URL');
+      if (d.data.model_saved)    parts.push('Model');
+      setMsg('s2-msg', `✅ 已保存 ${d.data.label}（${parts.join('、')}）`, 'ok');
       S.providerSaved = true;
       S.activeProvider = provider;
       await refreshStep2();

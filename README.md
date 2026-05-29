@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node.js-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Status: Experimental](https://img.shields.io/badge/Status-Experimental-orange.svg)](#-known-limitations)
-[![Providers](https://img.shields.io/badge/AI%20Providers-9%20chat%20%E2%80%A2%205%20image%20%E2%80%A2%205%20vision-blueviolet.svg)](#-multi-provider-ai-support)
+[![Providers](https://img.shields.io/badge/AI%20Providers-10%20chat%20%E2%80%A2%205%20image%20%E2%80%A2%205%20vision-blueviolet.svg)](#-multi-provider-ai-support)
 [![Docker](https://img.shields.io/badge/Docker-GHCR-2496ED.svg?logo=docker&logoColor=white)](https://github.com/dimang01/xiyu-ai/pkgs/container/xiyu-ai)
 
 [中文说明](#中文说明) · [English](#english) · [GitHub Issues](https://github.com/dimang01/xiyu-ai/issues)
@@ -19,7 +19,7 @@
 
 ## 中文说明
 
-> 一份 `.env` 即可启动。后端 Node.js，前端纯静态 HTML，9 个文本模型 + 5 个图像模型 + 5 个图像识别 + 5 个 ASR + 4 个 Embedding，全部通过同一套 provider 抽象切换。**网页里就能扫码绑微信、就能和 AI 真聊**，不需要 iLink 准入也能完整体验。
+> 一份 `.env` 即可启动。后端 Node.js，前端纯静态 HTML，10 个文本模型（含 OpenAI 兼容自定义网关） + 5 个图像模型 + 5 个图像识别 + 5 个 ASR + 4 个 Embedding，全部通过同一套 provider 抽象切换。**网页里就能扫码绑微信、就能和 AI 真聊**，不需要 iLink 准入也能完整体验。
 
 ### 目录
 
@@ -311,6 +311,28 @@ npm run check:p0
 | `qwen` | 阿里通义千问 | `qwen-plus` | DashScope OpenAI 兼容端点 |
 | `kimi` | Moonshot Kimi | `moonshot-v1-8k` | 长上下文 |
 | `wenxin` | 百度文心（千帆） | `ernie-4.0-8k` | |
+| `openai-compatible` | 通用 OpenAI 兼容网关 | *(必填)* | 自定义 `OPENAI_COMPATIBLE_BASE_URL` + `OPENAI_COMPATIBLE_MODEL` |
+
+#### OpenAI 兼容层（`openai-compatible`）
+
+如果你的模型服务商提供 OpenAI Chat Completions 兼容端点，可以选用 `openai-compatible`，在 `/app/setup.html` 里填写：
+
+- **Base URL**（必填）：例如 `https://openrouter.ai/api/v1`
+- **Model**（必填）：例如 `deepseek/deepseek-chat`、`meta-llama/llama-3.3-70b-instruct`
+- **API Key**（必填）
+
+也可用环境变量（优先级最高）：
+
+```dotenv
+CHAT_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_COMPATIBLE_MODEL=deepseek/deepseek-chat
+OPENAI_COMPATIBLE_API_KEY=your_key_here
+```
+
+已在社区中验证可对接的兼容网关包括：**OpenRouter**、**SiliconFlow**、**One API**、**New API**、**LiteLLM**、**LM Studio**、**Ollama OpenAI 兼容端点** 等。
+
+> ⚠️ 兼容层目前只覆盖 **Chat Completions** 协议；不同网关在多模态、function calling、流式细节上可能存在差异，**不保证所有平台都完全兼容**。生产前请用 Step 3 的"测试连通"按钮自测。
 
 **图像生成 · 图像识别 · ASR · Embedding**
 
@@ -380,7 +402,7 @@ CHAT_MODEL=claude-sonnet-4-6
 ├── src/
 │   ├── ai.mjs               业务层 AI facade（不直接依赖任何厂商 SDK）
 │   ├── providers/
-│   │   ├── chat.mjs         9 个 chat provider
+│   │   ├── chat.mjs         10 个 chat provider（含 openai-compatible 自定义网关）
 │   │   ├── image.mjs        5 个图像 provider
 │   │   ├── vision.mjs       5 个 vision provider
 │   │   ├── asr.mjs          5 个 ASR provider
