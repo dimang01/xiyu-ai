@@ -61,6 +61,33 @@
     .msg-info { color: #86868B; font-size: 13px; }
     .msg-warn { color: #B45309; font-size: 13px; }
     .gate-hint { font-size: 12px; color: #86868B; margin-top: 6px; }
+    /* OAI-Compatible 快捷预设 chip */
+    .chip {
+      border: 1px solid #FFD1E5; background: #fff; color: #FF6FA3;
+      border-radius: 9999px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+      transition: all .15s; cursor: pointer;
+    }
+    .chip:hover { background: #FFE8F2; border-color: #FF8FB8; }
+    .chip-row { gap: 8px; }
+    /* Step 5 QR 框 */
+    .qr-frame {
+      position: relative; width: 232px; height: 232px; margin: 0 auto;
+      padding: 16px; border-radius: 24px;
+      background: linear-gradient(135deg, #FFE8F2 0%, #FFFFFF 70%);
+      box-shadow: 0 8px 32px rgba(255, 143, 184, 0.14);
+    }
+    .qr-frame img { width: 100%; height: 100%; border-radius: 14px; background: #fff; object-fit: contain; }
+    .qr-corner { position: absolute; width: 18px; height: 18px; border: 3px solid #FF8FB8; }
+    .qr-corner.tl { top: 8px; left: 8px;     border-right: 0; border-bottom: 0; border-radius: 6px 0 0 0; }
+    .qr-corner.tr { top: 8px; right: 8px;    border-left: 0;  border-bottom: 0; border-radius: 0 6px 0 0; }
+    .qr-corner.bl { bottom: 8px; left: 8px;  border-right: 0; border-top: 0;    border-radius: 0 0 0 6px; }
+    .qr-corner.br { bottom: 8px; right: 8px; border-left: 0;  border-top: 0;    border-radius: 0 0 6px 0; }
+    /* 成功打勾圈 */
+    .success-circle {
+      width: 72px; height: 72px; border-radius: 9999px; margin: 0 auto;
+      background: #E3F8E5; color: #28A745;
+      display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 700;
+    }
   </style>
 </head>
 <body class="font-sans text-ink">
@@ -74,9 +101,11 @@
   </header>
 
   <!-- ─── 加载中 ───────────────────────────────────────────────────────────── -->
-  <div id="view-loading" class="card p-8 text-center text-mute text-[14px]">
-    正在检测环境…
+  <div id="view-loading" class="card p-10 text-center text-mute text-[14px]">
+    <div class="inline-block w-8 h-8 rounded-full border-2 border-sakura-soft border-t-sakura-deep" style="animation: spin 0.8s linear infinite"></div>
+    <p class="mt-4">正在检测当前环境…</p>
   </div>
+  <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
   <!-- ─── 状态 A：local 模式 + 未初始化（首次创建账号）──────────────────── -->
   <div id="view-local-init" class="hidden">
@@ -86,20 +115,20 @@
         <h2 class="text-[16px] font-bold">创建本地账号</h2>
       </div>
       <p class="text-[13px] text-mute mb-5">
-        这是本地自托管模式。创建第一个本地账号后，后续配置会绑定到该账号。
+        个人用 / 本地部署：<span class="font-semibold text-ink">不需要邮箱、不发验证码</span>。设个用户名和密码就行。
       </p>
 
       <div class="mb-3">
         <label class="block text-[13px] font-semibold mb-1">用户名</label>
         <input id="init-username" class="input" placeholder="3–32 位字母 / 数字 / 下划线"
                autocomplete="username" spellcheck="false" />
-        <p class="mt-1 text-[12px] text-mute">用于登录，不可与他人重复。</p>
+        <p class="mt-1 text-[12px] text-mute">登录用，自己记住就行。</p>
       </div>
       <div class="mb-5">
-        <label class="block text-[13px] font-semibold mb-1">本地登录密码</label>
+        <label class="block text-[13px] font-semibold mb-1">密码</label>
         <input id="init-password" class="input" type="password" placeholder="至少 6 位"
                autocomplete="new-password" />
-        <p class="mt-1 text-[12px] text-mute">本地模式密码，不发送邮件。</p>
+        <p class="mt-1 text-[12px] text-mute">密码只保存在本地 SQLite，不会发到任何地方。</p>
       </div>
 
       <button class="btn-primary w-full" id="init-btn">创建本地账号并开始</button>
@@ -188,8 +217,8 @@
       <div id="s2-custom-row" class="hidden">
         <div class="mb-3">
           <label class="block text-[13px] font-semibold mb-1">快捷预设</label>
-          <div id="s2-preset-row" class="flex gap-2 flex-wrap"></div>
-          <p class="mt-1 text-[12px] text-mute">点一个常见网关，自动填好 Base URL 和示例 Model，再填 Key 就行。</p>
+          <div id="s2-preset-row" class="flex flex-wrap chip-row"></div>
+          <p class="mt-2 text-[12px] text-mute">点一个常见网关，自动填好 Base URL 和示例 Model，再粘 Key 就行。</p>
         </div>
         <div class="mb-3">
           <label class="block text-[13px] font-semibold mb-1">Base URL</label>
@@ -284,23 +313,29 @@
           <li>3. 等待页面提示"绑定成功"</li>
         </ol>
         <button class="btn-primary" id="s5-btn-start">🪪 生成二维码并开始绑定</button>
-        <p class="mt-2 text-[12px] text-mute">若服务端未配置 iLink 凭据，按钮会提示"微信功能未启用"，可跳过此步骤。</p>
+        <p class="mt-2 text-[12px] text-mute">没开通微信入口？点了按钮会有提示，跳过即可。网页版聊天不受影响。</p>
       </div>
 
       <!-- 状态 B：正在绑定 / 已生成 QR -->
-      <div id="s5-active" class="hidden p-4 rounded-xl bg-white border border-line mb-4 text-center">
-        <img id="s5-qr-img" alt="微信绑定二维码" class="w-[200px] h-[200px] mx-auto rounded-xl shadow-sm" />
-        <p id="s5-status" class="mt-3 text-[13px] msg-info">等待扫码…</p>
+      <div id="s5-active" class="hidden p-5 rounded-2xl bg-white border border-line mb-4 text-center">
+        <div class="qr-frame">
+          <span class="qr-corner tl"></span><span class="qr-corner tr"></span>
+          <span class="qr-corner bl"></span><span class="qr-corner br"></span>
+          <img id="s5-qr-img" alt="微信绑定二维码" />
+        </div>
+        <p id="s5-status" class="mt-4 text-[14px] font-semibold msg-info">等待扫码…</p>
         <p id="s5-expire" class="mt-1 text-[12px] text-mute"></p>
-        <div class="mt-3 flex gap-2 justify-center flex-wrap">
+        <div class="mt-4 flex gap-2 justify-center flex-wrap">
           <button class="btn-outline" id="s5-btn-refresh">刷新二维码</button>
           <a href="/app/bind.html" class="btn-ghost" target="_blank" rel="noopener">在独立窗口打开</a>
         </div>
       </div>
 
       <!-- 状态 C：绑定成功 -->
-      <div id="s5-done" class="hidden p-4 rounded-xl bg-emerald-50 mb-4 text-center text-[13px] text-emerald-700">
-        ✅ 微信绑定成功！可以直接在微信里和她聊天了。
+      <div id="s5-done" class="hidden p-6 rounded-2xl bg-emerald-50 mb-4 text-center">
+        <div class="success-circle">✓</div>
+        <p class="mt-3 text-[14px] font-bold text-emerald-700">微信绑定成功！</p>
+        <p class="mt-1 text-[12px] text-emerald-600">直接在微信里和她聊天就行。</p>
       </div>
 
       <div class="flex gap-3 flex-wrap mb-6">
@@ -527,9 +562,7 @@ function renderOaiPresets() {
   for (const p of OAI_COMPAT_PRESETS) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'btn-outline';
-    b.style.padding = '5px 12px';
-    b.style.fontSize = '12px';
+    b.className = 'chip';
     b.textContent = p.label;
     b.addEventListener('click', () => {
       document.getElementById('s2-base-url').value = p.baseURL;
