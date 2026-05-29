@@ -99,14 +99,14 @@
         <form id="form-login" class="space-y-4">
           <div>
             <label class="block text-[13px] font-semibold text-ink mb-2">账号</label>
-            <input name="account" type="text" autocomplete="username" required
+            <input id="input-account" name="account" type="text" autocomplete="username" required
                    placeholder="用户名 或 邮箱"
                    class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium placeholder:text-mute/60 transition-all" />
           </div>
           <div>
             <label class="flex items-center justify-between mb-2">
               <span class="text-[13px] font-semibold text-ink">密码</span>
-              <a href="/app/forgot.html" class="text-[12px] text-mute hover:text-sakura-deep transition-colors">忘记密码？</a>
+              <a id="link-forgot" href="/app/forgot.html" class="text-[12px] text-mute hover:text-sakura-deep transition-colors">忘记密码？</a>
             </label>
             <input name="password" type="password" autocomplete="current-password" required minlength="8"
                    placeholder="至少 8 位"
@@ -311,24 +311,22 @@
         const initialized = d.data?.initialized;
 
         if (mode === 'local' && !initialized) {
-          // 首次本地初始化 → 引导去 setup.html
-          const banner = document.createElement('div');
-          banner.className = 'mb-6 p-4 rounded-2xl text-[13px] text-center font-medium';
-          banner.style.background = '#FFE8F2';
-          banner.style.color = '#FF6FA3';
-          banner.innerHTML =
-            '当前为本地初始化模式，系统尚未创建账号。<br>' +
-            '<a href="/app/setup.html" style="font-weight:700;text-decoration:underline">前往配置向导创建本地账号 →</a>';
-          document.querySelector('main .w-full').prepend(banner);
+          // 首次本地初始化 → 直接跳 setup.html，避免让用户对着没用的登录/注册表单发呆
+          location.replace('/app/setup.html');
+          return;
         } else if (mode === 'local' && initialized) {
           // 本地模式已初始化 → 隐藏"注册"tab，只允许登录
           tabReg.style.display = 'none';
-          const note = document.createElement('div');
-          note.className = 'mb-4 px-3 py-2 rounded-xl text-[12px] text-center';
-          note.style.background = '#FAFAFA';
-          note.style.color = '#86868B';
-          note.textContent = '本地模式：使用本地账号登录。如需邮箱注册，请在 .env 中设置 AUTH_MODE=email。';
-          document.getElementById('form-login').parentElement.insertBefore(note, document.getElementById('form-login'));
+          // 本地模式不需要邮箱：调整账号占位符，并隐藏"忘记密码"（无邮件通道可发重置）
+          const accountInput = document.getElementById('input-account');
+          if (accountInput) accountInput.placeholder = '用户名';
+          const forgotLink = document.getElementById('link-forgot');
+          if (forgotLink) forgotLink.style.display = 'none';
+          // 同时把卡片标题/副标题降一下"账号"的存在感
+          const h1 = document.querySelector('main h1');
+          if (h1) h1.textContent = '欢迎回来';
+          const sub = h1 && h1.nextElementSibling;
+          if (sub) sub.textContent = '用本地账号登录后继续。';
         }
         // AUTH_MODE=email：保持默认行为（邮箱验证码注册可用）
       } catch {}

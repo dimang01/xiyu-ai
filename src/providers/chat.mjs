@@ -46,6 +46,15 @@ export const REGISTRY = {
     link: 'https://console.anthropic.com/',
     native: true,
   },
+  gemini: {
+    // Gemini 走 generateContent 原生协议（非 OpenAI 兼容）
+    baseURL: 'https://generativelanguage.googleapis.com',
+    defaultModel: 'gemini-2.5-flash',
+    apiKeyEnv: 'GEMINI_API_KEY',
+    label: 'Google Gemini',
+    link: 'https://aistudio.google.com/apikey',
+    native: true,
+  },
   xai: {
     baseURL: 'https://api.x.ai/v1',
     defaultModel: 'grok-2-latest',
@@ -90,6 +99,20 @@ export const REGISTRY = {
     label: '文心一言 (百度千帆)',
     link: 'https://qianfan.cloud.baidu.com/',
   },
+  // 通用 OpenAI 兼容网关：用户自定义 Base URL + Model + API Key。
+  // 适用于 OpenRouter / SiliconFlow / One API / New API / LiteLLM /
+  // LM Studio / Ollama OpenAI 兼容端点等。不保证所有平台都完全兼容。
+  'openai-compatible': {
+    baseURL: '',           // 动态：env OPENAI_COMPATIBLE_BASE_URL > app_settings
+    defaultModel: '',      // 动态：env OPENAI_COMPATIBLE_MODEL > app_settings
+    apiKeyEnv: 'OPENAI_COMPATIBLE_API_KEY',
+    label: 'OpenAI Compatible (自定义)',
+    link: '',
+    custom: true,
+    baseURLEnv: 'OPENAI_COMPATIBLE_BASE_URL',
+    modelEnv: 'OPENAI_COMPATIBLE_MODEL',
+    note: '可用于 OpenRouter / SiliconFlow / One API / LiteLLM 等 OpenAI 兼容网关',
+  },
 };
 
 // ─── 动态读取：env 优先，其次 app_settings ─────────────────────────────────
@@ -111,6 +134,26 @@ function getApiKeyForEntry(entry) {
     if (stored) return stored;
   } catch {}
   return null;
+}
+
+// 仅对自定义兼容 provider 用：动态读取 base URL 与 model。
+function getDynamicBaseURL(entry) {
+  if (!entry?.baseURLEnv) return entry?.baseURL || '';
+  if (process.env[entry.baseURLEnv]) return process.env[entry.baseURLEnv];
+  try {
+    const stored = getAppSetting(entry.baseURLEnv);
+    if (stored) return stored;
+  } catch {}
+  return '';
+}
+function getDynamicModel(entry) {
+  if (!entry?.modelEnv) return entry?.defaultModel || '';
+  if (process.env[entry.modelEnv]) return process.env[entry.modelEnv];
+  try {
+    const stored = getAppSetting(entry.modelEnv);
+    if (stored) return stored;
+  } catch {}
+  return '';
 }
 
 // ─── Anthropic 单独走原生协议（messages API） ─────────────────────────────
@@ -156,6 +199,54 @@ async function anthropicChat({ system, messages, model, temperature, max_tokens,
   };
 }
 
+// ─── Gemini 单独走原生协议（generateContent） ─────────────────────────────
+// 把 OpenAI 风格的 {system, messages:[{role, content}]} 转成 Gemini 的
+// {systemInstruction, contents:[{role:'user'|'model', parts:[{text}]}]}
+async function geminiChat({ system, messages, model, temperature, max_tokens, top_p, signal }) {
+  const entry = REGISTRY.gemini;
+  const apiKey = getApiKeyForEntry(entry);
+  if (!apiKey) throw new Error('GEMINI_API_KEY 未配置，请在 /app/setup.html 中填写');
+  const usedModel = model || process.env.CHAT_MODEL || entry.defaultModel;
+
+  const contents = (messages || []).map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: String(m.content ?? '') }],
+  }));
+  const body = {
+    contents,
+    generationConfig: {
+      temperature,
+      topP: top_p,
+      maxOutputTokens: max_tokens || 2000,
+    },
+  };
+  if (system) body.systemInstruction = { parts: [{ text: system }] };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(usedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Gemini HTTP ${resp.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const text = (data.candidates?.[0]?.content?.parts || [])
+    .map((p) => p.text || '')
+    .join('')
+    .trim();
+  return {
+    text,
+    usage: {
+      prompt_tokens: data.usageMetadata?.promptTokenCount || 0,
+      completion_tokens: data.usageMetadata?.candidatesTokenCount || 0,
+    },
+  };
+}
+
 // ─── 工厂：按 provider 名返回 OpenAI-compatible client ────────────────────
 // 缓存 key = providerName（每次调用时若 apiKey 变了会重建 client）
 const _clientCache = new Map(); // name -> { key, client }
@@ -169,10 +260,16 @@ function getOpenAIClientFor(name) {
   if (!apiKey) {
     throw new Error(`${entry.label} 需要 ${entry.apiKeyEnv}，请在 .env 或 /app/setup.html 中配置`);
   }
+  const baseURL = entry.custom ? getDynamicBaseURL(entry) : entry.baseURL;
+  if (entry.custom && !baseURL) {
+    throw new Error(`${entry.label} 需要 ${entry.baseURLEnv}，请在 /app/setup.html 中配置 Base URL`);
+  }
+  // 自定义兼容 provider 的缓存 key 需包含 baseURL（key 或 baseURL 变化都要重建）
+  const cacheKey = entry.custom ? `${apiKey}::${baseURL}` : apiKey;
   const cached = _clientCache.get(name);
-  if (cached && cached.key === apiKey) return cached.client;
-  const client = new OpenAI({ apiKey, baseURL: entry.baseURL });
-  _clientCache.set(name, { key: apiKey, client });
+  if (cached && cached.key === cacheKey) return cached.client;
+  const client = new OpenAI({ apiKey, baseURL });
+  _clientCache.set(name, { key: cacheKey, client });
   log('info', `[chat] provider=${name} (${entry.label}) client 已创建`);
   return client;
 }
@@ -180,7 +277,11 @@ function getOpenAIClientFor(name) {
 function activeModel(name) {
   if (!name) name = getActiveProviderName();
   if (name === 'anthropic') return process.env.CHAT_MODEL || REGISTRY.anthropic.defaultModel;
+  if (name === 'gemini')    return process.env.CHAT_MODEL || REGISTRY.gemini.defaultModel;
   const entry = REGISTRY[name];
+  if (entry?.custom) {
+    return process.env.CHAT_MODEL || getDynamicModel(entry) || '';
+  }
   return process.env.CHAT_MODEL || entry?.defaultModel || '';
 }
 
@@ -211,6 +312,17 @@ export async function chatComplete({
   try {
     if (name === 'anthropic') {
       return await anthropicChat({
+        system,
+        messages,
+        model: activeModel(name),
+        temperature,
+        max_tokens,
+        top_p,
+        signal: controller.signal,
+      });
+    }
+    if (name === 'gemini') {
+      return await geminiChat({
         system,
         messages,
         model: activeModel(name),
@@ -263,6 +375,9 @@ export async function testChatProvider(name) {
   if (!entry) throw new Error(`未知 provider: ${name}`);
   const apiKey = getApiKeyForEntry(entry);
   if (!apiKey) throw new Error(`${entry.label} 的 ${entry.apiKeyEnv} 未配置，请在 /app/setup.html 填写`);
+  if (entry.custom && !getDynamicBaseURL(entry)) {
+    throw new Error(`${entry.label} 的 ${entry.baseURLEnv} 未配置，请填写 Base URL`);
+  }
 
   const t0 = Date.now();
   const controller = new AbortController();
@@ -276,9 +391,20 @@ export async function testChatProvider(name) {
         max_tokens: 5,
         signal: controller.signal,
       });
+    } else if (name === 'gemini') {
+      await geminiChat({
+        system: 'Reply with exactly one word.',
+        messages: [{ role: 'user', content: 'Say: ok' }],
+        temperature: 0,
+        max_tokens: 5,
+        signal: controller.signal,
+      });
     } else {
       const client = getOpenAIClientFor(name);
-      const model = activeModel(name) || entry.defaultModel || 'gpt-4o-mini';
+      const model = activeModel(name) || entry.defaultModel || '';
+      if (!model) {
+        throw new Error(`${entry.label} 未指定模型，请在 /app/setup.html 填写 Model`);
+      }
       await client.chat.completions.create(
         {
           model,

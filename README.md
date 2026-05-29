@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node.js-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Status: Experimental](https://img.shields.io/badge/Status-Experimental-orange.svg)](#-known-limitations)
-[![Providers](https://img.shields.io/badge/AI%20Providers-9%20chat%20%E2%80%A2%205%20image%20%E2%80%A2%205%20vision-blueviolet.svg)](#-multi-provider-ai-support)
+[![Providers](https://img.shields.io/badge/AI%20Providers-11%20chat%20%E2%80%A2%205%20image%20%E2%80%A2%205%20vision-blueviolet.svg)](#-multi-provider-ai-support)
 [![Docker](https://img.shields.io/badge/Docker-GHCR-2496ED.svg?logo=docker&logoColor=white)](https://github.com/dimang01/xiyu-ai/pkgs/container/xiyu-ai)
 
 [中文说明](#中文说明) · [English](#english) · [GitHub Issues](https://github.com/dimang01/xiyu-ai/issues)
@@ -17,9 +17,26 @@
 
 ---
 
+### ⚡ 30 秒上手
+
+不想看文档？复制粘贴一行命令就能跑：
+
+```bash
+docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
+  ghcr.io/dimang01/xiyu-ai:latest
+```
+
+打开 [http://localhost:3000/app/setup.html](http://localhost:3000/app/setup.html) → 创建本地账号 → 选个 Provider 填 API Key → 开聊。
+
+> 不需要装 Node、不需要 clone 代码、不需要编辑 `.env`。**只要装了 Docker 就行。**
+> 推荐先用 DeepSeek（注册送额度，国内可访问）或智谱 GLM-4-Flash（免费）跑通流程。
+> 详细说明（Docker Compose、本地裸跑、生产部署）见下面的 [🚀 一键启动](#-一键启动) 章节。
+
+---
+
 ## 中文说明
 
-> 一份 `.env` 即可启动。后端 Node.js，前端纯静态 HTML，9 个文本模型 + 5 个图像模型 + 5 个图像识别 + 5 个 ASR + 4 个 Embedding，全部通过同一套 provider 抽象切换。**网页里就能扫码绑微信、就能和 AI 真聊**，不需要 iLink 准入也能完整体验。
+> 一份 `.env` 即可启动。后端 Node.js，前端纯静态 HTML，11 个文本模型（含 OpenAI 兼容自定义网关） + 5 个图像模型 + 5 个图像识别 + 5 个 ASR + 4 个 Embedding，全部通过同一套 provider 抽象切换。**网页里就能扫码绑微信、就能和 AI 真聊**，不需要 iLink 准入也能完整体验。
 
 ### 目录
 
@@ -305,12 +322,35 @@ npm run check:p0
 | `deepseek` | DeepSeek | `deepseek-chat` | 性价比首选 |
 | `openai` | OpenAI ChatGPT | `gpt-4o-mini` | |
 | `anthropic` | Anthropic Claude | `claude-sonnet-4-6` | 走原生 messages API |
+| `gemini` | Google Gemini | `gemini-2.5-flash` | 走原生 generateContent API，有免费额度 |
 | `xai` | xAI Grok | `grok-2-latest` | |
 | `zhipu` | 智谱 GLM | `glm-4-flash` | 国内开发者常用 |
 | `doubao` | 字节豆包（火山方舟） | *(必填接入点 ID)* | `CHAT_MODEL=ep-xxx` |
 | `qwen` | 阿里通义千问 | `qwen-plus` | DashScope OpenAI 兼容端点 |
 | `kimi` | Moonshot Kimi | `moonshot-v1-8k` | 长上下文 |
 | `wenxin` | 百度文心（千帆） | `ernie-4.0-8k` | |
+| `openai-compatible` | 通用 OpenAI 兼容网关 | *(必填)* | 自定义 `OPENAI_COMPATIBLE_BASE_URL` + `OPENAI_COMPATIBLE_MODEL` |
+
+#### OpenAI 兼容层（`openai-compatible`）
+
+如果你的模型服务商提供 OpenAI Chat Completions 兼容端点，可以选用 `openai-compatible`，在 `/app/setup.html` 里填写：
+
+- **Base URL**（必填）：例如 `https://openrouter.ai/api/v1`
+- **Model**（必填）：例如 `deepseek/deepseek-chat`、`meta-llama/llama-3.3-70b-instruct`
+- **API Key**（必填）
+
+也可用环境变量（优先级最高）：
+
+```dotenv
+CHAT_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_COMPATIBLE_MODEL=deepseek/deepseek-chat
+OPENAI_COMPATIBLE_API_KEY=your_key_here
+```
+
+已在社区中验证可对接的兼容网关包括：**OpenRouter**、**SiliconFlow**、**One API**、**New API**、**LiteLLM**、**LM Studio**、**Ollama OpenAI 兼容端点** 等。
+
+> ⚠️ 兼容层目前只覆盖 **Chat Completions** 协议；不同网关在多模态、function calling、流式细节上可能存在差异，**不保证所有平台都完全兼容**。生产前请用 Step 3 的"测试连通"按钮自测。
 
 **图像生成 · 图像识别 · ASR · Embedding**
 
@@ -380,7 +420,7 @@ CHAT_MODEL=claude-sonnet-4-6
 ├── src/
 │   ├── ai.mjs               业务层 AI facade（不直接依赖任何厂商 SDK）
 │   ├── providers/
-│   │   ├── chat.mjs         9 个 chat provider
+│   │   ├── chat.mjs         11 个 chat provider（含 openai-compatible 自定义网关）
 │   │   ├── image.mjs        5 个图像 provider
 │   │   ├── vision.mjs       5 个 vision provider
 │   │   ├── asr.mjs          5 个 ASR provider
@@ -625,7 +665,7 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 
 ## English
 
-> One `.env` to run. Node.js backend, plain-HTML frontend, 9 chat models + 5 image + 5 vision + 5 ASR + 4 embedding — all swappable through a single provider abstraction. **In-browser WeChat QR binding and a full in-browser chat playground** — no Tencent iLink approval needed to fully exercise the AI.
+> One `.env` to run. Node.js backend, plain-HTML frontend, 11 chat models (including a generic OpenAI-compatible gateway) + 5 image + 5 vision + 5 ASR + 4 embedding — all swappable through a single provider abstraction. **In-browser WeChat QR binding and a full in-browser chat playground** — no Tencent iLink approval needed to fully exercise the AI.
 
 ### Table of Contents
 

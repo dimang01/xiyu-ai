@@ -61,6 +61,33 @@
     .msg-info { color: #86868B; font-size: 13px; }
     .msg-warn { color: #B45309; font-size: 13px; }
     .gate-hint { font-size: 12px; color: #86868B; margin-top: 6px; }
+    /* OAI-Compatible 快捷预设 chip */
+    .chip {
+      border: 1px solid #FFD1E5; background: #fff; color: #FF6FA3;
+      border-radius: 9999px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+      transition: all .15s; cursor: pointer;
+    }
+    .chip:hover { background: #FFE8F2; border-color: #FF8FB8; }
+    .chip-row { gap: 8px; }
+    /* Step 5 QR 框 */
+    .qr-frame {
+      position: relative; width: 232px; height: 232px; margin: 0 auto;
+      padding: 16px; border-radius: 24px;
+      background: linear-gradient(135deg, #FFE8F2 0%, #FFFFFF 70%);
+      box-shadow: 0 8px 32px rgba(255, 143, 184, 0.14);
+    }
+    .qr-frame img { width: 100%; height: 100%; border-radius: 14px; background: #fff; object-fit: contain; }
+    .qr-corner { position: absolute; width: 18px; height: 18px; border: 3px solid #FF8FB8; }
+    .qr-corner.tl { top: 8px; left: 8px;     border-right: 0; border-bottom: 0; border-radius: 6px 0 0 0; }
+    .qr-corner.tr { top: 8px; right: 8px;    border-left: 0;  border-bottom: 0; border-radius: 0 6px 0 0; }
+    .qr-corner.bl { bottom: 8px; left: 8px;  border-right: 0; border-top: 0;    border-radius: 0 0 0 6px; }
+    .qr-corner.br { bottom: 8px; right: 8px; border-left: 0;  border-top: 0;    border-radius: 0 0 6px 0; }
+    /* 成功打勾圈 */
+    .success-circle {
+      width: 72px; height: 72px; border-radius: 9999px; margin: 0 auto;
+      background: #E3F8E5; color: #28A745;
+      display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 700;
+    }
   </style>
 </head>
 <body class="font-sans text-ink">
@@ -74,9 +101,11 @@
   </header>
 
   <!-- ─── 加载中 ───────────────────────────────────────────────────────────── -->
-  <div id="view-loading" class="card p-8 text-center text-mute text-[14px]">
-    正在检测环境…
+  <div id="view-loading" class="card p-10 text-center text-mute text-[14px]">
+    <div class="inline-block w-8 h-8 rounded-full border-2 border-sakura-soft border-t-sakura-deep" style="animation: spin 0.8s linear infinite"></div>
+    <p class="mt-4">正在检测当前环境…</p>
   </div>
+  <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
   <!-- ─── 状态 A：local 模式 + 未初始化（首次创建账号）──────────────────── -->
   <div id="view-local-init" class="hidden">
@@ -86,20 +115,20 @@
         <h2 class="text-[16px] font-bold">创建本地账号</h2>
       </div>
       <p class="text-[13px] text-mute mb-5">
-        这是本地自托管模式。创建第一个本地账号后，后续配置会绑定到该账号。
+        个人用 / 本地部署：<span class="font-semibold text-ink">不需要邮箱、不发验证码</span>。设个用户名和密码就行。
       </p>
 
       <div class="mb-3">
         <label class="block text-[13px] font-semibold mb-1">用户名</label>
         <input id="init-username" class="input" placeholder="3–32 位字母 / 数字 / 下划线"
                autocomplete="username" spellcheck="false" />
-        <p class="mt-1 text-[12px] text-mute">用于登录，不可与他人重复。</p>
+        <p class="mt-1 text-[12px] text-mute">登录用，自己记住就行。</p>
       </div>
       <div class="mb-5">
-        <label class="block text-[13px] font-semibold mb-1">本地登录密码</label>
+        <label class="block text-[13px] font-semibold mb-1">密码</label>
         <input id="init-password" class="input" type="password" placeholder="至少 6 位"
                autocomplete="new-password" />
-        <p class="mt-1 text-[12px] text-mute">本地模式密码，不发送邮件。</p>
+        <p class="mt-1 text-[12px] text-mute">密码只保存在本地 SQLite，不会发到任何地方。</p>
       </div>
 
       <button class="btn-primary w-full" id="init-btn">创建本地账号并开始</button>
@@ -168,18 +197,41 @@
           <option value="deepseek">DeepSeek ★ 推荐入门</option>
           <option value="openai">OpenAI (ChatGPT)</option>
           <option value="anthropic">Anthropic Claude</option>
-          <option value="zhipu">智谱 GLM</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="zhipu">智谱 GLM · 免费</option>
           <option value="qwen">通义千问 (DashScope)</option>
           <option value="kimi">Kimi (Moonshot)</option>
           <option value="doubao">豆包 (Volcengine Ark)</option>
           <option value="wenxin">文心一言 (百度千帆)</option>
           <option value="xai">xAI Grok</option>
+          <option value="openai-compatible">OpenAI Compatible · 自定义网关</option>
         </select>
       </div>
 
       <div id="s2-link-row" class="mb-3 text-[13px] hidden">
         申请 Key：<a id="s2-link" class="link" href="#" target="_blank" rel="noopener">点击前往</a>
         <span id="s2-note" class="text-mute ml-2"></span>
+      </div>
+
+      <!-- 仅 openai-compatible 显示 -->
+      <div id="s2-custom-row" class="hidden">
+        <div class="mb-3">
+          <label class="block text-[13px] font-semibold mb-1">快捷预设</label>
+          <div id="s2-preset-row" class="flex flex-wrap chip-row"></div>
+          <p class="mt-2 text-[12px] text-mute">点一个常见网关，自动填好 Base URL 和示例 Model，再粘 Key 就行。</p>
+        </div>
+        <div class="mb-3">
+          <label class="block text-[13px] font-semibold mb-1">Base URL</label>
+          <input id="s2-base-url" class="input font-mono" type="text"
+                 placeholder="https://openrouter.ai/api/v1" autocomplete="off" spellcheck="false" />
+          <p class="mt-1 text-[12px] text-mute">兼容 OpenAI Chat Completions 协议的端点。</p>
+        </div>
+        <div class="mb-3">
+          <label class="block text-[13px] font-semibold mb-1">Model</label>
+          <input id="s2-model" class="input font-mono" type="text"
+                 placeholder="例：deepseek/deepseek-chat 或 gpt-4o-mini" autocomplete="off" spellcheck="false" />
+          <p class="mt-1 text-[12px] text-mute">由你的网关决定的模型 ID，必须填。</p>
+        </div>
       </div>
 
       <div class="mb-4">
@@ -250,20 +302,45 @@
     <!-- ── Step 5：绑定微信（可选）── -->
     <section class="panel card p-6 mb-4" data-panel="5">
       <h2 class="text-[16px] font-bold mb-1">Step 5：绑定微信（可选）</h2>
-      <p class="text-[13px] text-mute mb-4">如需通过微信与 AI 聊天，扫码绑定即可。无微信接入也能正常用网页版。</p>
+      <p class="text-[13px] text-mute mb-4">不想让她接入微信？跳过这一步也能正常用网页版聊天。</p>
 
-      <div class="p-4 rounded-xl bg-cloud mb-4 text-[13px]">
-        <p class="font-semibold mb-2">绑定步骤：</p>
-        <ol class="space-y-1 text-mute">
-          <li>1. 前往 <a href="/app/bind.html" class="link">/app/bind.html</a> 网页扫码</li>
-          <li>2. 微信扫描页面上的二维码</li>
-          <li>3. 扫码后自动绑定，无需填任何配置文件</li>
+      <!-- 状态 A：还没开始 -->
+      <div id="s5-idle" class="p-4 rounded-xl bg-cloud mb-4 text-[13px]">
+        <p class="font-semibold mb-2">扫码绑定流程：</p>
+        <ol class="space-y-1 text-mute mb-3">
+          <li>1. 点下方按钮生成专属二维码</li>
+          <li>2. 微信扫码添加「溪语AI」为好友</li>
+          <li>3. 等待页面提示"绑定成功"</li>
         </ol>
+        <button class="btn-primary" id="s5-btn-start">🪪 生成二维码并开始绑定</button>
+        <p class="mt-2 text-[12px] text-mute">没开通微信入口？点了按钮会有提示，跳过即可。网页版聊天不受影响。</p>
+      </div>
+
+      <!-- 状态 B：正在绑定 / 已生成 QR -->
+      <div id="s5-active" class="hidden p-5 rounded-2xl bg-white border border-line mb-4 text-center">
+        <div class="qr-frame">
+          <span class="qr-corner tl"></span><span class="qr-corner tr"></span>
+          <span class="qr-corner bl"></span><span class="qr-corner br"></span>
+          <img id="s5-qr-img" alt="微信绑定二维码" />
+        </div>
+        <p id="s5-status" class="mt-4 text-[14px] font-semibold msg-info">等待扫码…</p>
+        <p id="s5-expire" class="mt-1 text-[12px] text-mute"></p>
+        <div class="mt-4 flex gap-2 justify-center flex-wrap">
+          <button class="btn-outline" id="s5-btn-refresh">刷新二维码</button>
+          <a href="/app/bind.html" class="btn-ghost" target="_blank" rel="noopener">在独立窗口打开</a>
+        </div>
+      </div>
+
+      <!-- 状态 C：绑定成功 -->
+      <div id="s5-done" class="hidden p-6 rounded-2xl bg-emerald-50 mb-4 text-center">
+        <div class="success-circle">✓</div>
+        <p class="mt-3 text-[14px] font-bold text-emerald-700">微信绑定成功！</p>
+        <p class="mt-1 text-[12px] text-emerald-600">直接在微信里和她聊天就行。</p>
       </div>
 
       <div class="flex gap-3 flex-wrap mb-6">
-        <a href="/app/bind.html" class="btn-primary inline-block">前往微信扫码绑定</a>
         <button class="btn-outline" id="s5-btn-back">← 上一步</button>
+        <button class="btn-ghost" id="s5-btn-skip">跳过此步</button>
       </div>
 
       <div class="pt-4 border-t border-line">
@@ -283,13 +360,28 @@ const PROVIDER_META = {
   deepseek:  { link: 'https://platform.deepseek.com/api_keys',           note: '' },
   openai:    { link: 'https://platform.openai.com/api-keys',             note: '' },
   anthropic: { link: 'https://console.anthropic.com/',                   note: '' },
+  gemini:    { link: 'https://aistudio.google.com/apikey',               note: '默认模型 gemini-2.5-flash，可在 .env 中用 CHAT_MODEL 覆盖' },
   zhipu:     { link: 'https://open.bigmodel.cn/usercenter/apikeys',      note: '' },
   qwen:      { link: 'https://dashscope.console.aliyun.com/apiKey',      note: '' },
   kimi:      { link: 'https://platform.moonshot.cn/console/api-keys',    note: '' },
   doubao:    { link: 'https://console.volcengine.com/ark',               note: '⚠ 需填火山方舟接入点 ID（CHAT_MODEL=ep-xxx）' },
   wenxin:    { link: 'https://qianfan.cloud.baidu.com/',                 note: '' },
   xai:       { link: 'https://console.x.ai/',                            note: '' },
+  'openai-compatible': { link: '', note: '通用 OpenAI 兼容网关（OpenRouter / SiliconFlow / One API / LiteLLM 等），需自定义 Base URL + Model' },
 };
+
+// ─── OpenAI Compatible 快捷预设 ────────────────────────────────────────────
+// 仅预填 Base URL 和示例 Model；API Key 仍需用户自己粘贴。
+// 示例 Model 选有免费/低价额度的，便于跑通；用户随时可改。
+const OAI_COMPAT_PRESETS = [
+  { id: 'openrouter',   label: 'OpenRouter',   baseURL: 'https://openrouter.ai/api/v1',                model: 'deepseek/deepseek-chat' },
+  { id: 'siliconflow',  label: 'SiliconFlow',  baseURL: 'https://api.siliconflow.cn/v1',               model: 'deepseek-ai/DeepSeek-V3' },
+  { id: 'groq',         label: 'Groq',         baseURL: 'https://api.groq.com/openai/v1',              model: 'llama-3.3-70b-versatile' },
+  { id: 'together',     label: 'Together',     baseURL: 'https://api.together.xyz/v1',                 model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+  { id: 'mistral',      label: 'Mistral',      baseURL: 'https://api.mistral.ai/v1',                   model: 'mistral-small-latest' },
+  { id: 'lmstudio',     label: 'LM Studio',    baseURL: 'http://localhost:1234/v1',                    model: 'local-model' },
+  { id: 'ollama',       label: 'Ollama',       baseURL: 'http://localhost:11434/v1',                   model: 'llama3.2' },
+];
 
 // ─── 全局状态 ─────────────────────────────────────────────────────────────
 const S = {
@@ -414,19 +506,31 @@ async function refreshStep2() {
       document.getElementById('s2-cur-label').textContent = pInfo.label || active;
       // masked_key 和 source 仅登录时返回，缺失时降级显示
       const detailEl = document.getElementById('s2-cur-detail');
-      if (pInfo.source || pInfo.masked_key) {
-        const src = pInfo.source === 'env' ? ' · 来源：环境变量' :
-                    pInfo.source === 'app_settings' ? ' · 来源：数据库' : '';
-        const key = pInfo.masked_key ? ` · Key：${pInfo.masked_key}` : '';
-        detailEl.textContent = src + key;
-      } else {
-        detailEl.textContent = ' · 已配置';
-      }
-      // 预选
+      const segs = [];
+      if (pInfo.source === 'env')           segs.push('来源：环境变量');
+      else if (pInfo.source === 'app_settings') segs.push('来源：数据库');
+      if (pInfo.masked_key) segs.push(`Key：${pInfo.masked_key}`);
+      if (pInfo.base_url)   segs.push(`Base URL：${pInfo.base_url}`);
+      if (pInfo.model)      segs.push(`Model：${pInfo.model}`);
+      detailEl.textContent = segs.length ? ' · ' + segs.join(' · ') : ' · 已配置';
+      // 预选 & 同步自定义字段
       const sel = document.getElementById('s2-provider');
       if (sel.querySelector(`option[value="${active}"]`)) sel.value = active;
+      toggleCustomRow(active);
+      if (isCustomProvider(active)) {
+        if (pInfo.base_url) document.getElementById('s2-base-url').value = pInfo.base_url;
+        if (pInfo.model)    document.getElementById('s2-model').value    = pInfo.model;
+      }
       updateStep2NextBtn(true);
     } else {
+      // 即便未完全配置，也回显已填字段（仅限自定义 provider）
+      const sel = document.getElementById('s2-provider');
+      if (active && sel.querySelector(`option[value="${active}"]`)) sel.value = active;
+      toggleCustomRow(active);
+      if (active && isCustomProvider(active) && pInfo) {
+        if (pInfo.base_url) document.getElementById('s2-base-url').value = pInfo.base_url;
+        if (pInfo.model)    document.getElementById('s2-model').value    = pInfo.model;
+      }
       updateStep2NextBtn(false);
     }
   } catch {}
@@ -440,25 +544,76 @@ function updateStep2NextBtn(enabled) {
   if (enabled) S.providerSaved = true;
 }
 
+function isCustomProvider(id) { return id === 'openai-compatible'; }
+
+function toggleCustomRow(id) {
+  const customRow = document.getElementById('s2-custom-row');
+  if (!customRow) return;
+  const show = isCustomProvider(id);
+  customRow.classList.toggle('hidden', !show);
+  if (show) renderOaiPresets();
+}
+
+function renderOaiPresets() {
+  const row = document.getElementById('s2-preset-row');
+  if (!row || row.dataset.rendered === '1') return;
+  row.dataset.rendered = '1';
+  row.innerHTML = '';
+  for (const p of OAI_COMPAT_PRESETS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = p.label;
+    b.addEventListener('click', () => {
+      document.getElementById('s2-base-url').value = p.baseURL;
+      document.getElementById('s2-model').value    = p.model;
+      setMsg('s2-msg', `已填入 ${p.label} 的 Base URL 和示例 Model，再粘贴 API Key 即可保存。`, 'info');
+    });
+    row.appendChild(b);
+  }
+}
+
 document.getElementById('s2-provider').addEventListener('change', (e) => {
   const id   = e.target.value;
   const meta = PROVIDER_META[id];
   const linkRow = document.getElementById('s2-link-row');
   if (meta && id) {
-    linkRow.classList.remove('hidden');
-    document.getElementById('s2-link').href = meta.link;
-    document.getElementById('s2-link').textContent = meta.link.replace('https://', '');
-    document.getElementById('s2-note').textContent = meta.note;
+    // 自定义网关没有官方申请链接，只显示说明
+    if (meta.link) {
+      linkRow.classList.remove('hidden');
+      document.getElementById('s2-link').href = meta.link;
+      document.getElementById('s2-link').textContent = meta.link.replace('https://', '');
+      document.getElementById('s2-note').textContent = meta.note || '';
+    } else if (meta.note) {
+      linkRow.classList.remove('hidden');
+      document.getElementById('s2-link').removeAttribute('href');
+      document.getElementById('s2-link').textContent = '';
+      document.getElementById('s2-note').textContent = meta.note;
+    } else {
+      linkRow.classList.add('hidden');
+    }
   } else {
     linkRow.classList.add('hidden');
   }
+  toggleCustomRow(id);
 });
 
 document.getElementById('s2-btn-save').addEventListener('click', async () => {
   const provider = document.getElementById('s2-provider').value;
   const apiKey   = document.getElementById('s2-apikey').value;
-  const msg      = document.getElementById('s2-msg');
   if (!provider) { setMsg('s2-msg', '请选择 Provider', 'err'); return; }
+  const payload = { chat_provider: provider, api_key: apiKey };
+  if (isCustomProvider(provider)) {
+    const baseUrl = document.getElementById('s2-base-url').value.trim();
+    const model   = document.getElementById('s2-model').value.trim();
+    if (!baseUrl) { setMsg('s2-msg', '请填写 Base URL', 'err'); return; }
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      setMsg('s2-msg', 'Base URL 必须是 http(s):// 开头', 'err'); return;
+    }
+    if (!model) { setMsg('s2-msg', '请填写 Model', 'err'); return; }
+    payload.base_url = baseUrl;
+    payload.model    = model;
+  }
   const token = getToken();
   if (!token) { setMsg('s2-msg', '会话已失效，请刷新页面重新登录', 'err'); return; }
   setMsg('s2-msg', '保存中…', 'info');
@@ -466,7 +621,7 @@ document.getElementById('s2-btn-save').addEventListener('click', async () => {
     const r = await fetch('/api/setup/provider-config', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ chat_provider: provider, api_key: apiKey }),
+      body: JSON.stringify(payload),
     });
     if (r.status === 401 || r.status === 403) {
       setMsg('s2-msg', '会话已失效，请刷新页面重新登录', 'err');
@@ -474,9 +629,12 @@ document.getElementById('s2-btn-save').addEventListener('click', async () => {
     }
     const d = await r.json();
     if (d.ok) {
-      setMsg('s2-msg',
-        `✅ 已保存 ${d.data.label}${d.data.key_saved ? '（含 API Key）' : '（未修改旧 Key）'}`,
-        'ok');
+      const parts = [];
+      if (d.data.key_saved) parts.push('含 API Key');
+      else parts.push('未修改旧 Key');
+      if (d.data.base_url_saved) parts.push('Base URL');
+      if (d.data.model_saved)    parts.push('Model');
+      setMsg('s2-msg', `✅ 已保存 ${d.data.label}（${parts.join('、')}）`, 'ok');
       S.providerSaved = true;
       S.activeProvider = provider;
       await refreshStep2();
@@ -596,8 +754,106 @@ document.getElementById('s4-btn-back').addEventListener('click', () => goStep(3)
 document.getElementById('s4-btn-done').addEventListener('click', () => goStep(5));
 document.getElementById('s4-btn-skip').addEventListener('click', () => goStep(5));
 
-// ─── Step 5 ───────────────────────────────────────────────────────────────
-document.getElementById('s5-btn-back').addEventListener('click', () => goStep(4));
+// ─── Step 5：微信绑定（嵌入式扫码） ───────────────────────────────────────
+// 与 /app/bind.html 走同一套 API：POST /api/wechat/bind-session（rebind=true，
+// 兼容首次绑定与重新绑定）；轮询 GET /api/wechat/bind-session/:id 拿 status。
+const Bind = {
+  sessionId: null,
+  pollTimer: null,
+  expireTimer: null,
+  expireAtMs: 0,
+};
+function bindShow(state) {
+  for (const id of ['s5-idle','s5-active','s5-done']) {
+    document.getElementById(id).classList.toggle('hidden', `s5-${state}` !== id);
+  }
+}
+function bindStopTimers() {
+  if (Bind.pollTimer)   { clearTimeout(Bind.pollTimer);    Bind.pollTimer = null; }
+  if (Bind.expireTimer) { clearInterval(Bind.expireTimer); Bind.expireTimer = null; }
+}
+function bindMsg(text, kind = 'info') {
+  const el = document.getElementById('s5-status');
+  el.className = 'mt-3 msg-' + kind;
+  el.textContent = text;
+}
+function bindUpdateExpire() {
+  const el = document.getElementById('s5-expire');
+  if (!Bind.expireAtMs) { el.textContent = ''; return; }
+  const sec = Math.max(0, Math.floor((Bind.expireAtMs - Date.now()) / 1000));
+  el.textContent = sec > 0 ? `二维码 ${sec}s 后过期` : '二维码已过期，请刷新';
+  if (sec <= 0) bindStopTimers();
+}
+async function bindStart() {
+  bindStopTimers();
+  const userId = S.user?.id;
+  if (!userId) {
+    bindShow('idle');
+    setMsg('init-msg', '请先登录后再绑定微信', 'err');
+    return;
+  }
+  bindShow('active');
+  bindMsg('生成二维码中…', 'info');
+  try {
+    const r = await fetch('/api/wechat/bind-session', {
+      method: 'POST',
+      headers: authHeaders({ 'x-user-id': String(userId) }),
+      cache: 'no-store',
+      body: JSON.stringify({ user_id: userId, rebind: true }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      // 服务端未配 iLink 时给一个友好提示，让用户跳过
+      const msg = d.message || d.error || '生成失败';
+      bindShow('idle');
+      const idle = document.getElementById('s5-idle');
+      const hint = document.createElement('p');
+      hint.className = 'mt-2 msg-err';
+      hint.textContent = '微信功能未启用或暂不可用：' + msg + '。建议跳过此步骤，直接进入控制台。';
+      // 避免重复
+      idle.querySelectorAll('.msg-err').forEach(n => n.remove());
+      idle.appendChild(hint);
+      return;
+    }
+    const p = d.data || d;
+    Bind.sessionId   = p.session_id;
+    Bind.expireAtMs  = Date.now() + Number(p.expires_in || 300) * 1000;
+    document.getElementById('s5-qr-img').src = p.qr_base64 || p.qr_url || '';
+    bindMsg('扫码并在手机上点「确认登录」', 'info');
+    bindUpdateExpire();
+    Bind.expireTimer = setInterval(bindUpdateExpire, 1000);
+    bindPoll();
+  } catch (e) {
+    bindShow('idle');
+    setMsg('init-msg', '微信绑定请求失败：' + e.message, 'err');
+  }
+}
+async function bindPoll() {
+  if (!Bind.sessionId) return;
+  try {
+    const r = await fetch('/api/wechat/bind-session/' + encodeURIComponent(Bind.sessionId) + '?rebind=true',
+      { headers: authHeaders(), cache: 'no-store' });
+    const d = await r.json().catch(() => ({}));
+    const status = d.data?.status || 'pending';
+    if (status === 'success') {
+      bindStopTimers();
+      bindShow('done');
+      return;
+    }
+    if (status === 'scanned') bindMsg('已扫码，等待手机确认…', 'info');
+    else if (status === 'expired') { bindStopTimers(); bindShow('idle'); return; }
+    Bind.pollTimer = setTimeout(bindPoll, 2500);
+  } catch {
+    Bind.pollTimer = setTimeout(bindPoll, 4000);
+  }
+}
+document.getElementById('s5-btn-back').addEventListener('click', () => { bindStopTimers(); goStep(4); });
+document.getElementById('s5-btn-start').addEventListener('click', bindStart);
+document.getElementById('s5-btn-refresh').addEventListener('click', bindStart);
+document.getElementById('s5-btn-skip').addEventListener('click', () => {
+  bindStopTimers();
+  window.location.href = '/app/dashboard.html';
+});
 
 // ─── 状态 A：创建本地账号 ─────────────────────────────────────────────────
 document.getElementById('init-btn').addEventListener('click', async () => {

@@ -103,24 +103,34 @@ async function qwenASR(audioBuffer, mimeType) {
   throw new Error('paraformer 任务超时');
 }
 
-// ─── 讯飞 IAT (短语音) ────────────────────────────────────────────────────
-// 注意：讯飞用 ws 协议+ HMAC 签名比较复杂。这里给一个 HTTP RESTful 占位
-// （讯飞 OpenAPI v2 支持 HTTP）。生产用户建议参考讯飞官方 SDK 完善。
-async function xunfeiASR(audioBuffer, mimeType) {
-  const apiKey = process.env.XUNFEI_API_KEY;
-  const apiSecret = process.env.XUNFEI_API_SECRET;
-  const appId = process.env.XUNFEI_APP_ID;
-  if (!apiKey || !apiSecret || !appId) {
-    throw new Error('讯飞需 XUNFEI_APP_ID + XUNFEI_API_KEY + XUNFEI_API_SECRET');
-  }
-  // 简化实现：调用讯飞极速版（HTTP）。
-  // 真实生产建议接入 RTASR / IAT WebSocket 服务，并校验签名。
-  throw new Error('讯飞 ASR 当前仅占位，未实现 WebSocket 签名（PR welcome）');
+// ─── 讯飞 IAT (占位) ──────────────────────────────────────────────────────
+// 讯飞 IAT 走 WebSocket + HMAC-SHA256 签名（实时流），lfasr 走 HTTP + HMAC-MD5
+// 签名（异步任务）。两者实现都较重，且讯飞需要企业实名认证才能开通生产配额，
+// 上手门槛比 Whisper/Gemini 高。本仓库优先保证「能跑起来」，因此暂留占位。
+//
+// 想自己接入的用户：
+//   - WebSocket IAT 文档：https://www.xfyun.cn/doc/asr/voicedictation/API.html
+//   - lfasr v2 异步文档：https://www.xfyun.cn/doc/asr/lfasr/API.html
+//   - 欢迎提 PR 把任一实现补全。
+async function xunfeiASR(/* audioBuffer, mimeType */) {
+  throw new Error(
+    '讯飞 ASR 仅占位（需 WebSocket + HMAC 签名，且企业实名）。' +
+    '建议改用 ASR_PROVIDER=gemini 或 openai（Whisper）。' +
+    '参考文档：https://www.xfyun.cn/doc/asr/voicedictation/API.html',
+  );
 }
 
 // ─── 腾讯云 ASR (占位) ────────────────────────────────────────────────────
-async function tencentASR(audioBuffer, mimeType) {
-  throw new Error('腾讯云 ASR 当前仅占位，建议使用官方 SDK (PR welcome)');
+// 腾讯一句话识别走 TC3-HMAC-SHA256 签名，注册需身份证实名+人脸识别。
+// 同样优先保证默认路径可用，本仓库暂留占位。
+//
+// 一句话识别文档：https://cloud.tencent.com/document/product/1093/35646
+async function tencentASR(/* audioBuffer, mimeType */) {
+  throw new Error(
+    '腾讯云 ASR 仅占位（需 TC3-HMAC 签名，且个人实名）。' +
+    '建议改用 ASR_PROVIDER=gemini 或 openai（Whisper）。' +
+    '参考文档：https://cloud.tencent.com/document/product/1093/35646',
+  );
 }
 
 const REGISTRY = {
