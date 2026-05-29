@@ -44,6 +44,7 @@ export function getDb() {
     migrateProactiveEngineV2();
     migrateEmotionHistory();
     migrateP2Tables();
+    migrateDiary();
     migrateAppSettings();
   }
   return db;
@@ -730,6 +731,75 @@ export function cleanupOldEmotionHistory(companionId) {
   const cutoff = new Date(Date.now() - 90 * 86400_000).toISOString();
   db.prepare(`DELETE FROM companion_emotion_history WHERE companion_id = ? AND created_at < ?`)
     .run(companionId, cutoff);
+}
+
+// ─── Diary（她的日记）─────────────────────────────────────────────────────────
+// 每天 / 每周由 src/diary.mjs 用她的人设口吻写的第一人称日记。
+// UNIQUE(companion_id, date_key, kind) 保证同一天同类型只有一篇，重跑覆盖（幂等）。
+function migrateDiary() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_diary (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      user_id INTEGER,
+      date_key TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'daily',
+      mood TEXT,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(companion_id, date_key, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_diary_companion_date
+      ON companion_diary(companion_id, date_key DESC);
+  `);
+}
+
+export function upsertDiaryEntry({ companionId, userId = null, dateKey, kind = 'daily', mood = null, content }) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO companion_diary (companion_id, user_id, date_key, kind, mood, content, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(companion_id, date_key, kind) DO UPDATE SET
+      mood = excluded.mood,
+      content = excluded.content,
+      created_at = excluded.created_at
+  `).run(companionId, userId, dateKey, kind, mood, String(content).slice(0, 2000), new Date().toISOString());
+  return db.prepare('SELECT * FROM companion_diary WHERE companion_id = ? AND date_key = ? AND kind = ?')
+    .get(companionId, dateKey, kind);
+}
+
+export function getDiaryEntry(companionId, dateKey, kind = 'daily') {
+  const db = getDb();
+  return db.prepare('SELECT * FROM companion_diary WHERE companion_id = ? AND date_key = ? AND kind = ?')
+    .get(companionId, dateKey, kind) || null;
+}
+
+export function getDiaryEntries(companionId, { limit = 30, offset = 0, kind = null } = {}) {
+  const db = getDb();
+  const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 100);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  if (kind) {
+    return db.prepare(`
+      SELECT id, companion_id, date_key, kind, mood, content, created_at
+      FROM companion_diary WHERE companion_id = ? AND kind = ?
+      ORDER BY date_key DESC, id DESC LIMIT ? OFFSET ?
+    `).all(companionId, kind, safeLimit, safeOffset);
+  }
+  return db.prepare(`
+    SELECT id, companion_id, date_key, kind, mood, content, created_at
+    FROM companion_diary WHERE companion_id = ?
+    ORDER BY date_key DESC, id DESC LIMIT ? OFFSET ?
+  `).all(companionId, safeLimit, safeOffset);
+}
+
+export function countDiaryEntries(companionId, { kind = null } = {}) {
+  const db = getDb();
+  if (kind) {
+    return db.prepare('SELECT COUNT(*) AS n FROM companion_diary WHERE companion_id = ? AND kind = ?')
+      .get(companionId, kind).n;
+  }
+  return db.prepare('SELECT COUNT(*) AS n FROM companion_diary WHERE companion_id = ?')
+    .get(companionId).n;
 }
 
 // ─── P2 Tables (achievements, event graph) ───────────────────────────────────

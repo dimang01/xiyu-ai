@@ -119,8 +119,22 @@
 
 ---
 
-## Future · P2B and Beyond — Planned
+## P2B · Emotional Feedback — 🚧 In Progress (2026-05)
 
+| Area | Feature | Status |
+|---|---|---|
+| **Diary** | `companion_diary` table (UNIQUE per companion/date/kind) | ✅ Done |
+| **Diary** | `src/diary.mjs` — first-person daily/weekly diary in her own voice | ✅ Done |
+| **Diary** | Cron wiring: daily 02:20, weekly (Pro) Sun 02:50 | ✅ Done |
+| **Diary** | `GET /api/companions/:id/diary` (read-only, ownership-checked) | ✅ Done |
+| **Diary** | `/app/diary.html` reading view + dashboard entry point | ✅ Done |
+| **Diary** | Sensitive-content filter on generated entries | ✅ Done |
+
+---
+
+## Future · Beyond — Planned
+
+- Anniversary / reminder proactive push (table exists, not yet pushed)
 - Multi-language persona support
 - Local Ollama integration
 - TTS voice reply synthesis

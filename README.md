@@ -108,6 +108,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | 🩺 **npm run doctor** | 一键诊断自托管环境：Node 版本 / SQLite 可写 / API key / iLink / 端口 / 服务健康 |
 | 🧪 **npm run check:p0** | P0/P1 回归检查：验证核心模块导出、数据表、页面、未登录 API 返回 401/403 |
 | 🧠 **Memory Reflection** | 每日/每周 AI 驱动结构化记忆反思，自动提炼对用户新认识并更新 Memory v2 |
+| 📔 **她的日记** *(P2B)* | 每天深夜她用第一人称写下和你相处的心里话，区分心情；`/app/diary.html` + `GET /api/companions/:id/diary`。Pro 用户额外有周记 |
 | 📈 **Emotion Trend** | Dashboard 显示近 7 天情绪曲线（好感 / 信任 / 安全感 / 精力）；`/api/companions/:id/emotion-trend` |
 | 🔍 **Prompt Debug Panel** | `/app/debug-prompt.html` — 开发者查看实时 prompt 拼接，分区显示 |
 | 📦 **角色导入/导出** *(P2A 实验性)* | 将角色人设导出为可移植 JSON，可备份 / 迁移 / 分享；导入时所有权归当前用户，敏感字段自动过滤 |

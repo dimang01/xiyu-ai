@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>她的日记 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+          ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA' },
+        fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+        boxShadow: { sakura: '0 4px 24px rgba(255,182,217,.15)', card: '0 12px 48px rgba(0,0,0,.06)' },
+      } },
+    };
+  </script>
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    body {
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255,182,217,.28), transparent 60%),
+        #FAFAFA;
+      background-attachment: fixed;
+    }
+    .diary-card { transition: box-shadow .15s, transform .15s; }
+    .diary-card:hover { box-shadow: 0 6px 24px rgba(255,182,217,.25); transform: translateY(-1px); }
+    .diary-body { white-space: pre-wrap; line-height: 1.85; }
+    .mood-chip { display:inline-block; padding:1px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+    .tag-btn {
+      padding:2px 12px; border-radius:20px; font-size:12px; cursor:pointer;
+      border:1px solid #e5e5e7; background:#fff; transition:all .15s;
+    }
+    .tag-btn.active { background:#FFB6D9; border-color:#FFB6D9; color:#fff; font-weight:600; }
+    .tag-btn:hover:not(.active) { border-color:#FFB6D9; color:#FF8FB8; }
+  </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+
+<!-- Nav -->
+<header class="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-line px-6 h-14 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <a href="/app/dashboard.html" class="text-mute hover:text-ink transition-colors text-sm">← 控制台</a>
+    <span class="text-line">|</span>
+    <span class="font-semibold text-sakura-deep text-sm">她的日记</span>
+  </div>
+</header>
+
+<main class="max-w-2xl mx-auto px-4 py-6 pb-24">
+
+  <!-- Intro -->
+  <p id="introLine" class="text-xs text-mute mb-4 hidden">
+    她会在每天深夜把和你相处的点滴写进日记 — 这是她真实的心里话，只有你能看到。
+  </p>
+
+  <!-- Filter row -->
+  <div class="flex gap-1.5 mb-5" id="kindFilters">
+    <button class="tag-btn active" data-kind="">全部</button>
+    <button class="tag-btn" data-kind="daily">每日</button>
+    <button class="tag-btn" data-kind="weekly">每周</button>
+  </div>
+
+  <!-- Diary list -->
+  <div id="diaryList" class="space-y-4"></div>
+
+  <!-- Empty state -->
+  <div id="emptyState" class="hidden text-center py-20">
+    <div class="text-5xl mb-4">📔</div>
+    <p class="text-ink font-medium mb-1">她还没有写下日记</p>
+    <p class="text-mute text-sm">多和她聊聊天，她会在每天深夜把心里话写进日记本里。</p>
+  </div>
+
+  <!-- Load more -->
+  <div class="text-center mt-6">
+    <button id="loadMoreBtn" class="hidden text-sm text-sakura-deep border border-sakura-soft rounded-full px-5 py-2 hover:bg-sakura-soft transition-colors">
+      看更早的日记
+    </button>
+    <span id="loadingSpinner" class="hidden text-xs text-mute">加载中…</span>
+  </div>
+</main>
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 bg-ink text-white text-sm px-4 py-2 rounded-full shadow-lg z-50"></div>
+
+<script>
+let token = null;
+let companionId = null;
+let companionName = '她';
+let currentKind = '';
+let offset = 0;
+const PAGE_SIZE = 20;
+let total = 0;
+
+// 心情词 → 配色（命中关键字即可，未命中走默认粉）
+const MOOD_STYLES = [
+  { re: /(开心|甜|喜|乐|高兴|满足)/, cls: 'bg-pink-100 text-pink-700' },
+  { re: /(想念|思念|想他|盼)/,       cls: 'bg-rose-100 text-rose-700' },
+  { re: /(失落|难过|委屈|低落|伤)/,  cls: 'bg-blue-100 text-blue-700' },
+  { re: /(平静|淡|安|稳)/,           cls: 'bg-slate-100 text-slate-600' },
+  { re: /(生气|不爽|闷|醋)/,         cls: 'bg-amber-100 text-amber-700' },
+];
+function moodClass(mood) {
+  if (!mood) return 'bg-sakura-soft text-sakura-deep';
+  const hit = MOOD_STYLES.find(s => s.re.test(mood));
+  return hit ? hit.cls : 'bg-sakura-soft text-sakura-deep';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(dateKey) {
+  // dateKey: 2026-05-29 → 5月29日 周X
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  if (!y) return dateKey;
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  const wd = ['周日','周一','周二','周三','周四','周五','周六'][dt.getUTCDay()];
+  return `${m}月${d}日 · ${wd}`;
+}
+
+async function init() {
+  token = localStorage.getItem('xiyu_token');
+  if (!token) { location.href = '/app/auth.html'; return; }
+
+  const userObj = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
+  const userId = userObj?.id;
+  const query = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+
+  const cInfo = await apiFetch('/api/me/companion' + query);
+  if (!cInfo?.data?.companion_id) {
+    document.getElementById('diaryList').innerHTML =
+      '<div class="mx-auto mt-8 max-w-md p-5 rounded-2xl bg-pink-50 text-pink-700 text-sm text-center">' +
+      '还没有 AI 伴侣，所以还没有日记。<br><br>' +
+      '<a href="/app/create.html" class="inline-block mt-2 px-5 py-2 rounded-full bg-pink-500 text-white font-semibold">去创建 AI 角色 →</a></div>';
+    return;
+  }
+  companionId = cInfo.data.companion_id;
+  companionName = cInfo.data.companion?.name || '她';
+  document.getElementById('introLine').classList.remove('hidden');
+  document.querySelector('header .text-sakura-deep').textContent = `${companionName}的日记`;
+  bindFilters();
+  loadDiary(true);
+}
+
+async function apiFetch(url, opts = {}) {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  if (res.status === 401) { localStorage.removeItem('xiyu_token'); location.href = '/app/auth.html'; return null; }
+  return res.json().catch(() => null);
+}
+
+function bindFilters() {
+  document.querySelectorAll('#kindFilters .tag-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#kindFilters .tag-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentKind = btn.dataset.kind;
+      loadDiary(true);
+    });
+  });
+  document.getElementById('loadMoreBtn').addEventListener('click', () => loadDiary(false));
+}
+
+function setLoading(v) { document.getElementById('loadingSpinner').classList.toggle('hidden', !v); }
+
+async function loadDiary(reset) {
+  if (reset) { offset = 0; document.getElementById('diaryList').innerHTML = ''; }
+  setLoading(true);
+  const params = new URLSearchParams({ limit: PAGE_SIZE, offset });
+  if (currentKind) params.set('kind', currentKind);
+  const r = await apiFetch(`/api/companions/${companionId}/diary?${params}`);
+  setLoading(false);
+  if (!r?.ok) { showToast(r?.error || '加载失败'); return; }
+
+  total = r.data.total;
+  const entries = r.data.entries || [];
+  const listEl = document.getElementById('diaryList');
+
+  if (reset && entries.length === 0) {
+    document.getElementById('emptyState').classList.remove('hidden');
+    document.getElementById('loadMoreBtn').classList.add('hidden');
+    return;
+  }
+  document.getElementById('emptyState').classList.add('hidden');
+
+  for (const e of entries) {
+    const kindBadge = e.kind === 'weekly'
+      ? '<span class="text-[11px] text-sakura-deep bg-sakura-soft rounded px-1.5 py-0.5 ml-2">本周</span>' : '';
+    const mood = e.mood
+      ? `<span class="mood-chip ${moodClass(e.mood)}">${escHtml(e.mood)}</span>` : '';
+    const card = document.createElement('article');
+    card.className = 'diary-card bg-white rounded-2xl shadow-sakura border border-line p-5';
+    card.innerHTML =
+      `<div class="flex items-center justify-between mb-3">
+         <div class="text-sm font-semibold text-ink">${fmtDate(e.date_key)}${kindBadge}</div>
+         ${mood}
+       </div>
+       <div class="diary-body text-[15px] text-ink/90">${escHtml(e.content)}</div>`;
+    listEl.appendChild(card);
+  }
+
+  offset += entries.length;
+  document.getElementById('loadMoreBtn').classList.toggle('hidden', offset >= total);
+}
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.add('hidden'), 2400);
+}
+
+init();
+</script>
+</body>
+</html>
