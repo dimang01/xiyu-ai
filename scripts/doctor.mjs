@@ -237,6 +237,36 @@ try {
   }
 } catch {}
 
+// ─── AUTH_MODE ──────────────────────────────────────────────────────────────
+head('认证模式');
+const authMode = (env.AUTH_MODE || 'local').toLowerCase().trim();
+if (authMode === 'local') {
+  ok(`AUTH_MODE = local（本地免邮箱初始化）`);
+  // Check initialization state if SQLite is accessible
+  try {
+    const { default: Database } = await import('better-sqlite3');
+    const dbPath2 = env.DB_PATH || path.join(dataDir, 'bot.db');
+    if (fs.existsSync(dbPath2)) {
+      const db2 = new Database(dbPath2, { readonly: true });
+      const cnt = db2.prepare('SELECT COUNT(*) AS n FROM user_accounts').get()?.n ?? 0;
+      db2.close();
+      if (cnt === 0) {
+        info(`Local setup available: yes (首次启动，打开 http://localhost:${env.API_PORT || 3000}/app/setup.html 创建账号)`);
+      } else {
+        info(`Local setup available: no (已有 ${cnt} 个账号)`);
+      }
+    } else {
+      info('Local setup available: yes (数据库尚未创建，首次启动后可用)');
+    }
+  } catch { /* DB 不可读时跳过 */ }
+} else if (authMode === 'email') {
+  ok(`AUTH_MODE = email（邮箱注册/登录）`);
+  info('Email login enabled: yes — 公网/多用户部署模式');
+} else {
+  warn(`AUTH_MODE = ${authMode} — 未知值，将 fallback 为 local`);
+  warnings++;
+}
+
 // ─── AUTH_SECRET ────────────────────────────────────────────────────────────
 head('安全');
 const authSecret = env.AUTH_SECRET || '';

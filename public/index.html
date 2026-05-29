@@ -195,7 +195,7 @@
       <h1 class="text-[56px] sm:text-[72px] lg:text-[96px] font-bold tracking-tightest leading-[0.98]">遇见溪语</h1>
       <p class="mt-6 text-[18px] sm:text-[20px] lg:text-[24px] text-mute font-medium tracking-tight max-w-2xl mx-auto">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
       <div class="mt-12 flex flex-col sm:flex-row gap-3 justify-center items-center">
-        <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-2 px-8 py-3.5 text-[15px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
+        <a id="hero-cta" href="/app/auth.html?tab=register" class="group inline-flex items-center gap-2 px-8 py-3.5 text-[15px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
           立即开始
           <i data-lucide="arrow-right" class="w-4 h-4"></i>
         </a>
@@ -697,6 +697,34 @@
       menuBtn.innerHTML = '<i data-lucide="menu" class="w-6 h-6 text-ink"></i>';
       lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
     }));
+  </script>
+
+  <!-- 主 CTA 智能路由：根据 setup/status 决定跳转目标 -->
+  <script>
+    (async () => {
+      const cta = document.getElementById('hero-cta');
+      if (!cta) return;
+      try {
+        // 1. 已有 token → 去 dashboard
+        const existingToken = localStorage.getItem('xiyu_token');
+        if (existingToken) {
+          cta.href = '/app/dashboard.html';
+          return;
+        }
+        // 2. 根据 setup/status 判断
+        const r = await fetch('/api/setup/status', { signal: AbortSignal.timeout(2000) });
+        const d = await r.json();
+        if (!d?.ok) return; // fallback 保持 auth.html
+        const s = d.data;
+        if (s.local_setup_available) {
+          cta.href = '/app/setup.html';
+        } else if (s.email_enabled) {
+          cta.href = '/app/auth.html?tab=register';
+        } else if (s.initialized) {
+          cta.href = '/app/auth.html';
+        }
+      } catch { /* fallback: 保持 href=/app/auth.html?tab=register */ }
+    })();
   </script>
 
   <!-- 首次启动引导：chat provider 未配置则弹一个非阻塞的提示条 -->

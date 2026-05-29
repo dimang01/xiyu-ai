@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
   <meta name="color-scheme" content="light only" />
   <meta name="theme-color" content="#FFB6D9" />
-  <title>首次配置 · 溪语 AI</title>
+  <title>初始化设置 · 溪语 AI</title>
   <link rel="icon" href="/logo.png" />
   <link rel="apple-touch-icon" href="/logo.png" />
 
@@ -35,139 +35,343 @@
     a.link { color: #FF8FB8; font-weight: 600; }
     a.link:hover { color: #FF6FA3; text-decoration: underline; }
     .pkey { background: #FFE8F2; padding: 2px 6px; border-radius: 6px; font-size: 12px; color: #FF6FA3; }
+    .btn-primary {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; padding: 12px 20px; border-radius: 9999px;
+      background: linear-gradient(135deg, #FFB6D9, #FF8FB8);
+      color: #fff; font-size: 15px; font-weight: 700; border: none; cursor: pointer;
+      transition: all .18s; box-shadow: 0 2px 8px rgba(255,143,184,0.3);
+    }
+    .btn-primary:hover:not(:disabled) { transform: scale(1.02); box-shadow: 0 4px 16px rgba(255,143,184,0.4); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-secondary {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; padding: 11px 20px; border-radius: 9999px;
+      background: #fff; color: #1D1D1F; font-size: 14px; font-weight: 600;
+      border: 1.5px solid #E0E0E4; cursor: pointer; transition: all .18s;
+    }
+    .btn-secondary:hover { border-color: #FFB6D9; color: #FF8FB8; }
+    input[type="text"] {
+      width: 100%; padding: 12px 16px; border-radius: 12px; border: 1.5px solid #E8E8EC;
+      font-size: 15px; outline: none; transition: border-color .18s; background: #fff;
+    }
+    input[type="text"]:focus { border-color: #FFB6D9; box-shadow: 0 0 0 3px rgba(255,182,217,.15); }
+    .section { display: none; }
+    .section.active { display: block; }
+    #err-msg { color: #D63B3B; font-size: 13px; margin-top: 8px; min-height: 18px; }
   </style>
 </head>
 <body class="font-sans text-ink">
 
-  <main class="max-w-2xl mx-auto px-5 py-12">
+  <main class="max-w-xl mx-auto px-5 py-12">
 
     <header class="text-center mb-10">
       <img src="/logo-256.webp" alt="" class="w-16 h-16 mx-auto rounded-2xl shadow-sm" />
-      <h1 class="mt-5 text-[28px] font-extrabold tracking-tight">欢迎使用 溪语 AI</h1>
-      <p class="mt-2 text-[14px] text-mute">先把 chat provider 配好，才能开始聊天。</p>
+      <h1 class="mt-5 text-[28px] font-extrabold tracking-tight">溪语 AI</h1>
+      <p id="header-sub" class="mt-2 text-[14px] text-mute">正在检测初始化状态…</p>
     </header>
 
-    <!-- 状态卡 -->
-    <section id="status-card" class="card p-6 mb-6">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-[15px] font-bold">当前状态</h2>
-        <span id="status-pill" class="pill">检查中…</span>
-      </div>
-      <dl class="text-[13px] space-y-2">
-        <div class="flex justify-between"><dt class="text-mute">Chat provider</dt><dd id="s-chat" class="font-semibold">—</dd></div>
-        <div class="flex justify-between"><dt class="text-mute">缺失环境变量</dt><dd id="s-missing" class="font-semibold"><span class="pkey">—</span></dd></div>
-        <div class="flex justify-between"><dt class="text-mute">邮件模式</dt><dd id="s-email" class="font-semibold">—</dd></div>
-        <div class="flex justify-between"><dt class="text-mute">微信接入</dt><dd id="s-wechat" class="font-semibold">—</dd></div>
-      </dl>
-      <div class="mt-4 pt-4 border-t border-line">
-        <button id="btn-test-chat" class="w-full py-2.5 rounded-full bg-cloud border border-line text-[13px] font-semibold text-ink hover:border-sakura hover:text-sakura-deep transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-          🔌 测试 chat provider 连通性
+    <!-- ── 状态 A：本地初始化（local 模式 + 未初始化） ── -->
+    <section id="sec-local-init" class="section">
+      <div class="card p-7 mb-5">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-10 h-10 rounded-full bg-sakura-soft flex items-center justify-center text-[20px]">🏠</div>
+          <div>
+            <h2 class="text-[16px] font-bold">本地初始化</h2>
+            <p class="text-[12px] text-mute mt-0.5">Local setup mode</p>
+          </div>
+        </div>
+
+        <p class="text-[14px] text-mute leading-relaxed mb-5">
+          这是自托管本地模式。你可以创建一个本地账号，<strong class="text-ink">不需要邮箱验证码</strong>。<br/>
+          如果你要部署到公网或给多人使用，请在 <code>.env</code> 中设置
+          <code class="pkey">AUTH_MODE=email</code>。
+        </p>
+        <p class="text-[12px] text-mute leading-relaxed mb-6 italic">
+          Local setup mode creates the first local account without email verification.
+          Use <code>AUTH_MODE=email</code> for public or multi-user deployments.
+        </p>
+
+        <label class="block mb-1.5 text-[13px] font-semibold text-ink" for="display-name">
+          你叫什么？ <span class="text-mute font-normal">（可以填昵称）</span>
+        </label>
+        <input
+          type="text" id="display-name" maxlength="50" autocomplete="off" spellcheck="false"
+          placeholder="例如：小明、Alex、猫咪爸爸"
+          class=""
+        />
+        <p id="err-msg"></p>
+
+        <button id="btn-create-local" class="btn-primary mt-5" disabled>
+          创建本地账号并开始 →
         </button>
-        <p id="test-chat-result" class="mt-2 text-[12px] text-mute leading-relaxed"></p>
+      </div>
+
+      <div class="card p-5 mb-6 bg-amber-50/50 border-amber-100">
+        <p class="text-[13px] text-amber-700 leading-relaxed">
+          ⚠️ <strong>安全提示：</strong>本地初始化模式只适合个人自托管。
+          公网部署请使用 <code>AUTH_MODE=email</code>，并配置 HTTPS、反向代理和访问控制。
+        </p>
+      </div>
+
+      <p class="text-center text-[12px] text-mute">
+        已有账号？<a href="/app/auth.html" class="link">前往登录</a>
+      </p>
+    </section>
+
+    <!-- ── 状态 B：邮箱模式 ── -->
+    <section id="sec-email-mode" class="section">
+      <div class="card p-7 mb-5 text-center">
+        <div class="text-[48px] mb-4">📧</div>
+        <h2 class="text-[17px] font-bold mb-2">邮箱登录模式</h2>
+        <p class="text-[14px] text-mute leading-relaxed mb-6">
+          当前配置为邮箱注册/登录（<code class="pkey">AUTH_MODE=email</code>）。
+          请前往注册或登录页面继续。
+        </p>
+        <a href="/app/auth.html" class="btn-primary" style="text-decoration:none;">
+          前往登录 / 注册
+        </a>
       </div>
     </section>
 
-    <!-- 推荐路径 -->
-    <section class="card p-6 mb-6">
-      <h2 class="text-[15px] font-bold mb-3">推荐做法 (3 分钟)</h2>
-      <ol class="space-y-4 text-[14px] leading-relaxed">
-        <li>
-          <span class="font-bold text-sakura-deep">1.</span>
-          回到运行服务的终端，停掉服务后执行：
-          <pre class="mt-2">npm run setup</pre>
-          <p class="text-[12px] text-mute mt-2">交互向导会问你选哪家、粘贴一次 API key，自动写入 <code>.env</code>。</p>
-        </li>
-        <li>
-          <span class="font-bold text-sakura-deep">2.</span>
-          重启服务：
-          <pre class="mt-2">npm start</pre>
-        </li>
-        <li>
-          <span class="font-bold text-sakura-deep">3.</span>
-          回到 <a href="/" class="link">首页</a> 注册账号 → 创建角色 → 开聊。
-        </li>
-      </ol>
+    <!-- ── 状态 C：已初始化 ── -->
+    <section id="sec-initialized" class="section">
+      <div class="card p-7 mb-5 text-center">
+        <div class="text-[48px] mb-4">✅</div>
+        <h2 class="text-[17px] font-bold mb-2">已完成初始化</h2>
+        <p class="text-[14px] text-mute leading-relaxed mb-6">
+          账号已创建，可以直接进入控制台或登录页面。
+        </p>
+        <div class="flex flex-col gap-3">
+          <a href="/app/dashboard.html" class="btn-primary" style="text-decoration:none;">
+            进入控制台
+          </a>
+          <a href="/app/auth.html" class="btn-secondary" style="text-decoration:none;">
+            登录页面
+          </a>
+        </div>
+      </div>
     </section>
 
-    <!-- 手动 fallback -->
-    <section class="card p-6 mb-6">
-      <h2 class="text-[15px] font-bold mb-3">或者：手动编辑 <code>.env</code></h2>
-      <p class="text-[13px] text-mute mb-3">如果服务不在你能开终端的机器上（比如远程容器），可以手动改 <code>.env</code> 文件然后重启：</p>
-      <pre>CHAT_PROVIDER=deepseek
+    <!-- ── 加载中 ── -->
+    <section id="sec-loading" class="section active">
+      <div class="card p-10 text-center">
+        <div class="text-mute text-[14px] animate-pulse">正在检测初始化状态…</div>
+      </div>
+    </section>
+
+    <!-- ── 错误 ── -->
+    <section id="sec-error" class="section">
+      <div class="card p-7 text-center">
+        <div class="text-[48px] mb-4">⚠️</div>
+        <h2 class="text-[16px] font-bold mb-2">无法获取状态</h2>
+        <p id="api-error-msg" class="text-[13px] text-mute mb-5">请确认服务已启动。</p>
+        <button onclick="location.reload()" class="btn-primary">重试</button>
+      </div>
+    </section>
+
+    <!-- ── Provider 配置（折叠，setup_required=true 时展开） ── -->
+    <section id="sec-provider" class="mt-8" style="display:none;">
+      <div class="card p-6 mb-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-[15px] font-bold">当前状态</h2>
+          <span id="status-pill" class="pill">检查中…</span>
+        </div>
+        <dl class="text-[13px] space-y-2">
+          <div class="flex justify-between"><dt class="text-mute">Chat provider</dt><dd id="s-chat" class="font-semibold">—</dd></div>
+          <div class="flex justify-between"><dt class="text-mute">缺失环境变量</dt><dd id="s-missing" class="font-semibold"><span class="pkey">—</span></dd></div>
+          <div class="flex justify-between"><dt class="text-mute">邮件模式</dt><dd id="s-email" class="font-semibold">—</dd></div>
+          <div class="flex justify-between"><dt class="text-mute">微信接入</dt><dd id="s-wechat" class="font-semibold">—</dd></div>
+        </dl>
+        <div class="mt-4 pt-4 border-t border-line">
+          <button id="btn-test-chat" class="w-full py-2.5 rounded-full bg-cloud border border-line text-[13px] font-semibold text-ink hover:border-sakura hover:text-sakura-deep transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+            🔌 测试 chat provider 连通性
+          </button>
+          <p id="test-chat-result" class="mt-2 text-[12px] text-mute leading-relaxed"></p>
+        </div>
+      </div>
+
+      <section class="card p-6 mb-6">
+        <h2 class="text-[15px] font-bold mb-3">如何配置 Chat Provider</h2>
+        <ol class="space-y-4 text-[14px] leading-relaxed">
+          <li>
+            <span class="font-bold text-sakura-deep">1.</span>
+            停止服务后，在 <code>.env</code> 文件中填写：
+            <pre class="mt-2">CHAT_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your_deepseek_api_key_here</pre>
-      <p class="text-[12px] text-mute mt-3">下面是各家 chat provider 的申请链接。任选一家：</p>
-      <ul class="mt-3 space-y-2 text-[13px]">
-        <li>· <span class="pkey">deepseek</span> DeepSeek — <a class="link" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> <span class="text-mute text-[11px]">★ 推荐入门</span></li>
-        <li>· <span class="pkey">openai</span> OpenAI — <a class="link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a></li>
-        <li>· <span class="pkey">anthropic</span> Anthropic Claude — <a class="link" href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a></li>
-        <li>· <span class="pkey">zhipu</span> 智谱 GLM — <a class="link" href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noopener">open.bigmodel.cn</a></li>
-        <li>· <span class="pkey">qwen</span> 通义千问 — <a class="link" href="https://dashscope.console.aliyun.com/apiKey" target="_blank" rel="noopener">dashscope.console.aliyun.com</a></li>
-        <li>· <span class="pkey">kimi</span> Moonshot Kimi — <a class="link" href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noopener">platform.moonshot.cn</a></li>
-        <li>· <span class="pkey">doubao</span> 字节豆包 — <a class="link" href="https://console.volcengine.com/ark" target="_blank" rel="noopener">console.volcengine.com</a> <span class="text-mute text-[11px]">需填 ep-xxx</span></li>
-        <li>· <span class="pkey">xai</span> xAI Grok — <a class="link" href="https://console.x.ai/" target="_blank" rel="noopener">console.x.ai</a></li>
-        <li>· <span class="pkey">wenxin</span> 百度文心 — <a class="link" href="https://qianfan.cloud.baidu.com/" target="_blank" rel="noopener">qianfan.cloud.baidu.com</a></li>
-      </ul>
+          </li>
+          <li><span class="font-bold text-sakura-deep">2.</span> 重启服务：<pre class="mt-2">npm start</pre></li>
+          <li><span class="font-bold text-sakura-deep">3.</span> 刷新此页，状态变为「已就绪」后即可创建角色。</li>
+        </ol>
+        <p class="text-[12px] text-mute mt-4">可用 chat provider：</p>
+        <ul class="mt-2 space-y-1.5 text-[13px]">
+          <li>· <span class="pkey">deepseek</span> <a class="link" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">DeepSeek ★ 推荐入门</a></li>
+          <li>· <span class="pkey">openai</span> <a class="link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a></li>
+          <li>· <span class="pkey">anthropic</span> <a class="link" href="https://console.anthropic.com/" target="_blank" rel="noopener">Anthropic Claude</a></li>
+          <li>· <span class="pkey">zhipu</span> <a class="link" href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noopener">智谱 GLM</a></li>
+          <li>· <span class="pkey">qwen</span> <a class="link" href="https://dashscope.console.aliyun.com/apiKey" target="_blank" rel="noopener">通义千问</a></li>
+          <li>· <span class="pkey">kimi</span> <a class="link" href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noopener">Moonshot Kimi</a></li>
+          <li>· <span class="pkey">doubao</span> <a class="link" href="https://console.volcengine.com/ark" target="_blank" rel="noopener">字节豆包（需填 ep-xxx）</a></li>
+          <li>· <span class="pkey">xai</span> <a class="link" href="https://console.x.ai/" target="_blank" rel="noopener">xAI Grok</a></li>
+          <li>· <span class="pkey">wenxin</span> <a class="link" href="https://qianfan.cloud.baidu.com/" target="_blank" rel="noopener">百度文心</a></li>
+        </ul>
+      </section>
     </section>
 
-    <section class="card p-6 mb-10">
-      <h2 class="text-[15px] font-bold mb-3">安全提示</h2>
-      <ul class="text-[13px] text-mute space-y-2 leading-relaxed">
-        <li>· 本页 <strong>不会</strong> 在浏览器里写 <code>.env</code> —— 凭据必须落在你能访问的文件系统上才安全。</li>
-        <li>· <code>.env</code> 已在 <code>.gitignore</code>。永远不要把它 commit 进仓库。</li>
-        <li>· 部署到公网时记得用 nginx / Caddy 加 TLS，参考 <a class="link" href="https://github.com/dimang01/xiyu-ai/blob/main/deploy/nginx.conf.example" target="_blank" rel="noopener">deploy/nginx.conf.example</a>。</li>
-      </ul>
-    </section>
-
-    <footer class="text-center text-[12px] text-mute">
+    <footer class="text-center text-[12px] text-mute mt-6">
       <a class="link" href="https://github.com/dimang01/xiyu-ai" target="_blank" rel="noopener">GitHub</a>
       · <a class="link" href="https://github.com/dimang01/xiyu-ai/issues" target="_blank" rel="noopener">Issues</a>
       · MIT License
     </footer>
+
   </main>
 
   <script>
-    async function load() {
+    // ─── 工具 ─────────────────────────────────────────────────────────────────
+    // 与 auth.html / dashboard.html 使用相同的 localStorage key
+    function saveSession(token, user) {
       try {
-        const r = await fetch('/api/health');
+        localStorage.setItem('xiyu_token', token);
+        if (user) localStorage.setItem('xiyu_user', JSON.stringify(user));
+      } catch {}
+    }
+
+    function showSection(id) {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      const el = document.getElementById(id);
+      if (el) el.classList.add('active');
+    }
+
+    function setErr(msg) {
+      const el = document.getElementById('err-msg');
+      if (el) el.textContent = msg;
+    }
+
+    // ─── 主逻辑：获取 setup/status 并渲染 ────────────────────────────────────
+    async function init() {
+      showSection('sec-loading');
+      try {
+        const r = await fetch('/api/setup/status');
         const d = await r.json();
-        const chat = d.providers?.chat || {};
-        document.getElementById('s-chat').textContent = `${chat.label || chat.id || '—'} (${chat.model || '默认'})`;
-        const missingEnv = d.setup?.missing_env || '';
-        document.getElementById('s-missing').innerHTML = missingEnv
-          ? `<span class="pkey">${missingEnv}</span>`
-          : `<span class="text-mute">无</span>`;
-        document.getElementById('s-email').textContent = d.email?.mode === 'resend'
-          ? '真实邮件 (Resend)'
-          : '验证码打印到日志 (dev_stdout)';
-        document.getElementById('s-wechat').textContent = d.wechat?.configured ? `已配置 (${d.wechat.source})` : '未配置（不影响 web 使用）';
-        const pill = document.getElementById('status-pill');
+        if (!d?.ok) throw new Error(d?.error || '状态接口返回异常');
+        const s = d.data;
+
+        // 同时拉 /api/health 用于 provider 区块
+        try {
+          const h = await fetch('/api/health');
+          const hd = await h.json();
+          renderProviderSection(hd);
+        } catch { /* provider 区块不影响主流程 */ }
+
+        if (s.local_setup_available) {
+          document.getElementById('header-sub').textContent = '首次使用 · 创建本地账号';
+          showSection('sec-local-init');
+          document.getElementById('btn-create-local').disabled = false;
+        } else if (s.email_enabled) {
+          document.getElementById('header-sub').textContent = '邮箱登录模式';
+          showSection('sec-email-mode');
+        } else if (s.initialized) {
+          document.getElementById('header-sub').textContent = '已完成初始化';
+          showSection('sec-initialized');
+        } else {
+          // auth_mode=local 但 initialized，同 initialized 处理
+          document.getElementById('header-sub').textContent = '已完成初始化';
+          showSection('sec-initialized');
+        }
+      } catch (e) {
+        showSection('sec-error');
+        const errEl = document.getElementById('api-error-msg');
+        if (errEl) errEl.textContent = e.message || '请确认服务已启动，然后刷新重试。';
+      }
+    }
+
+    // ─── 创建本地账号 ─────────────────────────────────────────────────────────
+    document.getElementById('btn-create-local')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-create-local');
+      const nameInput = document.getElementById('display-name');
+      const displayName = nameInput?.value?.trim() ?? '';
+
+      setErr('');
+      if (!displayName) { setErr('请输入你的昵称'); return; }
+
+      btn.disabled = true;
+      btn.textContent = '创建中…';
+
+      try {
+        const r = await fetch('/api/setup/local-account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ display_name: displayName }),
+        });
+        const d = await r.json();
+
+        if (r.status === 201 && d.ok && d.token) {
+          saveSession(d.token, d.user);
+          window.location.href = d.next || '/app/create.html';
+        } else {
+          setErr(d.error || '创建失败，请稍后重试');
+          btn.disabled = false;
+          btn.textContent = '创建本地账号并开始 →';
+        }
+      } catch (e) {
+        setErr('网络错误，请稍后重试');
+        btn.disabled = false;
+        btn.textContent = '创建本地账号并开始 →';
+      }
+    });
+
+    // Enter 键触发
+    document.getElementById('display-name')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('btn-create-local')?.click();
+    });
+
+    // ─── Provider 区块（原 setup.html 内容保留） ─────────────────────────────
+    function renderProviderSection(d) {
+      if (!d?.ok) return;
+      const providerSection = document.getElementById('sec-provider');
+      if (!providerSection) return;
+
+      const chat = d.providers?.chat || {};
+      const sChat = document.getElementById('s-chat');
+      if (sChat) sChat.textContent = `${chat.label || chat.id || '—'} (${chat.model || '默认'})`;
+
+      const missingEnv = d.setup?.missing_env || '';
+      const sMissing = document.getElementById('s-missing');
+      if (sMissing) sMissing.innerHTML = missingEnv
+        ? `<span class="pkey">${missingEnv}</span>`
+        : `<span class="text-mute">无</span>`;
+
+      const sEmail = document.getElementById('s-email');
+      if (sEmail) sEmail.textContent = d.email?.mode === 'resend'
+        ? '真实邮件 (Resend)'
+        : '验证码打印到日志 (dev_stdout)';
+
+      const sWechat = document.getElementById('s-wechat');
+      if (sWechat) sWechat.textContent = d.wechat?.configured
+        ? `已配置 (${d.wechat.source})`
+        : '未配置（不影响 web 使用）';
+
+      const pill = document.getElementById('status-pill');
+      if (pill) {
         if (d.setup_required) {
           pill.textContent = '需要配置';
           pill.style.background = '#FFE3E3';
           pill.style.color = '#D63B3B';
+          providerSection.style.display = 'block'; // 只在未配置时展示
         } else {
           pill.textContent = '已就绪';
           pill.style.background = '#E3F8E5';
           pill.style.color = '#28A745';
-          // 已经配好了，提示用户可以回首页
-          const main = document.querySelector('main');
-          const ready = document.createElement('div');
-          ready.className = 'card p-5 mb-6 bg-gradient-to-br from-white to-sakura-soft/40 text-center';
-          ready.innerHTML = '<p class="text-[14px] font-semibold">✅ 配置已就绪，可以开始使用</p><a href="/" class="inline-block mt-3 px-5 py-2 rounded-full bg-sakura-deep text-white text-[13px] font-semibold">回到首页</a>';
-          main.insertBefore(ready, main.children[1]);
         }
-      } catch (e) {
-        document.getElementById('status-pill').textContent = '无法访问 /api/health';
       }
     }
-    load();
 
-    // ─── 连通性测试 ───────────────────────────────────────────────────────
+    // ─── 连通性测试（沿用原功能） ─────────────────────────────────────────────
     document.getElementById('btn-test-chat')?.addEventListener('click', async () => {
       const btn = document.getElementById('btn-test-chat');
       const out = document.getElementById('test-chat-result');
       btn.disabled = true;
-      out.textContent = '测试中…（向当前 provider 发一句 ping）';
+      out.textContent = '测试中…';
       out.style.color = '#86868B';
       try {
         const r = await fetch('/api/setup/test-chat', { method: 'POST' });
@@ -175,13 +379,9 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here</pre>
         if (d.ok && d.data?.ok) {
           out.style.color = '#28A745';
           out.innerHTML = `✅ 连通成功 — ${d.data.provider?.label || ''} 延迟 ${d.data.latency_ms}ms · 返回："${(d.data.sample || '').slice(0, 30)}"`;
-        } else if (d.ok && d.data?.ok === false) {
-          // chatComplete 抛了业务异常（key 错 / 模型名错 / 余额不足等）
-          out.style.color = '#D63B3B';
-          out.textContent = `❌ ${d.data.error || '未知错误'}`;
         } else {
           out.style.color = '#D63B3B';
-          out.textContent = `❌ HTTP ${r.status}: ${d.error || d.message || '请求失败'}`;
+          out.textContent = `❌ ${d.data?.error || d.error || '未知错误'}`;
         }
       } catch (e) {
         out.style.color = '#D63B3B';
@@ -190,6 +390,8 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here</pre>
         btn.disabled = false;
       }
     });
+
+    init();
   </script>
 </body>
 </html>

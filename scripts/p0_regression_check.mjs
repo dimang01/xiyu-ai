@@ -183,6 +183,36 @@ try {
   const healthResp = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
   check('/api/health 返回 200', healthResp.status === 200);
 
+  // /api/setup/status 返回 200 且不包含任何 secret
+  try {
+    const setupResp = await fetch(`${BASE}/api/setup/status`, { signal: AbortSignal.timeout(3000) });
+    check('/api/setup/status 返回 200', setupResp.status === 200);
+    if (setupResp.status === 200) {
+      const setupBody = await setupResp.text();
+      const FORBIDDEN_KEYS = ['AUTH_SECRET', 'ADMIN_SECRET', 'API_KEY', 'BOT_TOKEN', 'bot_token', 'password_hash'];
+      const leaked = FORBIDDEN_KEYS.filter(k => setupBody.includes(k));
+      check('/api/setup/status 响应不含敏感字段', leaked.length === 0,
+        leaked.length > 0 ? `发现: ${leaked.join(', ')}` : '');
+    }
+  } catch (setupErr) {
+    check('/api/setup/status 返回 200', false, setupErr.message);
+  }
+
+  // /api/setup/local-account 在已有用户时返回 409
+  try {
+    const localR = await fetch(`${BASE}/api/setup/local-account`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: 'test' }),
+      signal: AbortSignal.timeout(3000),
+    });
+    // 已有用户 → 409；AUTH_MODE=email → 403；空库本地模式 → 201（均非 500）
+    const isExpected = localR.status === 409 || localR.status === 403 || localR.status === 201;
+    check('/api/setup/local-account 返回 409/403/201（非 500）', isExpected, `status=${localR.status}`);
+  } catch (e2) {
+    check('/api/setup/local-account 可访问', false, e2.message);
+  }
+
   // All companion-specific endpoints must reject unauthenticated requests (401/403).
   // Specify the correct HTTP method for each endpoint.
   const authEndpoints = [
@@ -265,6 +295,63 @@ try {
 } catch (e) {
   check('event_graph.mjs 源码审计', false, e.message);
 }
+
+// ─── 13. setup.mjs / local-first onboarding 静态检查 ─────────────────────────
+check('src/setup.mjs 存在', fileExists('src/setup.mjs'));
+
+try {
+  const sm = await import(path.join(ROOT, 'src/setup.mjs'));
+  check('setup 导出 getAuthMode',             typeof sm.getAuthMode === 'function');
+  check('setup 导出 getSetupStatus',          typeof sm.getSetupStatus === 'function');
+  check('setup 导出 isLocalhostRequest',      typeof sm.isLocalhostRequest === 'function');
+  check('setup 导出 countUserAccounts',       typeof sm.countUserAccounts === 'function');
+  check('setup 导出 generateLocalUsername',   typeof sm.generateLocalUsername === 'function');
+  check('setup 导出 generateLocalEmail',      typeof sm.generateLocalEmail === 'function');
+
+  // getSetupStatus 结构验证（当前可能有 DB，也可能没有 — 只检查字段存在）
+  try {
+    const status = sm.getSetupStatus();
+    check('getSetupStatus 返回 auth_mode 字段',          typeof status.auth_mode === 'string');
+    check('getSetupStatus 返回 initialized 字段',        typeof status.initialized === 'boolean');
+    check('getSetupStatus 返回 user_count 字段',         typeof status.user_count === 'number');
+    check('getSetupStatus 返回 email_enabled 字段',      typeof status.email_enabled === 'boolean');
+    check('getSetupStatus 返回 local_setup_available 字段', typeof status.local_setup_available === 'boolean');
+  } catch (e) {
+    // DB 可能未初始化时仍需这些字段，只警告不 fail
+    check('getSetupStatus 返回正确结构', false, e.message);
+  }
+
+  // localhost 检测逻辑验证
+  check('isLocalhostRequest 识别 127.0.0.1',
+    sm.isLocalhostRequest({ socket: { remoteAddress: '127.0.0.1' } }) === true);
+  check('isLocalhostRequest 识别 ::1',
+    sm.isLocalhostRequest({ socket: { remoteAddress: '::1' } }) === true);
+  check('isLocalhostRequest 拦截远程 IP',
+    sm.isLocalhostRequest({ socket: { remoteAddress: '1.2.3.4' } }) === false);
+
+  // generateLocalEmail 不含真实域名
+  const testEmail = sm.generateLocalEmail();
+  check('generateLocalEmail 生成 local.xiyu 域名',     testEmail.endsWith('@local.xiyu'));
+  check('generateLocalEmail 不含真实邮件域名',          !testEmail.includes('.com') && !testEmail.includes('.cn'));
+} catch (e) {
+  check('setup.mjs import 成功', false, e.message);
+}
+
+// API 源码审计：setup 路由不能泄露 secret
+try {
+  const { readFileSync } = await import('node:fs');
+  const apiSrc = readFileSync(path.join(ROOT, 'src/api.mjs'), 'utf-8');
+  check('/api/setup/status 路由存在',           apiSrc.includes("'/setup/status'"));
+  check('/api/setup/local-account 路由存在',    apiSrc.includes("'/setup/local-account'"));
+  check('setup 路由不输出 AUTH_SECRET',
+    !apiSrc.slice(apiSrc.indexOf("'/setup/status'") || 0, (apiSrc.indexOf("'/setup/status'") || 0) + 500).includes('AUTH_SECRET'));
+} catch (e) {
+  check('setup.mjs API 路由源码审计', false, e.message);
+}
+
+// HTTP: /api/setup/status 在服务运行时返回 200 且无 secret
+// 此检查在 HTTP 检查块内已覆盖 or 在服务不可用时跳过，故这里仅做静态补充。
+// 动态 HTTP 检查见 Section 11 的 try 块，setup/status 200 已包含在内。
 
 // ─── Print results ────────────────────────────────────────────────────────────
 console.log('\n── P0/P1 Regression Check ──────────────────────────────');

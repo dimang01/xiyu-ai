@@ -52,6 +52,10 @@
  * P2A — 事件图谱:
  *   GET    /api/companions/:id/event-graph      获取轻量事件图谱
  *
+ * Setup / 本地初始化:
+ *   GET    /api/setup/status                    认证模式 & 初始化状态（不含 secret）
+ *   POST   /api/setup/local-account             创建首个本地账号（local 模式 + 未初始化 + localhost）
+ *
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
@@ -90,6 +94,11 @@ import {
 import { checkAndUnlockAchievements, getCompanionAchievements, tryAchievement } from './achievements.mjs';
 import { getCompanionEventGraph, processMemoryForGraph } from './event_graph.mjs';
 import { loadProviderPricing, estimateProviderCost } from './provider_costs.mjs';
+import {
+  getAuthMode, isLocalSetupAllowRemote, isLocalhostRequest,
+  countUserAccounts, getSetupStatus,
+  generateLocalUsername, generateLocalEmail, generateLocalPasswordHash,
+} from './setup.mjs';
 
 // 异步生成元认知（不阻塞主响应）。所有 category 数组扁平化为 facts 列表存表
 async function asyncGeneratePersonaFacts(companion) {
@@ -566,6 +575,85 @@ function giftReactionText(companion, gift, message) {
   if (gift.id === 'ring') return `这枚戒指太特别了，${note}我会认真收好的。`;
   return `谢谢你的礼物，${note}我真的很开心。`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Setup / 初始化状态 API
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/setup/status
+// 返回认证模式和初始化状态，不包含任何 secret / key / 数据库内容。
+router.get('/setup/status', (req, res) => {
+  try {
+    const status = getSetupStatus();
+    return ok(res, status);
+  } catch (e) {
+    log('error', `[API] setup/status 异常: ${e.message}`);
+    return err(res, '状态查询失败', 500);
+  }
+});
+
+// POST /api/setup/local-account
+// 仅在 AUTH_MODE=local && user_count=0 && localhost（或 ALLOW_REMOTE=1）时可用。
+// 创建第一个本地账号，返回 JWT token。
+router.post('/setup/local-account',
+  rateLimit({ scope: 'setup-local-account', maxPerWindow: 10, windowMs: 60 * 60 * 1000, message: '请求过于频繁' }),
+  async (req, res) => {
+    // 1. 必须是 local 模式
+    const authMode = getAuthMode();
+    if (authMode !== 'local') {
+      return err(res, '当前为邮箱登录模式（AUTH_MODE=email），请前往 /app/auth.html 注册', 403);
+    }
+
+    // 2. 必须尚未初始化
+    const userCount = countUserAccounts();
+    if (userCount > 0) {
+      return err(res, '已完成初始化，不能再通过本接口创建账号', 409);
+    }
+
+    // 3. localhost 限制（除非 ALLOW_REMOTE=1）
+    if (!isLocalSetupAllowRemote() && !isLocalhostRequest(req)) {
+      return err(res, '本地初始化仅允许 localhost 访问。如需远程初始化，请在 .env 中设置 LOCAL_SETUP_ALLOW_REMOTE=1（风险自负）', 403);
+    }
+
+    // 4. 参数校验
+    const rawName = String(req.body?.display_name ?? '').trim();
+    if (!rawName) {
+      return err(res, 'display_name 不能为空', 400);
+    }
+    if (rawName.length > 50) {
+      return err(res, 'display_name 不能超过 50 字符', 400);
+    }
+
+    // 5. 生成内部账号字段（不返回任何明文 secret）
+    const username = generateLocalUsername(rawName);
+    const email = generateLocalEmail();
+    const passwordHash = generateLocalPasswordHash();
+
+    try {
+      const user = createUserAccount({
+        username,
+        email,
+        passwordHash,
+        termsVersion: 'local',
+      });
+
+      const token = signToken({ id: user.id, username: user.username });
+      log('info', `[API] 本地账号创建成功 account_id=${user.id}`);
+
+      // 返回 user 对象方便前端同步 localStorage（与 auth/login 响应格式一致）
+      return res.status(201).json({
+        ok: true,
+        next: '/app/create.html',
+        user: { id: user.id, username: user.username },
+        // token 返回给前端存储，不在日志/报告中输出
+        token,
+      });
+    } catch (e) {
+      log('error', `[API] setup/local-account 失败: ${e.message}`);
+      return err(res, '创建账号失败，请稍后再试', 500);
+    }
+  }
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 邮箱验证码

@@ -101,11 +101,57 @@
 
 ---
 
+### 🏠 本地部署默认免邮箱
+
+溪语 AI 默认使用：
+
+```env
+AUTH_MODE=local
+```
+
+首次启动后打开 `http://localhost:3000`，点击「立即开始」，进入本地初始化页面，输入昵称，点击「创建本地账号并开始」，即可直接进入角色创建流程，**不需要邮箱验证码**。
+
+如果你要部署到公网、给多人使用，建议改为：
+
+```env
+AUTH_MODE=email
+```
+
+并配置邮件服务（参见 `.env.example` 中的 Resend 配置说明）。
+
+> ⚠️ **安全提示**：本地初始化模式只适合个人自托管。
+> 公网部署请使用 `AUTH_MODE=email`，并配置 HTTPS、反向代理和访问控制。
+
+---
+
+### Local-first setup
+
+By default, Xiyu AI uses:
+
+```env
+AUTH_MODE=local
+```
+
+On first start, open `http://localhost:3000`, click "Get started", and create the first local account without email verification. You'll be directed straight to the character creation wizard.
+
+For public or multi-user deployments, use:
+
+```env
+AUTH_MODE=email
+```
+
+and configure an email provider (see `RESEND_API_KEY` in `.env.example`).
+
+> **Note**: The local setup endpoint only accepts requests from `localhost` by default.
+> Set `LOCAL_SETUP_ALLOW_REMOTE=1` only if you need remote first-run setup and understand the security implications.
+
+---
+
 ### 🚀 一键启动
 
-> **30 秒概念图**：装依赖 → 跑起服务 → 浏览器注册 → 立即聊天（playground 或扫码绑微信）。
+> **30 秒概念图**：装依赖 → 跑起服务 → 浏览器创建账号 → 立即聊天（playground 或扫码绑微信）。
 >
-> **完全不需要**：邮件服务（dev 模式自动）、`ILINK_BOT_TOKEN`、腾讯后台找 bot ID、手工编辑 `.env` 之外的任何文件。
+> **完全不需要**：邮件服务（本地模式免验证码）、`ILINK_BOT_TOKEN`、腾讯后台找 bot ID、手工编辑 `.env` 之外的任何文件。
 
 #### 🅰️ 路径 A — 本地裸跑（推荐入门，3 分钟）
 
@@ -165,9 +211,9 @@ docker run -d --name xiyu-ai \
 ```
   1. 浏览器开 http://localhost:3000
         ↓
-  2. /app/auth.html → 邮箱注册
-        · 默认邮件 dev 模式 — 验证码直接打到 npm start 的终端
-        · 想用真实邮件就在 .env 配 RESEND_API_KEY + RESEND_FROM
+  2. 点「立即开始」→ 自动跳转根据 AUTH_MODE 判断：
+        · local 模式（默认）→ /app/setup.html  → 输入昵称，一键创建本地账号
+        · email 模式         → /app/auth.html  → 邮箱注册（验证码打到终端或 Resend）
         ↓
   3. /app/create.html → 4 步向导创建 AI 角色（取名、年龄、性格、背景故事）
         ↓
@@ -183,8 +229,8 @@ docker run -d --name xiyu-ai \
 | 路径 | 用途 |
 |------|------|
 | `/` | 落地页（缺 chat provider 时会弹引导条） |
-| `/app/setup.html` | 首次配置引导（含 "测试 chat provider 连通性" 按钮） |
-| `/app/auth.html` | 邮箱注册 / 登录 |
+| `/app/setup.html` | 初始化设置 — 本地模式一键创建账号 / 邮箱模式跳转引导 / provider 配置状态 |
+| `/app/auth.html` | 邮箱注册 / 登录（`AUTH_MODE=email` 时的主入口） |
 | `/app/create.html` | 创建 AI 角色（4 步向导） |
 | `/app/playground.html` | **浏览器内聊天** — 跑同款 AI 管线，不依赖微信 |
 | `/app/bind.html` | 网页扫码绑定微信 |
