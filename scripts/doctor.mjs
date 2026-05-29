@@ -139,36 +139,90 @@ try {
   issues++;
 }
 
+// port 需要在 Setup 向导 URL 中使用，提前定义
+const port = Number(env.API_PORT || 3000);
+
+// ─── Setup 向导 ──────────────────────────────────────────────────────────────
+head('Setup 向导');
+
+// AUTH_MODE
+const authMode = env.AUTH_MODE || 'local';
+ok(`Auth 模式: ${authMode}`);
+
+// setup.html 存在
+const setupHtmlPath = path.join(ROOT, 'public', 'app', 'setup.html');
+if (fs.existsSync(setupHtmlPath)) {
+  ok('setup.html 存在 (/app/setup.html)');
+} else {
+  fail('setup.html 缺失');
+  issues++;
+}
+
+// 读取 app_settings（如果 DB 存在）
+let dbProviderName = '';
+let dbProviderKey  = '';
+try {
+  const { default: Database } = await import('better-sqlite3');
+  const db2 = new Database(dbPath);
+  const row1 = db2.prepare("SELECT value FROM app_settings WHERE key = 'CHAT_PROVIDER'").get();
+  if (row1?.value) {
+    dbProviderName = row1.value;
+    const KEY_MAP_DB = {
+      deepseek: 'DEEPSEEK_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY',
+      xai: 'XAI_API_KEY', zhipu: 'ZHIPU_API_KEY', doubao: 'DOUBAO_API_KEY',
+      qwen: 'QWEN_API_KEY', kimi: 'KIMI_API_KEY', wenxin: 'WENXIN_API_KEY',
+    };
+    const keyName = KEY_MAP_DB[dbProviderName];
+    if (keyName) {
+      const row2 = db2.prepare('SELECT value FROM app_settings WHERE key = ? AND secret = 1').get(keyName);
+      if (row2?.value) dbProviderKey = keyName;
+    }
+  }
+  db2.close();
+} catch {}
+
+const setupWizardUrl = `http://localhost:${port}/app/setup.html`;
+info(`Setup 向导 URL: ${setupWizardUrl}`);
+
 // ─── Chat provider ─────────────────────────────────────────────────────────
 head('AI 提供商');
-const provider = env.CHAT_PROVIDER || '';
-if (!provider) {
-  fail('CHAT_PROVIDER 未配置 — 请在 .env 中设置 CHAT_PROVIDER');
-  issues++;
-} else {
-  ok(`CHAT_PROVIDER = ${provider}`);
 
-  const KEY_MAP = {
-    openai:   'OPENAI_API_KEY',
-    deepseek: 'DEEPSEEK_API_KEY',
-    claude:   'ANTHROPIC_API_KEY',
-    anthropic:'ANTHROPIC_API_KEY',
-    zhipu:    'ZHIPU_API_KEY',
-    qwen:     'QWEN_API_KEY',
-    doubao:   'DOUBAO_API_KEY',
-    kimi:     'KIMI_API_KEY',
-    wenxin:   'WENXIN_ACCESS_KEY',
-    xai:      'XAI_API_KEY',
-    gemini:   'GEMINI_API_KEY',
-  };
+const KEY_MAP = {
+  openai:   'OPENAI_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+  claude:   'ANTHROPIC_API_KEY',
+  anthropic:'ANTHROPIC_API_KEY',
+  zhipu:    'ZHIPU_API_KEY',
+  qwen:     'QWEN_API_KEY',
+  doubao:   'DOUBAO_API_KEY',
+  kimi:     'KIMI_API_KEY',
+  wenxin:   'WENXIN_API_KEY',
+  xai:      'XAI_API_KEY',
+  gemini:   'GEMINI_API_KEY',
+};
+
+// provider: env > app_settings
+const provider = env.CHAT_PROVIDER || dbProviderName || '';
+const providerSource = env.CHAT_PROVIDER ? 'env' : dbProviderName ? 'app_settings' : 'missing';
+
+if (!provider) {
+  warn(`CHAT_PROVIDER 未配置 — 请在 .env 或 ${setupWizardUrl} 配置`);
+  warnings++;
+} else {
+  ok(`CHAT_PROVIDER = ${provider}  (来源: ${providerSource})`);
+
   const keyName = KEY_MAP[provider.toLowerCase()];
   if (keyName) {
-    const val = env[keyName] || '';
-    if (val && val.length >= 8 && !val.startsWith('your_') && !val.startsWith('sk-xxx')) {
-      ok(`${keyName} 已配置 (${val.length} 字符，内容已隐藏)`);
+    const envVal = env[keyName] || '';
+    const dbVal  = dbProviderKey === keyName ? '(已配置)' : '';
+    const hasKey = (envVal && envVal.length >= 8 && !envVal.startsWith('your_') && !envVal.startsWith('sk-xxx')) || dbVal;
+    if (envVal && envVal.length >= 8 && !envVal.startsWith('your_')) {
+      ok(`${keyName} 已配置 (${envVal.length} 字符，来源: env，内容已隐藏)`);
+    } else if (dbVal) {
+      ok(`${keyName} 已配置 (来源: app_settings，内容已隐藏)`);
     } else {
-      fail(`${keyName} 未配置或为占位符`);
-      issues++;
+      warn(`${keyName} 未配置 — 请在 ${setupWizardUrl} 填写 API Key`);
+      warnings++;
     }
   } else {
     info(`未知 provider "${provider}"，跳过 key 检查`);
@@ -194,7 +248,6 @@ if (!botId || botId.startsWith('your_')) {
 
 // ─── Port & API health ───────────────────────────────────────────────────────
 head('服务状态');
-const port = Number(env.API_PORT || 3000);
 let serviceRunning = false;
 
 try {

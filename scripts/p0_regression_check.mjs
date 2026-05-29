@@ -266,6 +266,127 @@ try {
   check('event_graph.mjs 源码审计', false, e.message);
 }
 
+// ─── 13. Setup Wizard static checks ──────────────────────────────────────────
+check('public/app/setup.html 存在', fileExists('public/app/setup.html'));
+check('scripts/setup-wizard.mjs 存在', fileExists('scripts/setup-wizard.mjs'));
+
+// app_settings 表定义存在于 db.mjs
+try {
+  const { readFileSync } = await import('node:fs');
+  const dbSrc = readFileSync(path.join(ROOT, 'src/db.mjs'), 'utf-8');
+  check('db.mjs 包含 app_settings 表定义', dbSrc.includes('CREATE TABLE IF NOT EXISTS app_settings'));
+  check('db.mjs 导出 getAppSetting',        dbSrc.includes('export function getAppSetting'));
+  check('db.mjs 导出 setAppSetting',        dbSrc.includes('export function setAppSetting'));
+  check('db.mjs 不在日志输出 setting value', !dbSrc.match(/log\(.*(value|secret)/));
+} catch (e) {
+  check('db.mjs app_settings 静态检查', false, e.message);
+}
+
+// chat.mjs 安全：不泄露 key
+try {
+  const { readFileSync } = await import('node:fs');
+  const chatSrc = readFileSync(path.join(ROOT, 'src/providers/chat.mjs'), 'utf-8');
+  check('chat.mjs 导出 REGISTRY',               chatSrc.includes('export const REGISTRY'));
+  check('chat.mjs 导出 testChatProvider',        chatSrc.includes('export async function testChatProvider'));
+  check('chat.mjs provider 支持 app_settings',   chatSrc.includes('getAppSetting'));
+  check('chat.mjs 不在日志输出 apiKey 明文',
+    !chatSrc.match(/log\(.*apiKey/) && !chatSrc.match(/console\.log\(.*apiKey/));
+} catch (e) {
+  check('chat.mjs 静态检查', false, e.message);
+}
+
+// api.mjs 包含新 setup 路由
+try {
+  const { readFileSync } = await import('node:fs');
+  const apiSrc = readFileSync(path.join(ROOT, 'src/api.mjs'), 'utf-8');
+  check('api.mjs 包含 /setup/provider-status 路由', apiSrc.includes("'/setup/provider-status'"));
+  check('api.mjs 包含 /setup/provider-config 路由', apiSrc.includes("'/setup/provider-config'"));
+  check('api.mjs 包含 /setup/test-provider 路由',   apiSrc.includes("'/setup/test-provider'"));
+  check('api.mjs /setup/provider-status 不返回完整 key',
+    !apiSrc.includes('apiKey') || apiSrc.includes('maskApiKey'));
+  check('api.mjs /setup/provider-config 要求 requireAuth',
+    /provider-config.*\n.*requireAuth|requireAuth.*\n.*provider-config/.test(apiSrc) ||
+    apiSrc.includes("'/setup/provider-config',\n  requireAuth") ||
+    apiSrc.includes("'/setup/provider-config',\n  requireAuth,") ||
+    apiSrc.includes("provider-config',\n  requireAuth"));
+  check('api.mjs /setup/provider-status 使用 softAuth',
+    apiSrc.includes("'/setup/provider-status', softAuth") ||
+    apiSrc.includes("'/setup/provider-status',\n  softAuth"));
+  check('api.mjs /setup/test-provider 含匿名访问限制逻辑',
+    apiSrc.includes('countAllAccounts') && apiSrc.includes('isLocalhost'));
+} catch (e) {
+  check('api.mjs setup 路由静态检查', false, e.message);
+}
+
+// ─── 14. HTTP Setup API checks (via Node fetch if server running) ─────────────
+try {
+  const setupStatusResp = await fetch(`${BASE}/api/setup/status`, { signal: AbortSignal.timeout(3000) });
+  check('/api/setup/status 返回 200', setupStatusResp.status === 200);
+
+  const setupStatusBody = await setupStatusResp.json();
+  // 确保不泄露 secret
+  const bodyStr = JSON.stringify(setupStatusBody);
+  const hasApiKey = /sk-[a-zA-Z0-9]{10}|Bearer [a-zA-Z0-9]{10}/.test(bodyStr);
+  check('/api/setup/status 不泄露 secret', !hasApiKey);
+
+  // provider-status 匿名访问：不含 masked_key、source，不含完整 key
+  const psResp = await fetch(`${BASE}/api/setup/provider-status`, { signal: AbortSignal.timeout(3000) });
+  check('/api/setup/provider-status 返回 200', psResp.status === 200);
+  const psBody = await psResp.json();
+  if (psBody.ok && psBody.data?.providers) {
+    let leaksFullKey = false;
+    let hasMaskedKey = false;
+    let hasSource = false;
+    for (const [, pInfo] of Object.entries(psBody.data.providers)) {
+      if (pInfo.masked_key && pInfo.masked_key.length > 20 && !pInfo.masked_key.includes('···')) {
+        leaksFullKey = true;
+      }
+      if ('masked_key' in pInfo) hasMaskedKey = true;
+      if ('source' in pInfo) hasSource = true;
+    }
+    check('/api/setup/provider-status 匿名时不含完整 key', !leaksFullKey);
+    check('/api/setup/provider-status 匿名时不返回 masked_key 字段', !hasMaskedKey);
+    check('/api/setup/provider-status 匿名时不返回 source 字段', !hasSource);
+  }
+
+  // provider-config 未登录时返回 401
+  const pcResp = await fetch(`${BASE}/api/setup/provider-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_provider: 'deepseek', api_key: 'test' }),
+    signal: AbortSignal.timeout(3000),
+  });
+  check('未登录 POST /api/setup/provider-config 返回 401/403', pcResp.status === 401 || pcResp.status === 403,
+    `status=${pcResp.status}`);
+
+  // test-provider：已初始化或非本地时未登录应返回 401/403（不是 500）；友好返回不是 500
+  const tpResp = await fetch(`${BASE}/api/setup/test-provider`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'deepseek' }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const tpStatus = tpResp.status;
+  check('/api/setup/test-provider 响应不是 500', tpStatus !== 500, `status=${tpStatus}`);
+  if (tpStatus === 401 || tpStatus === 403) {
+    let tpErrBody;
+    try { tpErrBody = await tpResp.json(); } catch {}
+    check('/api/setup/test-provider 401 含友好消息',
+      typeof tpErrBody?.message === 'string' && tpErrBody.message.length > 0,
+      `message=${JSON.stringify(tpErrBody?.message)}`);
+  } else if (tpStatus === 200) {
+    const tpBody = await tpResp.json();
+    const tpBodyStr = JSON.stringify(tpBody);
+    const hasFullKey = /sk-[a-zA-Z0-9]{20,}/.test(tpBodyStr);
+    check('/api/setup/test-provider 响应不含完整 API key', !hasFullKey,
+      `body=${tpBodyStr.slice(0, 80)}`);
+  }
+} catch (e) {
+  const isTimeout = e.name === 'TimeoutError' || e.code === 'ECONNREFUSED';
+  check('HTTP Setup API 检查 (需要服务运行)', false,
+    isTimeout ? '服务未运行，跳过 Setup API HTTP 检查' : e.message);
+}
+
 // ─── Print results ────────────────────────────────────────────────────────────
 console.log('\n── P0/P1 Regression Check ──────────────────────────────');
 for (const { ok, name, detail } of results) {

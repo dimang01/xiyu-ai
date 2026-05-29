@@ -103,9 +103,9 @@
 
 ### 🚀 一键启动
 
-> **30 秒概念图**：装依赖 → 跑起服务 → 浏览器注册 → 立即聊天（playground 或扫码绑微信）。
+> **30 秒概念图**：装依赖 → 跑起服务 → 打开 `/app/setup.html` → 网页填 Provider Key → 注册账号 → 立即聊天。
 >
-> **完全不需要**：邮件服务（dev 模式自动）、`ILINK_BOT_TOKEN`、腾讯后台找 bot ID、手工编辑 `.env` 之外的任何文件。
+> **完全不需要**：手动编辑 `.env`、邮件服务（dev 模式自动）、`ILINK_BOT_TOKEN`、腾讯后台找 bot ID。
 
 #### 🅰️ 路径 A — 本地裸跑（推荐入门，3 分钟）
 
@@ -113,21 +113,28 @@
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
 npm install        # Node ≥ 20
-npm run setup      # 交互式：选 chat provider、粘贴 API key、自动写 .env
+npm run setup      # 生成最小 .env，检查依赖，提示下一步
 npm start
-# 打开 http://localhost:3000
+# 打开 http://localhost:3000/app/setup.html
 ```
 
-`npm run setup` 会在启动前做原生模块预检（better-sqlite3 编译环境检测），缺东西时给出针对你 OS 的具体修复命令而不是让 npm install 一坨红字。
+**网页向导**会引导你：① 创建本地账号 → ② 选 Chat Provider → ③ 填 API Key（保存到本地 SQLite，不写 `.env`）→ ④ 测试连通 → ⑤ 创建角色。
+
+> **当前 Web Setup Wizard 优先支持 Chat Provider 的网页配置。**
+> Image / Vision / ASR / Embedding 的完整网页配置将在后续版本补齐；高级用户仍可继续通过 `.env` 配置这些能力。
+
+`npm run setup` 也做原生模块预检（better-sqlite3），缺编译工具时给出针对你 OS 的修复命令。
+
+高级用户仍可直接编辑 `.env`，环境变量优先于 Web 设置。
 
 #### 🅱️ 路径 B — Docker Compose（推荐生产 / 不想装 Node）
 
 ```bash
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
-cp .env.example .env                # 编辑 .env：至少填 CHAT_PROVIDER + 对应 *_API_KEY
 docker compose up -d
-# 打开 http://localhost:3000
+# 打开 http://localhost:3000/app/setup.html
+# 在网页里选择 Provider 并填写 API Key，无需编辑 .env
 ```
 
 - SQLite 数据库走 `./data` volume，重启不丢
@@ -135,23 +142,20 @@ docker compose up -d
 - 自定义端口：`HOST_PORT=8080 docker compose up -d`
 - 看日志：`docker compose logs -f xiyu-ai`
 
-#### 🅲 路径 C — 一行 `docker run`（试一下，不克隆代码）
+#### 🅲 路径 C — 一行 `docker run`（最简，无需克隆代码）
 
 ```bash
-# 指定版本（推荐生产）
-docker run -d --name xiyu-ai \
-  -p 3000:3000 \
-  -e CHAT_PROVIDER=deepseek \
-  -e DEEPSEEK_API_KEY=your_deepseek_api_key_here \
-  -v xiyu-data:/app/data \
-  ghcr.io/dimang01/xiyu-ai:1.1.0
-# 打开 http://localhost:3000
+docker run --rm -p 3000:3000 -v xiyu-data:/app/data \
+  ghcr.io/dimang01/xiyu-ai:latest
+# 打开 http://localhost:3000/app/setup.html
+# 在网页向导里创建账号并填写 Provider API Key
 ```
 
-> **重要：数据持久化**
-> - 必须挂载 `-v xiyu-data:/app/data`（或绑定宿主机目录 `-v /your/path:/app/data`）
-> - 不挂载 volume 则容器重启后 **SQLite 数据库（聊天记录、记忆、用户）全部丢失**
-> - 所有敏感配置（provider key、`AUTH_SECRET` 等）**必须通过 `-e` 或 `--env-file` 注入**，不要写进镜像
+> **重要提示**
+> - 必须挂载 `-v xiyu-data:/app/data`，否则容器重启后 **SQLite 数据（聊天、记忆、用户、Provider 配置）全部丢失**
+> - 不需要手动编辑 `.env` 或传入 `*_API_KEY` 环境变量——API Key 由网页向导保存到 volume 内的 SQLite
+> - 高级用户可继续用 `-e CHAT_PROVIDER=deepseek -e DEEPSEEK_API_KEY=...` 注入，环境变量优先级高于 Web 设置
+> - 公网部署建议加 `AUTH_MODE=email` 并在 nginx/Caddy 前端做 TLS
 
 可用标签：`latest`、`1.1`、`1.1.0`（同一镜像，推荐锁定具体版本）。
 镜像由 GitHub Actions 在每次发版（v* tag）时自动构建并发布到 GHCR，支持 `linux/amd64` 和 `linux/arm64`。
@@ -701,9 +705,9 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 
 ### 🚀 Quick Start
 
-> **30-second mental model**: install → run → register in browser → chat right away (playground or WeChat QR).
+> **30-second mental model**: install → run → open `/app/setup.html` → fill in Provider Key in the browser → register → chat.
 >
-> **You do NOT need**: an email service (dev mode is automatic), `ILINK_BOT_TOKEN`, a vendor console for bot IDs, or any hand-editing beyond `.env`.
+> **You do NOT need**: to manually edit `.env`, an email service (dev mode is automatic), `ILINK_BOT_TOKEN`, or a vendor console for bot IDs.
 
 #### 🅰️ Path A — Local (recommended for first try, 3 min)
 
@@ -711,21 +715,28 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
 npm install        # Node ≥ 20
-npm run setup      # Interactive: pick provider, paste API key, .env written for you
+npm run setup      # Creates minimal .env, checks deps, prints next steps
 npm start
-# Open http://localhost:3000
+# Open http://localhost:3000/app/setup.html
 ```
 
-`npm run setup` also runs a native-module preflight (better-sqlite3 build environment). If python/build-tools are missing it prints actionable fix commands for your OS instead of letting `npm install` fail with a wall of red.
+The **web wizard** guides you through: ① create local account → ② pick Chat Provider → ③ paste API Key (stored in local SQLite, not `.env`) → ④ test connection → ⑤ create AI character.
+
+> **The current Web Setup Wizard focuses on Chat Provider configuration.**
+> Full web configuration for Image / Vision / ASR / Embedding will be added later. Advanced users can still configure these capabilities through `.env`.
+
+`npm run setup` also runs a native-module preflight (better-sqlite3). Missing build tools get OS-specific fix commands instead of a wall of red.
+
+Power users can still edit `.env` directly — env vars always take priority over web settings.
 
 #### 🅱️ Path B — Docker Compose (recommended for self-hosting)
 
 ```bash
 git clone https://github.com/dimang01/xiyu-ai.git
 cd xiyu-ai
-cp .env.example .env                # edit .env: set CHAT_PROVIDER + matching *_API_KEY
 docker compose up -d
-# Open http://localhost:3000
+# Open http://localhost:3000/app/setup.html
+# Select Provider and paste API Key in the browser — no .env editing needed
 ```
 
 - SQLite database lives in the `./data` volume — survives restarts.
@@ -736,20 +747,17 @@ docker compose up -d
 #### 🅲 Path C — One-line `docker run` (try without cloning)
 
 ```bash
-# Pin to a specific version (recommended for production)
-docker run -d --name xiyu-ai \
-  -p 3000:3000 \
-  -e CHAT_PROVIDER=deepseek \
-  -e DEEPSEEK_API_KEY=your_deepseek_api_key_here \
-  -v xiyu-data:/app/data \
-  ghcr.io/dimang01/xiyu-ai:1.1.0
-# Open http://localhost:3000
+docker run --rm -p 3000:3000 -v xiyu-data:/app/data \
+  ghcr.io/dimang01/xiyu-ai:latest
+# Open http://localhost:3000/app/setup.html
+# Create an account and set your Provider API Key in the web wizard
 ```
 
-> **Important — data persistence**
-> - You **must** mount `-v xiyu-data:/app/data` (or a host-path bind mount `-v /your/path:/app/data`)
-> - Without a volume, the SQLite database (chat history, memories, users) is **lost on every container restart**
-> - All secrets (`AUTH_SECRET`, provider API keys, etc.) must be injected via `-e` or `--env-file` — never bake them into the image
+> **Important notes**
+> - You **must** mount `-v xiyu-data:/app/data` — without it, the SQLite database (chat, memories, users, Provider config) is **lost on every restart**
+> - No need to pass `-e *_API_KEY` — the key is saved to the volume via the web wizard
+> - Power users may still inject `-e CHAT_PROVIDER=deepseek -e DEEPSEEK_API_KEY=...`; env vars take priority over web settings
+> - For public deployments add `AUTH_MODE=email` and put TLS in front via nginx/Caddy
 
 Available tags: `latest`, `1.1`, `1.1.0` (same image — pin the specific version in production).  
 Images are built and published to GHCR by GitHub Actions on every version tag (`v*`), with `linux/amd64` and `linux/arm64` support.

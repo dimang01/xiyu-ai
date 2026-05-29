@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
   <meta name="color-scheme" content="light only" />
   <meta name="theme-color" content="#FFB6D9" />
-  <title>首次配置 · 溪语 AI</title>
+  <title>配置向导 · 溪语 AI</title>
   <link rel="icon" href="/logo.png" />
   <link rel="apple-touch-icon" href="/logo.png" />
 
@@ -30,166 +30,441 @@
     body { background: linear-gradient(180deg, #FFF7FB 0%, #FFFFFF 60%); }
     .card { background: #fff; border: 1px solid #F0F0F2; border-radius: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
     .pill { background: #FFE8F2; color: #FF8FB8; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    .pill-ok  { background: #E3F8E5; color: #28A745; }
+    .pill-err { background: #FFE3E3; color: #D63B3B; }
     code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
     pre { background: #1D1D1F; color: #FAFAFA; padding: 14px 16px; border-radius: 12px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
     a.link { color: #FF8FB8; font-weight: 600; }
     a.link:hover { color: #FF6FA3; text-decoration: underline; }
-    .pkey { background: #FFE8F2; padding: 2px 6px; border-radius: 6px; font-size: 12px; color: #FF6FA3; }
+    .pkey { background: #FFE8F2; padding: 2px 6px; border-radius: 6px; font-size: 12px; color: #FF6FA3; font-family: monospace; }
+    .step-tab { cursor: pointer; border-bottom: 2px solid transparent; padding: 6px 0; font-size: 13px; color: #86868B; transition: all .15s; }
+    .step-tab.active { border-color: #FF8FB8; color: #FF6FA3; font-weight: 700; }
+    .step-tab.done   { color: #28A745; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .btn-primary { background: #FF8FB8; color: #fff; border-radius: 9999px; padding: 10px 24px; font-size: 14px; font-weight: 700; transition: background .15s; }
+    .btn-primary:hover { background: #FF6FA3; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-outline { border: 1.5px solid #FF8FB8; color: #FF8FB8; border-radius: 9999px; padding: 9px 22px; font-size: 14px; font-weight: 600; background: transparent; transition: all .15s; }
+    .btn-outline:hover { background: #FFE8F2; }
+    .btn-outline:disabled { opacity: .5; cursor: not-allowed; }
+    .input { border: 1.5px solid #E5E7EB; border-radius: 10px; padding: 9px 13px; font-size: 14px; width: 100%; outline: none; transition: border .15s; }
+    .input:focus { border-color: #FF8FB8; }
+    select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%2386868B' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; cursor: pointer; }
+    .msg-ok  { color: #28A745; font-size: 13px; }
+    .msg-err { color: #D63B3B; font-size: 13px; }
+    .msg-info{ color: #86868B; font-size: 13px; }
   </style>
 </head>
 <body class="font-sans text-ink">
 
-  <main class="max-w-2xl mx-auto px-5 py-12">
+<main class="max-w-2xl mx-auto px-5 py-10">
 
-    <header class="text-center mb-10">
-      <img src="/logo-256.webp" alt="" class="w-16 h-16 mx-auto rounded-2xl shadow-sm" />
-      <h1 class="mt-5 text-[28px] font-extrabold tracking-tight">欢迎使用 溪语 AI</h1>
-      <p class="mt-2 text-[14px] text-mute">先把 chat provider 配好，才能开始聊天。</p>
-    </header>
+  <header class="text-center mb-8">
+    <img src="/logo-256.webp" alt="" class="w-14 h-14 mx-auto rounded-2xl shadow-sm" />
+    <h1 class="mt-4 text-[26px] font-extrabold tracking-tight">溪语 AI · 配置向导</h1>
+    <p class="mt-1.5 text-[13px] text-mute">跟着步骤配置好就能聊天了</p>
+  </header>
 
-    <!-- 状态卡 -->
-    <section id="status-card" class="card p-6 mb-6">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-[15px] font-bold">当前状态</h2>
-        <span id="status-pill" class="pill">检查中…</span>
+  <!-- 步骤导航 -->
+  <nav class="card px-6 pt-4 pb-2 mb-6 flex gap-6 overflow-x-auto">
+    <div class="step-tab active" data-step="1">① 账号初始化</div>
+    <div class="step-tab" data-step="2">② 选择 Provider</div>
+    <div class="step-tab" data-step="3">③ 测试连通</div>
+    <div class="step-tab" data-step="4">④ 创建角色</div>
+    <div class="step-tab" data-step="5">⑤ 绑定微信（可选）</div>
+  </nav>
+
+  <!-- Step 1: 账号初始化 -->
+  <section class="panel active card p-6 mb-4" data-panel="1">
+    <h2 class="text-[16px] font-bold mb-1">Step 1：账号初始化</h2>
+    <p class="text-[13px] text-mute mb-4">先创建本地登录账号，后续步骤需要登录状态。</p>
+
+    <div id="s1-email-mode" class="hidden mb-4 p-3 bg-blue-50 rounded-xl text-[13px] text-blue-700">
+      当前为邮箱登录模式（<code>AUTH_MODE=email</code>）。请直接前往
+      <a href="/app/auth.html" class="link">注册页面</a> 创建账号，再回来继续配置 Provider。
+    </div>
+
+    <div id="s1-local-mode">
+      <div class="mb-3">
+        <label class="block text-[13px] font-semibold mb-1">用户名</label>
+        <input id="s1-username" class="input" placeholder="例如 admin" autocomplete="username" />
       </div>
-      <dl class="text-[13px] space-y-2">
-        <div class="flex justify-between"><dt class="text-mute">Chat provider</dt><dd id="s-chat" class="font-semibold">—</dd></div>
-        <div class="flex justify-between"><dt class="text-mute">缺失环境变量</dt><dd id="s-missing" class="font-semibold"><span class="pkey">—</span></dd></div>
-        <div class="flex justify-between"><dt class="text-mute">邮件模式</dt><dd id="s-email" class="font-semibold">—</dd></div>
-        <div class="flex justify-between"><dt class="text-mute">微信接入</dt><dd id="s-wechat" class="font-semibold">—</dd></div>
-      </dl>
-      <div class="mt-4 pt-4 border-t border-line">
-        <button id="btn-test-chat" class="w-full py-2.5 rounded-full bg-cloud border border-line text-[13px] font-semibold text-ink hover:border-sakura hover:text-sakura-deep transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-          🔌 测试 chat provider 连通性
-        </button>
-        <p id="test-chat-result" class="mt-2 text-[12px] text-mute leading-relaxed"></p>
+      <div class="mb-4">
+        <label class="block text-[13px] font-semibold mb-1">密码</label>
+        <input id="s1-password" class="input" type="password" placeholder="至少 6 位" autocomplete="new-password" />
       </div>
-    </section>
+      <div class="flex gap-3 items-center">
+        <button class="btn-primary" id="s1-btn-register">注册账号</button>
+        <button class="btn-outline" id="s1-btn-login">我已有账号，登录</button>
+      </div>
+      <p id="s1-msg" class="mt-3 msg-info"></p>
+    </div>
 
-    <!-- 推荐路径 -->
-    <section class="card p-6 mb-6">
-      <h2 class="text-[15px] font-bold mb-3">推荐做法 (3 分钟)</h2>
-      <ol class="space-y-4 text-[14px] leading-relaxed">
-        <li>
-          <span class="font-bold text-sakura-deep">1.</span>
-          回到运行服务的终端，停掉服务后执行：
-          <pre class="mt-2">npm run setup</pre>
-          <p class="text-[12px] text-mute mt-2">交互向导会问你选哪家、粘贴一次 API key，自动写入 <code>.env</code>。</p>
-        </li>
-        <li>
-          <span class="font-bold text-sakura-deep">2.</span>
-          重启服务：
-          <pre class="mt-2">npm start</pre>
-        </li>
-        <li>
-          <span class="font-bold text-sakura-deep">3.</span>
-          回到 <a href="/" class="link">首页</a> 注册账号 → 创建角色 → 开聊。
-        </li>
+    <div class="mt-5 pt-4 border-t border-line">
+      <button class="btn-primary" id="s1-btn-next">下一步 →</button>
+    </div>
+  </section>
+
+  <!-- Step 2: Provider 配置 -->
+  <section class="panel card p-6 mb-4" data-panel="2">
+    <h2 class="text-[16px] font-bold mb-1">Step 2：选择 Chat Provider</h2>
+    <p class="text-[13px] text-mute mb-1">选一家模型服务商，粘贴 API Key。不会写入 <code>.env</code>，保存在本地 SQLite。</p>
+    <p class="text-[12px] text-mute mb-4">高级用户仍可用 <code>.env</code> 配置，环境变量优先。</p>
+
+    <!-- 当前状态 -->
+    <div id="s2-current" class="mb-4 p-3 rounded-xl bg-cloud text-[13px] hidden">
+      当前已配置：<span id="s2-cur-label" class="font-semibold"></span>
+      · 来源：<span id="s2-cur-source"></span>
+      · Key：<code id="s2-cur-masked" class="pkey"></code>
+    </div>
+
+    <div class="mb-3">
+      <label class="block text-[13px] font-semibold mb-1">选择 Provider</label>
+      <select id="s2-provider" class="input">
+        <option value="">请选择…</option>
+        <option value="deepseek">DeepSeek ★ 推荐入门</option>
+        <option value="openai">OpenAI (ChatGPT)</option>
+        <option value="anthropic">Anthropic Claude</option>
+        <option value="zhipu">智谱 GLM</option>
+        <option value="qwen">通义千问 (DashScope)</option>
+        <option value="kimi">Kimi (Moonshot)</option>
+        <option value="doubao">豆包 (Volcengine Ark)</option>
+        <option value="wenxin">文心一言 (百度千帆)</option>
+        <option value="xai">xAI Grok</option>
+      </select>
+    </div>
+
+    <div id="s2-link-row" class="mb-3 text-[13px] hidden">
+      申请 Key：<a id="s2-link" class="link" href="#" target="_blank" rel="noopener">点击前往</a>
+      <span id="s2-note" class="text-mute ml-2"></span>
+    </div>
+
+    <div class="mb-4">
+      <label class="block text-[13px] font-semibold mb-1">API Key</label>
+      <input id="s2-apikey" class="input font-mono" type="password" placeholder="粘贴 API Key（不会显示明文）" autocomplete="off" />
+      <p class="mt-1 text-[12px] text-mute">已保存的 Key 不会显示完整内容，留空则不修改旧 Key。</p>
+    </div>
+
+    <div class="flex gap-3">
+      <button class="btn-primary" id="s2-btn-save">保存配置</button>
+    </div>
+    <p id="s2-msg" class="mt-3 msg-info"></p>
+
+    <div class="mt-5 pt-4 border-t border-line flex gap-3">
+      <button class="btn-outline" id="s2-btn-back">← 上一步</button>
+      <button class="btn-primary" id="s2-btn-next">下一步 →</button>
+    </div>
+  </section>
+
+  <!-- Step 3: 测试连通 -->
+  <section class="panel card p-6 mb-4" data-panel="3">
+    <h2 class="text-[16px] font-bold mb-1">Step 3：测试连通性</h2>
+    <p class="text-[13px] text-mute mb-4">向当前 provider 发一次极短的 ping，验证 Key 是否有效。</p>
+
+    <div id="s3-provider-info" class="mb-4 p-3 rounded-xl bg-cloud text-[13px]">
+      当前 Provider：<span id="s3-provider-name" class="font-semibold">—</span>
+    </div>
+
+    <button class="btn-primary" id="s3-btn-test">🔌 测试连通性</button>
+    <p id="s3-msg" class="mt-3 msg-info"></p>
+
+    <div class="mt-5 pt-4 border-t border-line flex gap-3">
+      <button class="btn-outline" id="s3-btn-back">← 上一步</button>
+      <button class="btn-primary" id="s3-btn-next">下一步 →</button>
+    </div>
+  </section>
+
+  <!-- Step 4: 创建角色 -->
+  <section class="panel card p-6 mb-4" data-panel="4">
+    <h2 class="text-[16px] font-bold mb-1">Step 4：创建 AI 角色</h2>
+    <p class="text-[13px] text-mute mb-4">Provider 配置完成！现在创建你的 AI 角色，然后就可以开聊了。</p>
+
+    <div class="p-4 rounded-xl bg-gradient-to-br from-white to-sakura-soft/30 border border-sakura/30 text-center mb-4">
+      <p class="text-[14px] font-semibold mb-3">✅ 配置已就绪</p>
+      <a href="/app/create.html" class="btn-primary inline-block">创建我的 AI 角色 →</a>
+    </div>
+
+    <p class="text-[13px] text-mute">创建角色后可以在 <a href="/app/dashboard.html" class="link">控制台</a> 管理所有设置，在 <a href="/app/playground.html" class="link">Playground</a> 直接网页聊天测试。</p>
+
+    <div class="mt-5 pt-4 border-t border-line flex gap-3">
+      <button class="btn-outline" id="s4-btn-back">← 上一步</button>
+      <button class="btn-outline" id="s4-btn-next">跳过，去绑定微信 →</button>
+    </div>
+  </section>
+
+  <!-- Step 5: 微信绑定（可选） -->
+  <section class="panel card p-6 mb-4" data-panel="5">
+    <h2 class="text-[16px] font-bold mb-1">Step 5：绑定微信（可选）</h2>
+    <p class="text-[13px] text-mute mb-4">如需通过微信与 AI 聊天，扫码绑定即可。无微信接入也能正常用网页版。</p>
+
+    <div class="p-4 rounded-xl bg-cloud mb-4 text-[13px]">
+      <p class="font-semibold mb-2">绑定步骤：</p>
+      <ol class="space-y-1 text-mute">
+        <li>1. 前往 <a href="/app/bind.html" class="link">/app/bind.html</a> 网页扫码</li>
+        <li>2. 微信扫描页面上的二维码</li>
+        <li>3. 扫码后自动绑定，无需填任何配置文件</li>
       </ol>
-    </section>
+    </div>
 
-    <!-- 手动 fallback -->
-    <section class="card p-6 mb-6">
-      <h2 class="text-[15px] font-bold mb-3">或者：手动编辑 <code>.env</code></h2>
-      <p class="text-[13px] text-mute mb-3">如果服务不在你能开终端的机器上（比如远程容器），可以手动改 <code>.env</code> 文件然后重启：</p>
-      <pre>CHAT_PROVIDER=deepseek
-DEEPSEEK_API_KEY=your_deepseek_api_key_here</pre>
-      <p class="text-[12px] text-mute mt-3">下面是各家 chat provider 的申请链接。任选一家：</p>
-      <ul class="mt-3 space-y-2 text-[13px]">
-        <li>· <span class="pkey">deepseek</span> DeepSeek — <a class="link" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> <span class="text-mute text-[11px]">★ 推荐入门</span></li>
-        <li>· <span class="pkey">openai</span> OpenAI — <a class="link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a></li>
-        <li>· <span class="pkey">anthropic</span> Anthropic Claude — <a class="link" href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a></li>
-        <li>· <span class="pkey">zhipu</span> 智谱 GLM — <a class="link" href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noopener">open.bigmodel.cn</a></li>
-        <li>· <span class="pkey">qwen</span> 通义千问 — <a class="link" href="https://dashscope.console.aliyun.com/apiKey" target="_blank" rel="noopener">dashscope.console.aliyun.com</a></li>
-        <li>· <span class="pkey">kimi</span> Moonshot Kimi — <a class="link" href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noopener">platform.moonshot.cn</a></li>
-        <li>· <span class="pkey">doubao</span> 字节豆包 — <a class="link" href="https://console.volcengine.com/ark" target="_blank" rel="noopener">console.volcengine.com</a> <span class="text-mute text-[11px]">需填 ep-xxx</span></li>
-        <li>· <span class="pkey">xai</span> xAI Grok — <a class="link" href="https://console.x.ai/" target="_blank" rel="noopener">console.x.ai</a></li>
-        <li>· <span class="pkey">wenxin</span> 百度文心 — <a class="link" href="https://qianfan.cloud.baidu.com/" target="_blank" rel="noopener">qianfan.cloud.baidu.com</a></li>
-      </ul>
-    </section>
+    <a href="/app/bind.html" class="btn-primary inline-block mb-4">前往微信扫码绑定</a>
 
-    <section class="card p-6 mb-10">
-      <h2 class="text-[15px] font-bold mb-3">安全提示</h2>
-      <ul class="text-[13px] text-mute space-y-2 leading-relaxed">
-        <li>· 本页 <strong>不会</strong> 在浏览器里写 <code>.env</code> —— 凭据必须落在你能访问的文件系统上才安全。</li>
-        <li>· <code>.env</code> 已在 <code>.gitignore</code>。永远不要把它 commit 进仓库。</li>
-        <li>· 部署到公网时记得用 nginx / Caddy 加 TLS，参考 <a class="link" href="https://github.com/dimang01/xiyu-ai/blob/main/deploy/nginx.conf.example" target="_blank" rel="noopener">deploy/nginx.conf.example</a>。</li>
-      </ul>
-    </section>
+    <div class="mt-4 pt-4 border-t border-line">
+      <p class="text-[13px] text-mute mb-2">全部配置完成！</p>
+      <a href="/" class="btn-primary inline-block">回到首页</a>
+    </div>
+  </section>
 
-    <footer class="text-center text-[12px] text-mute">
-      <a class="link" href="https://github.com/dimang01/xiyu-ai" target="_blank" rel="noopener">GitHub</a>
-      · <a class="link" href="https://github.com/dimang01/xiyu-ai/issues" target="_blank" rel="noopener">Issues</a>
-      · MIT License
-    </footer>
-  </main>
+</main>
 
-  <script>
-    async function load() {
-      try {
-        const r = await fetch('/api/health');
-        const d = await r.json();
-        const chat = d.providers?.chat || {};
-        document.getElementById('s-chat').textContent = `${chat.label || chat.id || '—'} (${chat.model || '默认'})`;
-        const missingEnv = d.setup?.missing_env || '';
-        document.getElementById('s-missing').innerHTML = missingEnv
-          ? `<span class="pkey">${missingEnv}</span>`
-          : `<span class="text-mute">无</span>`;
-        document.getElementById('s-email').textContent = d.email?.mode === 'resend'
-          ? '真实邮件 (Resend)'
-          : '验证码打印到日志 (dev_stdout)';
-        document.getElementById('s-wechat').textContent = d.wechat?.configured ? `已配置 (${d.wechat.source})` : '未配置（不影响 web 使用）';
-        const pill = document.getElementById('status-pill');
-        if (d.setup_required) {
-          pill.textContent = '需要配置';
-          pill.style.background = '#FFE3E3';
-          pill.style.color = '#D63B3B';
-        } else {
-          pill.textContent = '已就绪';
-          pill.style.background = '#E3F8E5';
-          pill.style.color = '#28A745';
-          // 已经配好了，提示用户可以回首页
-          const main = document.querySelector('main');
-          const ready = document.createElement('div');
-          ready.className = 'card p-5 mb-6 bg-gradient-to-br from-white to-sakura-soft/40 text-center';
-          ready.innerHTML = '<p class="text-[14px] font-semibold">✅ 配置已就绪，可以开始使用</p><a href="/" class="inline-block mt-3 px-5 py-2 rounded-full bg-sakura-deep text-white text-[13px] font-semibold">回到首页</a>';
-          main.insertBefore(ready, main.children[1]);
-        }
-      } catch (e) {
-        document.getElementById('status-pill').textContent = '无法访问 /api/health';
-      }
-    }
-    load();
+<script>
+// ─── Provider 元信息 ──────────────────────────────────────────────────────
+const PROVIDER_META = {
+  deepseek:  { link: 'https://platform.deepseek.com/api_keys',           note: '' },
+  openai:    { link: 'https://platform.openai.com/api-keys',             note: '' },
+  anthropic: { link: 'https://console.anthropic.com/',                   note: '' },
+  zhipu:     { link: 'https://open.bigmodel.cn/usercenter/apikeys',      note: '' },
+  qwen:      { link: 'https://dashscope.console.aliyun.com/apiKey',      note: '' },
+  kimi:      { link: 'https://platform.moonshot.cn/console/api-keys',    note: '' },
+  doubao:    { link: 'https://console.volcengine.com/ark',               note: '⚠ 需填火山方舟接入点 ID（CHAT_MODEL=ep-xxx）' },
+  wenxin:    { link: 'https://qianfan.cloud.baidu.com/',                 note: '' },
+  xai:       { link: 'https://console.x.ai/',                            note: '' },
+};
 
-    // ─── 连通性测试 ───────────────────────────────────────────────────────
-    document.getElementById('btn-test-chat')?.addEventListener('click', async () => {
-      const btn = document.getElementById('btn-test-chat');
-      const out = document.getElementById('test-chat-result');
-      btn.disabled = true;
-      out.textContent = '测试中…（向当前 provider 发一句 ping）';
-      out.style.color = '#86868B';
-      try {
-        const r = await fetch('/api/setup/test-chat', { method: 'POST' });
-        const d = await r.json();
-        if (d.ok && d.data?.ok) {
-          out.style.color = '#28A745';
-          out.innerHTML = `✅ 连通成功 — ${d.data.provider?.label || ''} 延迟 ${d.data.latency_ms}ms · 返回："${(d.data.sample || '').slice(0, 30)}"`;
-        } else if (d.ok && d.data?.ok === false) {
-          // chatComplete 抛了业务异常（key 错 / 模型名错 / 余额不足等）
-          out.style.color = '#D63B3B';
-          out.textContent = `❌ ${d.data.error || '未知错误'}`;
-        } else {
-          out.style.color = '#D63B3B';
-          out.textContent = `❌ HTTP ${r.status}: ${d.error || d.message || '请求失败'}`;
-        }
-      } catch (e) {
-        out.style.color = '#D63B3B';
-        out.textContent = `❌ ${e.message}`;
-      } finally {
-        btn.disabled = false;
-      }
+// ─── 步骤路由 ──────────────────────────────────────────────────────────────
+let currentStep = 1;
+const TOTAL = 5;
+
+function goStep(n) {
+  if (n < 1 || n > TOTAL) return;
+  currentStep = n;
+  document.querySelectorAll('.step-tab').forEach(t => {
+    const s = Number(t.dataset.step);
+    t.classList.toggle('active', s === n);
+    t.classList.toggle('done', s < n);
+  });
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.toggle('active', Number(p.dataset.panel) === n);
+  });
+  if (n === 2) loadProviderStatus();
+  if (n === 3) loadStep3Info();
+}
+
+// ─── Step 1 ───────────────────────────────────────────────────────────────
+async function checkAuthMode() {
+  try {
+    const r = await fetch('/api/health');
+    const d = await r.json();
+    const isEmail = d.email?.mode === 'resend' || (d.auth_mode || '').includes('email');
+    document.getElementById('s1-email-mode').classList.toggle('hidden', !isEmail);
+    document.getElementById('s1-local-mode').classList.toggle('hidden', isEmail);
+  } catch {}
+}
+checkAuthMode();
+
+// 检测是否已登录（有 token）
+function isLoggedIn() {
+  return Boolean(localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'));
+}
+
+document.getElementById('s1-btn-register').addEventListener('click', async () => {
+  const username = document.getElementById('s1-username').value.trim();
+  const password = document.getElementById('s1-password').value;
+  const msg = document.getElementById('s1-msg');
+  if (!username || !password) { msg.className = 'mt-3 msg-err'; msg.textContent = '用户名和密码不能为空'; return; }
+  if (password.length < 6) { msg.className = 'mt-3 msg-err'; msg.textContent = '密码至少 6 位'; return; }
+  msg.className = 'mt-3 msg-info'; msg.textContent = '注册中…';
+  try {
+    const r = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
     });
-  </script>
+    const d = await r.json();
+    if (d.success || d.ok) {
+      msg.className = 'mt-3 msg-ok'; msg.textContent = '✅ 注册成功！';
+      // 自动登录
+      await doLogin(username, password);
+    } else {
+      msg.className = 'mt-3 msg-err'; msg.textContent = '❌ ' + (d.message || d.error || '注册失败');
+    }
+  } catch (e) { msg.className = 'mt-3 msg-err'; msg.textContent = '❌ ' + e.message; }
+});
+
+document.getElementById('s1-btn-login').addEventListener('click', async () => {
+  const username = document.getElementById('s1-username').value.trim();
+  const password = document.getElementById('s1-password').value;
+  const msg = document.getElementById('s1-msg');
+  if (!username || !password) { msg.className = 'mt-3 msg-err'; msg.textContent = '请填用户名和密码'; return; }
+  msg.className = 'mt-3 msg-info'; msg.textContent = '登录中…';
+  await doLogin(username, password);
+});
+
+async function doLogin(username, password) {
+  const msg = document.getElementById('s1-msg');
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const d = await r.json();
+    if (d.token) {
+      localStorage.setItem('auth_token', d.token);
+      msg.className = 'mt-3 msg-ok'; msg.textContent = '✅ 已登录！';
+    } else {
+      msg.className = 'mt-3 msg-err'; msg.textContent = '❌ ' + (d.message || d.error || '登录失败');
+    }
+  } catch (e) { msg.className = 'mt-3 msg-err'; msg.textContent = '❌ ' + e.message; }
+}
+
+document.getElementById('s1-btn-next').addEventListener('click', () => goStep(2));
+
+// ─── Step 2 ───────────────────────────────────────────────────────────────
+async function loadProviderStatus() {
+  try {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const r = await fetch('/api/setup/provider-status', { headers });
+    const d = await r.json();
+    if (!d.ok) return;
+    const active = d.data.chat_provider;
+    const pInfo = d.data.providers?.[active];
+    const cur = document.getElementById('s2-current');
+    if (pInfo?.configured) {
+      cur.classList.remove('hidden');
+      document.getElementById('s2-cur-label').textContent = pInfo.label || active;
+      // source 和 masked_key 仅登录后返回
+      if (pInfo.source) {
+        document.getElementById('s2-cur-source').textContent =
+          pInfo.source === 'env' ? '环境变量 (.env)' : '数据库 (Setup 向导)';
+      } else {
+        document.getElementById('s2-cur-source').textContent = '已配置（登录后可查看来源）';
+      }
+      document.getElementById('s2-cur-masked').textContent = pInfo.masked_key || '（登录后可查看）';
+      // 预选当前 provider
+      const sel = document.getElementById('s2-provider');
+      if (sel.querySelector(`option[value="${active}"]`)) sel.value = active;
+    }
+  } catch {}
+}
+
+document.getElementById('s2-provider').addEventListener('change', (e) => {
+  const id = e.target.value;
+  const meta = PROVIDER_META[id];
+  const linkRow = document.getElementById('s2-link-row');
+  if (meta && id) {
+    linkRow.classList.remove('hidden');
+    document.getElementById('s2-link').href = meta.link;
+    document.getElementById('s2-link').textContent = meta.link.replace('https://', '');
+    document.getElementById('s2-note').textContent = meta.note;
+  } else {
+    linkRow.classList.add('hidden');
+  }
+});
+
+document.getElementById('s2-btn-save').addEventListener('click', async () => {
+  const provider = document.getElementById('s2-provider').value;
+  const apiKey   = document.getElementById('s2-apikey').value;
+  const msg      = document.getElementById('s2-msg');
+  if (!provider) { msg.className = 'mt-3 msg-err'; msg.textContent = '请选择 Provider'; return; }
+  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { msg.className = 'mt-3 msg-err'; msg.textContent = '请先登录（Step 1）'; return; }
+  msg.className = 'mt-3 msg-info'; msg.textContent = '保存中…';
+  try {
+    const r = await fetch('/api/setup/provider-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ chat_provider: provider, api_key: apiKey }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      msg.className = 'mt-3 msg-ok';
+      msg.textContent = `✅ 已保存 ${d.data.label}${d.data.key_saved ? '（含 API Key）' : '（未修改旧 Key）'}`;
+      await loadProviderStatus();
+    } else {
+      msg.className = 'mt-3 msg-err'; msg.textContent = '❌ ' + (d.error || '保存失败');
+    }
+  } catch (e) { msg.className = 'mt-3 msg-err'; msg.textContent = '❌ ' + e.message; }
+});
+
+document.getElementById('s2-btn-back').addEventListener('click', () => goStep(1));
+document.getElementById('s2-btn-next').addEventListener('click', () => goStep(3));
+
+// ─── Step 3 ───────────────────────────────────────────────────────────────
+async function loadStep3Info() {
+  try {
+    const r = await fetch('/api/setup/status');
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('s3-provider-name').textContent =
+        (d.data.chat_label || d.data.chat_provider || '未配置') +
+        (d.data.configured ? '' : ' ⚠ 尚未配置 Key');
+    }
+  } catch {}
+}
+
+document.getElementById('s3-btn-test').addEventListener('click', async () => {
+  const btn = document.getElementById('s3-btn-test');
+  const msg = document.getElementById('s3-msg');
+  btn.disabled = true;
+  msg.className = 'mt-3 msg-info'; msg.textContent = '测试中（向 provider 发一句 ping）…';
+  try {
+    // 先取当前活跃 provider
+    const sr = await fetch('/api/setup/status');
+    const sd = await sr.json();
+    const provider = sd.data?.chat_provider || 'deepseek';
+
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const r = await fetch('/api/setup/test-provider', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ provider }),
+    });
+    // 处理需要登录的情况
+    if (r.status === 401 || r.status === 403) {
+      msg.className = 'mt-3 msg-err';
+      msg.textContent = '请先登录后再测试 Provider 配置。（返回 Step 1 登录）';
+      return;
+    }
+    const d = await r.json();
+    if (d.ok && d.data?.ok) {
+      msg.className = 'mt-3 msg-ok';
+      msg.textContent = `✅ 连通成功！${d.data.label || provider} 延迟 ${d.data.latency_ms}ms`;
+    } else {
+      msg.className = 'mt-3 msg-err';
+      msg.textContent = `❌ ${d.data?.error || d.error || '连通失败'}`;
+    }
+  } catch (e) {
+    msg.className = 'mt-3 msg-err'; msg.textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('s3-btn-back').addEventListener('click', () => goStep(2));
+document.getElementById('s3-btn-next').addEventListener('click', () => goStep(4));
+
+// ─── Step 4 ───────────────────────────────────────────────────────────────
+document.getElementById('s4-btn-back').addEventListener('click', () => goStep(3));
+document.getElementById('s4-btn-next').addEventListener('click', () => goStep(5));
+
+// ─── 初始化：跳过已完成步骤 ──────────────────────────────────────────────
+(async function init() {
+  try {
+    const r = await fetch('/api/setup/status');
+    const d = await r.json();
+    if (d.ok && !d.data.setup_required) {
+      // Provider 已配置，跳到 Step 3
+      goStep(3);
+      return;
+    }
+    if (isLoggedIn()) goStep(2);
+  } catch {}
+})();
+</script>
 </body>
 </html>

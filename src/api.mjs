@@ -78,7 +78,7 @@ import { getEmailMode } from './email.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { buildImageReactionText, computeRelationshipStage, extractImageMemories } from './memory.mjs';
 import { generatePersonaFacts, generateAvatarCandidates, embedText } from './ai.mjs';
-import { getActiveChatProvider } from './providers/chat.mjs';
+import { getActiveChatProvider, REGISTRY as CHAT_REGISTRY } from './providers/chat.mjs';
 import { getActiveImageProvider } from './providers/image.mjs';
 import { getActiveVisionProvider } from './providers/vision.mjs';
 import { getActiveAsrProvider } from './providers/asr.mjs';
@@ -153,6 +153,7 @@ import {
   isCompanionOwnedByAccount,
   getEmotionState, upsertEmotionState,
   getEmotionHistoryTrend,
+  getAppSetting, setAppSetting, deleteAppSetting,
 } from './db.mjs';
 import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, normalizeMemoryWeight } from './memory_v2.mjs';
 import { getEmotionTrend } from './emotion_state.mjs';
@@ -1760,6 +1761,121 @@ router.post('/companions/:id/persona/regenerate', requireAuth, async (req, res) 
     return err(res, '生成失败', 500);
   }
 });
+
+// ─── Setup Wizard API ─────────────────────────────────────────────────────────
+
+// 辅助：掩码 key，只保留首 4 + 末 4 字符
+function maskApiKey(s) {
+  if (!s || s.length < 8) return '****';
+  return s.slice(0, 4) + '···' + s.slice(-4);
+}
+
+// GET /api/setup/status — 轻量状态（不含 secret，给 setup.html 首屏用）
+router.get('/setup/status', (_req, res) => {
+  const chat = getActiveChatProvider();
+  const entry = CHAT_REGISTRY[chat.id];
+  const keyEnv = entry?.apiKeyEnv;
+  const hasEnvKey  = keyEnv ? Boolean(process.env[keyEnv]) : false;
+  const hasDbKey   = keyEnv && !hasEnvKey ? Boolean(getAppSetting(keyEnv)) : false;
+  const configured = hasEnvKey || hasDbKey;
+  return ok(res, {
+    setup_required: !configured,
+    chat_provider: chat.id,
+    chat_label: chat.label,
+    configured,
+    source: hasEnvKey ? 'env' : hasDbKey ? 'app_settings' : 'missing',
+  });
+});
+
+// GET /api/setup/provider-status — 各 provider 配置状态
+// 未登录：只返回 configured 布尔值，不返回 masked_key / source（防信息泄露）
+// 已登录：额外返回 masked_key 和 source
+router.get('/setup/provider-status', softAuth, (req, res) => {
+  const isAuthed = Boolean(req.authUser);
+  const active = getActiveChatProvider();
+  const providers = {};
+  for (const [id, entry] of Object.entries(CHAT_REGISTRY)) {
+    const envVal  = process.env[entry.apiKeyEnv] || '';
+    const dbVal   = envVal ? '' : (getAppSetting(entry.apiKeyEnv) || '');
+    const rawKey  = envVal || dbVal;
+    if (rawKey) {
+      const info = { configured: true, label: entry.label };
+      if (isAuthed) {
+        info.source     = envVal ? 'env' : 'app_settings';
+        info.masked_key = maskApiKey(rawKey);
+      }
+      providers[id] = info;
+    } else {
+      providers[id] = { configured: false, label: entry.label };
+    }
+  }
+  return ok(res, { chat_provider: active.id, providers });
+});
+
+// POST /api/setup/provider-config — 保存 chat provider + API key（需登录）
+router.post('/setup/provider-config',
+  requireAuth,
+  async (req, res) => {
+    const { chat_provider, api_key, clear_key = false } = req.body || {};
+    if (!chat_provider || typeof chat_provider !== 'string') return err(res, 'chat_provider 不能为空');
+    const name = chat_provider.toLowerCase().trim();
+    if (!CHAT_REGISTRY[name]) {
+      return err(res, `未知 provider: ${name}，可选：${Object.keys(CHAT_REGISTRY).join(', ')}`);
+    }
+    const entry = CHAT_REGISTRY[name];
+    // 保存 CHAT_PROVIDER（非 secret）
+    setAppSetting('CHAT_PROVIDER', name, { secret: 0 });
+    // 处理 API key
+    const trimmedKey = typeof api_key === 'string' ? api_key.trim() : '';
+    if (trimmedKey.length >= 8) {
+      setAppSetting(entry.apiKeyEnv, trimmedKey, { secret: 1 });
+      log('info', `[Setup] provider-config: ${name} API key 已更新（已隐藏）`);
+    } else if (clear_key) {
+      deleteAppSetting(entry.apiKeyEnv);
+      log('info', `[Setup] provider-config: ${name} API key 已清除`);
+    }
+    return ok(res, {
+      chat_provider: name,
+      label: entry.label,
+      key_saved: trimmedKey.length >= 8,
+    });
+  },
+);
+
+// POST /api/setup/test-provider — 测试指定 provider 连通性
+// 允许匿名访问的唯一场景：AUTH_MODE!=email + user_count=0 + 请求来自 localhost
+// 其他情况一律 requireAuth
+router.post('/setup/test-provider',
+  rateLimit({ scope: 'test-provider', maxPerWindow: 10, windowMs: 60_000, message: '测试过于频繁，请稍后再试' }),
+  softAuth,
+  async (req, res) => {
+    // 权限检查
+    if (!req.authUser) {
+      const ip = req.ip || req.socket?.remoteAddress || '';
+      const isLocalhost = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip);
+      const isLocalMode = (process.env.AUTH_MODE || 'local').toLowerCase() !== 'email';
+      let userCount = 0;
+      try { userCount = countAllAccounts(); } catch {}
+      // 仅首次本地初始化阶段（user_count=0 + 本地请求 + local 模式）允许匿名
+      if (!isLocalhost || !isLocalMode || userCount > 0) {
+        return res.status(401).json({ ok: false, success: false, message: '请先登录后再测试 Provider 配置' });
+      }
+    }
+    const { provider } = req.body || {};
+    if (!provider || typeof provider !== 'string') return err(res, 'provider 不能为空');
+    const name = provider.toLowerCase().trim();
+    if (!CHAT_REGISTRY[name]) return err(res, `未知 provider: ${name}`);
+    try {
+      const { testChatProvider } = await import('./providers/chat.mjs');
+      const result = await testChatProvider(name);
+      return ok(res, result);
+    } catch (e) {
+      const msg = String(e?.message || 'unknown error').slice(0, 200);
+      log('warn', `[Setup] test-provider ${name} 失败（已隐藏详情）`);
+      return res.status(200).json({ ok: false, error: msg });
+    }
+  },
+);
 
 // POST /api/setup/test-chat — 给 setup.html 用：用最低 token 数发一次 ping，验证
 // 当前 CHAT_PROVIDER + 对应的 API key 是否能跑通。不需要鉴权（首次启动时还没账号），
