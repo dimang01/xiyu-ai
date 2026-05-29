@@ -4,7 +4,8 @@
  */
 import {
   getActiveBotAccounts, getRecentHistory, getUserProfile, recallMemories,
-  getConversationContext, getDueReminders, saveMessage, saveConversationTurn,
+  getConversationContext, getDueReminders, markRemindersTriggered, ensureRelationshipReminders,
+  saveMessage, saveConversationTurn,
   getCompanionById, getBotContextForCompanion, getUserPlan, getDb,
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
@@ -83,6 +84,20 @@ async function tick(now = new Date()) {
           log('warn', `[Proactive] ensureSchedule 异常 companion=${companion.id}: ${err.message}`)
         );
       }
+      // ── 纪念日 / 提醒主动推送 ──────────────────────────────────────────────
+      // 事件驱动，独立于随机日程，也绕过 v2 抑制：生日/纪念日这种特殊日子该发就发。
+      // 发完即标记 last_triggered_at，保证当天只发一次、且不再作为后续消息的上下文重复出现。
+      try {
+        ensureRelationshipReminders(companion); // 懒初始化关系里程碑（仅一次）
+        const dueReminders = getDueReminders(companion.id, dateKey);
+        if (dueReminders.length > 0) {
+          await sendProactiveMessage(companion, 'reminder', account, { reminders: dueReminders });
+          markRemindersTriggered(companion.id, dueReminders.map(r => r.id), dateKey);
+        }
+      } catch (e) {
+        log('warn', `[Proactive] reminder 推送异常 companion=${companion.id}: ${e.message}`);
+      }
+
       const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, isPro, companion);
       const dueItems = schedule.items.filter(item => !item.sent && item.minute <= minuteNow);
       for (const item of dueItems) {
@@ -244,7 +259,7 @@ function hasMinGap(minutes, minGap) {
   return minutes.length === 0 || LAST_MINUTE - minutes[minutes.length - 1] >= minGap;
 }
 
-async function sendProactiveMessage(companion, kind, account) {
+async function sendProactiveMessage(companion, kind, account, opts = {}) {
   if (!companion.wechat_user_id) return;
   const ctx = account
     ? { token: account.bot_token, botId: account.bot_id }
@@ -302,7 +317,15 @@ async function sendProactiveMessage(companion, kind, account) {
     }
   }
 
-  const userMessage = effectiveKind === 'goodnight'
+  const reminderTitles = (opts.reminders || []).map(r => r.title).filter(Boolean).join('、');
+  const userMessage = effectiveKind === 'reminder'
+    ? `今天是一个对你们来说特别的日子：${reminderTitles || '一个值得纪念的日子'}。
+你要主动给他发一条温暖、走心的祝福消息：
+- 自然地点出这个日子，表达你的心意，符合你的人设和你们当前的关系
+- 不要喊口号、不要太用力、不要像贺卡模板
+- 可以带一点你此刻的小情绪（开心 / 感慨 / 害羞）
+- 如果是"认识100天""一周年"这类，可以轻轻回顾你们一路的相处`
+    : effectiveKind === 'goodnight'
     ? '你要主动给他发今天最后一条晚安消息。自然、温柔，适合 23:00 前后的语气，不要报时。结合你们最近聊过的事，体现你的人设和心情。'
     : effectiveKind === 'confession'
     ? `【★ 重要：今天你要主动向他告白】
@@ -393,7 +416,11 @@ async function sendProactiveMessage(companion, kind, account) {
       await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 1200)));
     }
   }
-  saveConversationTurn(companion.id, 'assistant', reply, effectiveKind === 'goodnight' ? '晚安' : (effectiveKind === 'confession' ? '主动告白' : '主动消息'));
+  const turnTopic = effectiveKind === 'goodnight' ? '晚安'
+    : effectiveKind === 'confession' ? '主动告白'
+    : effectiveKind === 'reminder' ? '纪念日祝福'
+    : '主动消息';
+  saveConversationTurn(companion.id, 'assistant', reply, turnTopic);
 
   // ── 主动告白后处理：标记 + 升级关系到恋人 ──
   if (effectiveKind === 'confession') {
