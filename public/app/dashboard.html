@@ -694,6 +694,10 @@
             <span id="ms-asr-info" class="text-mute">—</span>
           </div>
           <div class="flex items-center justify-between">
+            <span>🔊 语音合成</span>
+            <span id="ms-tts-info" class="text-mute">—</span>
+          </div>
+          <div class="flex items-center justify-between">
             <span>🌐 联网搜索</span>
             <span id="ms-search-info" class="text-mute">—</span>
           </div>
@@ -1939,7 +1943,7 @@
         MS.activeChat = data.chat_provider || '';
         MS.activeChatModel = data.chat_model_override || '';
         renderChatSection();
-        renderOptional(data.vision, data.asr, data.search);
+        renderOptional(data.vision, data.asr, data.search, data.tts);
         updateHeaderLabel(MS.activeChat, data.chat_model || '');
       } catch (e) { msMsg('加载失败：' + e.message, 'err'); }
     }
@@ -2022,13 +2026,19 @@
       modelRow.classList.remove('hidden');
     }
 
-    function renderOptional(vision, asr, search) {
+    function renderOptional(vision, asr, search, tts) {
       const v = document.getElementById('ms-vision-info');
       const a = document.getElementById('ms-asr-info');
       const s = document.getElementById('ms-search-info');
+      const t = document.getElementById('ms-tts-info');
       if (vision) v.textContent = vision.active_configured ? `${vision.active}（${vision.active_model || '默认'}）` : '未启用';
       if (asr)    a.textContent = asr.active_configured    ? `${asr.active}（${asr.active_model || '默认'}）`    : '未启用';
       if (search) s.textContent = search.active_configured ? `${search.active}` : '未启用';
+      if (tts && t) {
+        t.textContent = tts.configured
+          ? `${tts.active}（${tts.voice_id || tts.model || '默认'}）`
+          : (tts.active ? `${tts.active}（未配齐）` : '未启用');
+      }
     }
 
     function updateHeaderLabel(provider, model) {
