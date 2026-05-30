@@ -46,6 +46,7 @@ export function getDb() {
     migrateP2Tables();
     migrateDiary();
     migrateReminderPush();
+    migrateProactiveDailyTarget();
     migrateAppSettings();
   }
   return db;
@@ -962,7 +963,7 @@ const ALLOWED_FIELDS = new Set([
   'hobbies', 'favorite_food', 'favorite_music', 'pet_preference',
   'how_met', 'relationship_status', 'shared_memory',
   'memory_priorities',
-  'proactive_enabled', 'proactive_frequency', 'proactive_time_window',
+  'proactive_enabled', 'proactive_frequency', 'proactive_time_window', 'proactive_daily_target',
   'voice_reply_enabled', 'sticker_reply_enabled',
   'call_user_as', 'user_call_her_as',
   'persona_prompt', 'forbidden_topics',
@@ -2808,6 +2809,13 @@ export function getDueReminders(companionId, today = localDateString()) {
 function migrateReminderPush() {
   // 防止 ensureRelationshipReminders 在用户删除自动提醒后反复重建。
   addColIfMissing('companions', 'relationship_reminders_seeded', 'INTEGER DEFAULT 0');
+}
+
+// ─── Proactive Daily Target ─────────────────────────────────────────────────
+// v1.3.3: 替代 v1.3.2 的 free/pro 三段式频率。开源版让用户直接拖动 0-30 整数。
+// 默认 10 与旧"适中"档中位数接近；老 companion 升级后立刻就有合理值。
+function migrateProactiveDailyTarget() {
+  addColIfMissing('companions', 'proactive_daily_target', 'INTEGER DEFAULT 10');
 }
 
 export function markRemindersTriggered(companionId, ids, dateKey) {

@@ -182,19 +182,15 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
   const jitteredEnd = Math.min(LAST_MINUTE,
     endMinute === GOODNIGHT_MINUTE ? jitteredGoodnight : Math.max(endMinute, jitteredGoodnight));
 
-  // v1.3.2: 用户可在 dashboard 调节频率。companion.proactive_frequency 早就在
-  // 表里（DEFAULT '适中'），但旧代码完全没读它。区间按"少/适中/多"三档 × Pro 状态：
-  //   少    Free 0-1   Pro 2-5
-  //   适中  Free 1-3   Pro 5-15  （和旧默认完全一致，老用户体验不变）
-  //   多    Free 3-5   Pro 12-25
-  const freqRanges = {
-    '少':   { free: [0, 1],  pro: [2, 5] },
-    '适中': { free: [1, 3],  pro: [5, 15] },
-    '多':   { free: [3, 5],  pro: [12, 25] },
-  };
-  const freq = freqRanges[companion?.proactive_frequency] || freqRanges['适中'];
-  const [lo, hi] = isPro ? freq.pro : freq.free;
-  const fullCount = lo + Math.floor(Math.random() * (hi - lo + 1));
+  // v1.3.3: 用户直接拖动滑块调整每天目标条数（0-30），不再区分 free/pro。
+  // 字段 proactive_daily_target INTEGER DEFAULT 10。实际生成数量在
+  // [target × 0.8, target × 1.2] 之间随机抖动 ±20%，避免每天数字太机械。
+  // target=0 → 完全静默（仅响应用户消息），不发任何主动消息。
+  const rawTarget = Number(companion?.proactive_daily_target);
+  const target = Number.isFinite(rawTarget) ? Math.min(30, Math.max(0, Math.floor(rawTarget))) : 10;
+  const lo = Math.max(0, Math.floor(target * 0.8));
+  const hi = Math.max(lo, Math.ceil(target * 1.2));
+  const fullCount = target === 0 ? 0 : lo + Math.floor(Math.random() * (hi - lo + 1));
 
   // 关键修复：重启后只从「现在 → 结束」区间挑随机时间，否则前半天的时间点全被标 sent 浪费配额
   // 等比例缩放：若已过去 60%，则今天剩余配额按 40% × fullCount 来挑
