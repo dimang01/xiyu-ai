@@ -82,9 +82,13 @@ function hexToBuffer(hexStr) {
 }
 
 // ─── MiniMax T2A v2 调用 ──────────────────────────────────────────────────
+// GROUP_ID 是可选的：
+//   - 老式 JWT key（eyJhbG...）需要 GroupId 路由租户
+//   - 新式 sk-api-... key 已经把 group 信息嵌在 key 里，调用时无需传
 async function minimaxSynthesize({ apiKey, groupId, model, voice_id, speed = 1.0, text, signal }) {
-  if (!groupId) throw new Error('[tts:minimax] 缺少 MINIMAX_GROUP_ID');
-  const url = `https://api.minimax.chat/v1/t2a_v2?GroupId=${encodeURIComponent(groupId)}`;
+  const url = groupId
+    ? `https://api.minimax.chat/v1/t2a_v2?GroupId=${encodeURIComponent(groupId)}`
+    : 'https://api.minimax.chat/v1/t2a_v2';
   const body = {
     model,
     text,
@@ -154,7 +158,8 @@ export async function ttsSynthesize(text, opts = {}) {
   try {
     let audio;
     if (entry.kind === 'minimax-native') {
-      const groupId = readSetting(entry.groupIdEnv);
+      // GroupId 现在可选（参见 minimaxSynthesize 的注释）
+      const groupId = entry.groupIdEnv ? readSetting(entry.groupIdEnv) : null;
       audio = await minimaxSynthesize({
         apiKey, groupId, model, voice_id, speed,
         text, signal: controller.signal,
@@ -178,13 +183,12 @@ export function getTtsStatus() {
   const entry = getEntry(name);
   if (!entry) return { active: name, configured: false, error: 'unknown-provider', providers: Object.keys(REGISTRY) };
   const apiKey = getApiKey(entry);
-  const extraOk = entry.groupIdEnv ? !!readSetting(entry.groupIdEnv) : true;
   return {
     active: name,
     label: entry.label,
     model: getModelFor(entry),
     voice_id: getVoiceId(entry),
-    configured: !!apiKey && extraOk,
+    configured: !!apiKey,  // GROUP_ID 现在可选，仅 apiKey 必填
     providers: Object.keys(REGISTRY),
   };
 }
