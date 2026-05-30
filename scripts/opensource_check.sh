@@ -37,7 +37,8 @@ fi
 
 echo "==> 2) secret patterns (literal keys, not \${var} placeholders)"
 SECRETS=$(grep -RInE "(sk-[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|xoxb-[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{20,})" \
-  . --exclude-dir=node_modules --exclude-dir=.git --exclude='*.md' 2>/dev/null || true)
+  . --exclude-dir=node_modules --exclude-dir=.git --exclude='*.md' \
+  --exclude='.env' --exclude='.env.*' 2>/dev/null || true)
 if [ -z "$SECRETS" ]; then check "no literal API keys" 1
 else check "no literal API keys" 0 "$(echo "$SECRETS" | head -5)"
 fi

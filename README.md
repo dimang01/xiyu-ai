@@ -35,6 +35,17 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 ---
 
+### 🆕 v1.4.0 更新（网页语音）
+
+| 新增 | 说明 |
+|------|------|
+| 🎙️ **网页录音 → AI** | Playground 加麦克风按钮，按一下说话、再按停，自动 ASR 识别为文字发给她。无需打字也能聊 |
+| 🔊 **每条回复可朗读** | Playground 她的每条回复旁都有 🔊 按钮，点一下浏览器直接播 mp3 |
+| 📔 **她念日记给你听** | Diary 页每篇日记有朗读按钮，按句切段连续播放整篇 |
+| 🎚️ **Dashboard 试听** | 网页语音体验卡片含试听按钮，秒验 TTS provider 配通没 |
+| 🛠️ **TTS pipeline** | `src/providers/tts.mjs` 抽象层（MiniMax 已支持，Sprint 3 加豆包/Azure/OpenAI），`src/voice_pipeline.mjs` 走 MP3/SILK 转码 |
+| ⚠️ **诚实提醒** | iLink/ClawBot 协议不支持 bot 在微信里发语音（实测 HTTP 200 但消息丢弃，腾讯反欺诈），所以语音仅在网页/PWA 生效 |
+
 ### 🆕 v1.3.0 更新
 
 | 新增 | 说明 |

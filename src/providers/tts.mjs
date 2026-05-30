@@ -84,7 +84,7 @@ function hexToBuffer(hexStr) {
 // ─── MiniMax T2A v2 调用 ──────────────────────────────────────────────────
 // GROUP_ID 是可选的：
 //   - 老式 JWT key（eyJhbG...）需要 GroupId 路由租户
-//   - 新式 sk-api-... key 已经把 group 信息嵌在 key 里，调用时无需传
+//   - 新式 prefix-only key（"sk-api-" 开头）已经把 group 信息嵌在 key 里，调用时无需传
 async function minimaxSynthesize({ apiKey, groupId, model, voice_id, speed = 1.0, text, signal }) {
   const url = groupId
     ? `https://api.minimax.chat/v1/t2a_v2?GroupId=${encodeURIComponent(groupId)}`

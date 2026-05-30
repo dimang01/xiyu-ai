@@ -200,14 +200,68 @@ async function loadDiary(reset) {
     card.innerHTML =
       `<div class="flex items-center justify-between mb-3">
          <div class="text-sm font-semibold text-ink">${fmtDate(e.date_key)}${kindBadge}</div>
-         ${mood}
+         <div class="flex items-center gap-2">
+           ${mood}
+           <button type="button" class="play-diary text-[16px] text-sakura-deep/60 hover:text-sakura-deep hover:scale-110 transition-all" title="听她念给你">🔊</button>
+         </div>
        </div>
        <div class="diary-body text-[15px] text-ink/90">${escHtml(e.content)}</div>`;
+    // 朗读按钮绑事件（v1.4.0 Sprint 2.5）
+    card.querySelector('.play-diary').addEventListener('click', (ev) => {
+      playDiary(e.content, ev.currentTarget);
+    });
     listEl.appendChild(card);
   }
 
   offset += entries.length;
   document.getElementById('loadMoreBtn').classList.toggle('hidden', offset >= total);
+}
+
+// v1.4.0 Sprint 2.5: 听她念日记。后端 /tts-preview 限 100 字，长日记按句号切段播放。
+let _diaryAudio = null;
+async function playDiary(content, btnEl) {
+  try {
+    if (_diaryAudio) { _diaryAudio.pause(); _diaryAudio = null; }
+    if (btnEl) btnEl.style.opacity = '0.4';
+    // 按句号 / 问号 / 感叹号切段，每段 ≤ 100 字
+    const raw = String(content || '').replace(/\s+/g, ' ').trim();
+    const segs = [];
+    let cur = '';
+    for (const ch of raw) {
+      cur += ch;
+      if (/[。！？!?]/.test(ch) && cur.length >= 20) { segs.push(cur); cur = ''; }
+      else if (cur.length >= 90) {
+        // 找最近一个停顿或逗号切
+        const stopIdx = Math.max(cur.lastIndexOf('，'), cur.lastIndexOf('。'), cur.lastIndexOf(' '));
+        if (stopIdx > 30) { segs.push(cur.slice(0, stopIdx + 1)); cur = cur.slice(stopIdx + 1); }
+      }
+    }
+    if (cur.trim()) segs.push(cur);
+
+    for (const seg of segs) {
+      const r = await fetch('/api/companions/' + companionId + '/tts-preview', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: seg.slice(0, 100) }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || ('HTTP ' + r.status));
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      _diaryAudio = new Audio(url);
+      await new Promise((resolve, reject) => {
+        _diaryAudio.onended = resolve;
+        _diaryAudio.onerror = reject;
+        _diaryAudio.play().catch(reject);
+      });
+    }
+  } catch (e) {
+    showToast('朗读失败：' + e.message);
+  } finally {
+    if (btnEl) btnEl.style.opacity = '';
+  }
 }
 
 function showToast(msg) {
