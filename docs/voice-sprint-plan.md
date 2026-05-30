@@ -471,3 +471,34 @@ docker pull ghcr.io/dimang01/xiyu-ai:1.4.0
 ---
 
 *文档生成于 v1.3.3 之后。如果开干时本仓已有新版本，优先看 main HEAD 实际情况。*
+
+---
+
+# 🚨 重要更新（Sprint 2 失败 → Sprint 2.5 转向）
+
+**2026-05-30 实测得到结论：iLink/ClawBot 协议禁止 bot outbound voice。**
+
+### 证据
+1. 实测：构造正确的 voice_item（playtime_ms / sample_rate=24000 / encode_type=6 SILK）+ 正确的 CDN media_type=VOICE(4) + 正确的 context_token → HTTP 200 但消息**静默丢弃**，微信端从未收到。
+2. 腾讯官方 SDK `@tencent-weixin/openclaw-weixin` 的 `src/messaging/send.js` 只实现 sendImage / sendVideo / sendFile，**没有 sendVoiceMessageWeixin**。注释明确："image send uses sendImageMessageWeixin"——voice 路径完全缺位。
+3. README / CHANGELOG 里 voice 词频为 0，从未作为 outbound 功能描述。
+4. 推测原因：腾讯反欺诈策略，不允许 bot 伪装真人发语音。
+
+### 影响
+- Sprint 2 的 `maybeSendVoice` / `proactive.mjs` 微信端 voice 触发 **已撤回** (v1.4.0 Sprint 2.5)
+- `src/ilink.mjs::sendVoiceMessage` 函数本身留着，万一腾讯将来放开协议即插即用
+- TTS pipeline / SILK 转码 / `tts-preview` API 全部留着不变
+
+### Sprint 2.5：浏览器内语音（替代 Sprint 2 微信端）
+**已交付**（PR #?）：
+- T1: 撤 `proactive.mjs::maybeSendVoice` 及相关 import
+- T2: `POST /api/companions/:id/asr-transcribe` —— Playground 录音 → ASR → 文字 → 走原 chat 流
+- T3: Playground 每条 assistant 回复加 🔊 朗读按钮（浏览器 Audio 播 mp3）
+- T4: Diary 页加全文朗读（按句号切段、依次播）
+- T5: Dashboard 语音卡片改名「**网页语音体验**」，文案明示"iLink 协议不支持微信端"
+- T6: 本文档更新
+
+### Sprint 3 重新定义
+原 Sprint 3 计划：4 家 provider + 情绪映射 + setup wizard 接入。
+**调整为**：保留多 provider + setup wizard 入口，把"情绪驱动"用在**浏览器朗读速度/音调动态调整**而不是发到微信。
+

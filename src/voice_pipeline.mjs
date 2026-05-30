@@ -4,8 +4,10 @@
  * 调用链：
  *   text → ttsSynthesize() → mp3 Buffer → wx-voice encode → SILK Buffer + duration_ms
  *
- * 上游 (Sprint 2) src/proactive.mjs 会拿 silk + duration_ms 走 src/ilink.mjs::
- * sendVoiceMessage 推到微信。
+ * v1.4.0 SILK 输出原本是为微信发语音准备的；但 iLink 协议禁止 bot outbound voice
+ * （HTTP 200 静默丢弃，官方 SDK 没有 sendVoice）。所以 SILK 路径目前不在生产
+ * 链路里跑，留着是为协议层将来放开后能即插即用。生产用的是 mp3 路径（浏览器
+ * 端 playground 朗读 / dashboard 试听 / diary 朗读都直接播 mp3）。
  *
  * 临时文件策略：所有 mp3/silk 临时文件都在 os.tmpdir() 下，用随机名，try/finally
  * 必删。任何一步失败都不能留垃圾。

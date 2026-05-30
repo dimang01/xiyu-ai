@@ -48,6 +48,7 @@ export function getDb() {
     migrateReminderPush();
     migrateProactiveDailyTarget();
     migrateVoiceReply();
+    migrateContextTokenCache();
     migrateAppSettings();
   }
   return db;
@@ -2842,6 +2843,46 @@ function migrateVoiceReply() {
     CREATE INDEX IF NOT EXISTS idx_voice_usage_date
       ON companion_voice_usage(date_key);
   `);
+}
+
+// v1.4.0 hotfix: iLink context_token 持久化缓存。
+// 之前 src/ilink.mjs 的 lastContextTokenByPair 仅存内存 Map，进程一重启 / 任何独立
+// 脚本都拿不到，导致主动语音消息没 context 被 iLink 静默丢弃。
+// 现在改为内存 Map + SQLite 双写：write 时落表，read miss 时回表恢复到内存。
+function migrateContextTokenCache() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ilink_context_tokens (
+      bot_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      token TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (bot_id, user_id)
+    );
+  `);
+}
+
+export function persistContextToken(botId, userId, token) {
+  if (!botId || !userId || !token) return;
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO ilink_context_tokens (bot_id, user_id, token, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(bot_id, user_id) DO UPDATE SET
+      token = excluded.token,
+      updated_at = excluded.updated_at
+  `).run(botId, userId, token, Date.now());
+}
+
+export function loadPersistedContextToken(botId, userId, maxAgeMs = 24 * 60 * 60 * 1000) {
+  if (!botId || !userId) return null;
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT token, updated_at FROM ilink_context_tokens
+    WHERE bot_id = ? AND user_id = ?
+  `).get(botId, userId);
+  if (!row) return null;
+  if (Date.now() - row.updated_at > maxAgeMs) return null;
+  return row.token;
 }
 
 // ─── voice usage 存取（v1.4.0 Sprint 2）─────────────────────────────────────

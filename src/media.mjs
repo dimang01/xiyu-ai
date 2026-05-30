@@ -21,11 +21,12 @@ const CDN_UPLOAD_TIMEOUT_MS = 60_000;
 const CDN_MAX_RETRIES = 3;
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
-// iLink 端 type 字段：1 IMAGE, 2 IMAGE_FILE? 我们目前只发图片
+// iLink 端 type 字段（MessageItemType）：1 TEXT, 2 IMAGE, 3 VOICE, 4 FILE, 5 VIDEO
 export const ItemType = { TEXT: 1, IMAGE: 2, VOICE: 3, FILE: 4, VIDEO: 5 };
-// v1.4.0 Sprint 2: VOICE CDN type — openclaw-weixin 协议把语音和文件走同一个 CDN 桶
-// （都是任意二进制 + AES-128-ECB），用 FILE(3) 作为 cdnType 上传，仅 ItemType 不同。
-export const CDNMediaType = { IMAGE: 1, VIDEO: 2, FILE: 3 };
+// CDN 上传 media_type（UploadMediaType）—— 注意和 ItemType 是两套枚举：
+// 1 IMAGE, 2 VIDEO, 3 FILE, 4 VOICE。VOICE 必须用 4，用 FILE(3) 会被 iLink 静默丢弃
+// （HTTP 200 但消息不送达微信端）。修自 v1.4.0 hotfix。
+export const CDNMediaType = { IMAGE: 1, VIDEO: 2, FILE: 3, VOICE: 4 };
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.webm', '.mkv', '.avi']);
@@ -43,7 +44,7 @@ function encryptAesEcb(plaintext, key) {
 function classifyMedia(fileName, mediaTypeOverride = null) {
   // 显式覆盖优先（caller 说"这是 voice"就当 voice，不靠后缀猜）
   if (mediaTypeOverride === 'voice') {
-    return { cdnType: CDNMediaType.FILE, itemType: ItemType.VOICE };
+    return { cdnType: CDNMediaType.VOICE, itemType: ItemType.VOICE };
   }
   if (mediaTypeOverride === 'image') {
     return { cdnType: CDNMediaType.IMAGE, itemType: ItemType.IMAGE };
@@ -54,7 +55,7 @@ function classifyMedia(fileName, mediaTypeOverride = null) {
   const ext = path.extname(fileName || '').toLowerCase();
   if (IMAGE_EXTS.has(ext)) return { cdnType: CDNMediaType.IMAGE, itemType: ItemType.IMAGE };
   if (VIDEO_EXTS.has(ext)) return { cdnType: CDNMediaType.VIDEO, itemType: ItemType.VIDEO };
-  if (VOICE_EXTS.has(ext)) return { cdnType: CDNMediaType.FILE,  itemType: ItemType.VOICE };
+  if (VOICE_EXTS.has(ext)) return { cdnType: CDNMediaType.VOICE, itemType: ItemType.VOICE };
   return { cdnType: CDNMediaType.FILE, itemType: ItemType.FILE };
 }
 
@@ -220,14 +221,17 @@ export async function uploadFile({ data, fileName, toUserId, ctx, mediaType = nu
   } else if (itemType === ItemType.VIDEO) {
     item = { type: ItemType.VIDEO, video_item: { media, video_size: cipherSize } };
   } else if (itemType === ItemType.VOICE) {
-    // SILK 是 encode_type=6（参见 iLink 协议）；voice_size 用密文长度（与 image 同范式）
+    // 字段名对齐 openclaw-weixin 官方 voice-outbound.js:
+    //   playtime_ms (不是 duration_ms)、encode_type=6 (SILK)、sample_rate=24000 (SILK 标准)
+    // 之前 voice_size 是 image_item 的范式，voice_item 里没有这字段、传了被 iLink 视为
+    // 协议错误静默丢弃。
     item = {
       type: ItemType.VOICE,
       voice_item: {
         media,
-        voice_size: cipherSize,
-        duration_ms: Math.round(durationMs),
+        playtime_ms: Math.round(durationMs),
         encode_type: 6,
+        sample_rate: 24000,
       },
     };
   } else {

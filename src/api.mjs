@@ -84,6 +84,7 @@ import { getActiveVisionProvider, REGISTRY as VISION_REGISTRY } from './provider
 import { getActiveAsrProvider, REGISTRY as ASR_REGISTRY } from './providers/asr.mjs';
 import { getActiveEmbeddingProvider } from './providers/embedding.mjs';
 import { synthesizeMp3Only } from './voice_pipeline.mjs';
+import { recognizeVoice } from './ai.mjs';
 import { getActiveSearchProvider, REGISTRY as SEARCH_REGISTRY } from './web_search.mjs';
 import {
   buildCompanionExport, validateCompanionImport, importCompanionForUser,
@@ -2920,6 +2921,31 @@ router.post('/companions/:id/tts-preview', requireAuth, async (req, res) => {
   } catch (e) {
     log('warn', `[API] tts-preview 失败 companion=${id}: ${e.message}`);
     return err(res, e.message || 'TTS 调用失败', 500);
+  }
+});
+
+// POST /api/companions/:id/asr-transcribe  (v1.4.0 Sprint 2.5)
+// body: { audio_base64: string, mime: 'audio/webm' | 'audio/ogg' | 'audio/mp4' | ... }
+// → { ok: true, data: { text: '识别出的中文文本' } }
+// 用于 playground 录音 → 识别 → 当普通文本继续走 playground-chat。
+router.post('/companions/:id/asr-transcribe', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const b64 = String(req.body?.audio_base64 || '').trim();
+  const mime = String(req.body?.mime || 'audio/webm').toLowerCase();
+  if (!b64) return err(res, '缺少 audio_base64');
+  let buf;
+  try { buf = Buffer.from(b64, 'base64'); }
+  catch { return err(res, 'audio_base64 解码失败'); }
+  if (!buf.length || buf.length > 1.5 * 1024 * 1024) {
+    return err(res, '音频过大或为空（≤1.5MB / ≤60s 建议）');
+  }
+  try {
+    const text = await recognizeVoice(buf, mime);
+    return ok(res, { text: (text || '').trim() });
+  } catch (e) {
+    log('warn', `[API] asr-transcribe 失败 companion=${id}: ${e.message}`);
+    return err(res, e.message || 'ASR 调用失败', 500);
   }
 });
 

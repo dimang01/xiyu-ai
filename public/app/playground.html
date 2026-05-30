@@ -69,6 +69,10 @@
       <textarea id="chat-input" rows="1" placeholder="说点什么…(Enter 发送 / Shift+Enter 换行)"
         class="flex-1 resize-none bg-cloud border border-line rounded-2xl px-4 py-2.5 text-[14px] focus:outline-none focus:border-sakura placeholder:text-mute"
         maxlength="2000"></textarea>
+      <button type="button" id="mic-btn" title="按住说话（识别为文字发送）"
+        class="flex-shrink-0 w-10 h-10 grid place-items-center text-sakura-deep border border-sakura-soft rounded-full hover:bg-sakura-soft transition-all">
+        🎙️
+      </button>
       <button type="submit" id="send-btn"
         class="flex-shrink-0 px-5 py-2.5 bg-gradient-to-r from-sakura to-sakura-deep text-white text-[13px] font-semibold rounded-full disabled:opacity-50 disabled:cursor-not-allowed">
         发送
@@ -128,11 +132,19 @@
     function appendThem(text) {
       if (!text) return;
       const row = document.createElement('div');
-      row.className = 'flex justify-start';
+      row.className = 'flex justify-start items-end gap-1.5';
       const b = document.createElement('div');
       b.className = 'bubble-them whitespace-pre-wrap text-[14px]';
       b.textContent = text;
       row.appendChild(b);
+      // v1.4.0 Sprint 2.5: 朗读按钮（浏览器播 mp3）
+      const playBtn = document.createElement('button');
+      playBtn.type = 'button';
+      playBtn.title = '朗读这条';
+      playBtn.className = 'mb-1 text-[16px] text-sakura-deep/60 hover:text-sakura-deep hover:scale-110 transition-all';
+      playBtn.textContent = '🔊';
+      playBtn.addEventListener('click', () => playTextAsVoice(text, playBtn));
+      row.appendChild(playBtn);
       msgs.appendChild(row);
       scrollEnd();
     }
@@ -263,6 +275,112 @@
         input.focus();
       }
     });
+
+    // ─── v1.4.0 Sprint 2.5: 朗读 & 录音 ──────────────────────────────────────
+    // 朗读：调 /tts-preview 拿 mp3，浏览器 Audio 播。多次点击不会叠播。
+    let _voiceAudio = null;
+    async function playTextAsVoice(text, btnEl) {
+      try {
+        if (!text || text.length > 100) {
+          // 超长截断到 100 字（与后端路由上限一致）
+          text = String(text).slice(0, 100);
+        }
+        if (_voiceAudio) { _voiceAudio.pause(); _voiceAudio = null; }
+        if (btnEl) btnEl.style.opacity = '0.4';
+        const r = await fetch('/api/companions/' + companionId + '/tts-preview', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ text }),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error || ('HTTP ' + r.status));
+        }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        _voiceAudio = new Audio(url);
+        _voiceAudio.onended = _voiceAudio.onerror = () => { if (btnEl) btnEl.style.opacity = ''; };
+        await _voiceAudio.play();
+      } catch (e) {
+        if (btnEl) btnEl.style.opacity = '';
+        appendSystem('❌ 朗读失败：' + e.message);
+      }
+    }
+
+    // 录音：MediaRecorder API → base64 → /asr-transcribe → 把文本填进输入框 + 自动发
+    const micBtn = document.getElementById('mic-btn');
+    let mediaRec = null;
+    let micChunks = [];
+    let micStream = null;
+    micBtn.addEventListener('click', async () => {
+      if (mediaRec && mediaRec.state === 'recording') {
+        // 第二次点击 → 停止录音
+        try { mediaRec.stop(); } catch {}
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        appendSystem('❌ 浏览器不支持麦克风');
+        return;
+      }
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        appendSystem('❌ 无法访问麦克风：' + (e.message || '已拒绝授权'));
+        return;
+      }
+      // 选 mime：优先 webm/opus（ASR 普遍支持），fallback 浏览器默认
+      let mime = 'audio/webm;codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported(mime)) mime = '';
+      mediaRec = new MediaRecorder(micStream, mime ? { mimeType: mime } : undefined);
+      micChunks = [];
+      mediaRec.ondataavailable = e => { if (e.data.size) micChunks.push(e.data); };
+      mediaRec.onstop = async () => {
+        // 关麦克风
+        for (const t of micStream.getTracks()) t.stop();
+        const blob = new Blob(micChunks, { type: mediaRec.mimeType || 'audio/webm' });
+        micBtn.textContent = '🎙️';
+        micBtn.classList.remove('bg-sakura-soft');
+        if (blob.size < 300) { appendSystem('录音太短了～'); return; }
+        if (blob.size > 1.5 * 1024 * 1024) { appendSystem('录音太长了，请保持在一分钟内'); return; }
+        // base64
+        const b64 = await blobToBase64(blob);
+        micBtn.disabled = true;
+        try {
+          const r = await fetch('/api/companions/' + companionId + '/asr-transcribe', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({ audio_base64: b64, mime: blob.type.split(';')[0] }),
+          });
+          const d = await r.json();
+          if (!r.ok || !d.ok) throw new Error(d.error || '识别失败');
+          const text = (d.data?.text || '').trim();
+          if (!text) { appendSystem('没识别到内容～'); return; }
+          input.value = text;
+          input.dispatchEvent(new Event('input'));
+          form.requestSubmit();
+        } catch (e) {
+          appendSystem('❌ 识别失败：' + e.message);
+        } finally {
+          micBtn.disabled = false;
+        }
+      };
+      mediaRec.start();
+      micBtn.textContent = '⏹️';
+      micBtn.classList.add('bg-sakura-soft');
+    });
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onloadend = () => {
+          const s = String(r.result || '');
+          const i = s.indexOf(',');
+          resolve(i >= 0 ? s.slice(i + 1) : s);
+        };
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+    }
 
     // ─── go ────────────────────────────────────────────────────────────────
     loadCompanion().then(() => loadHistory());

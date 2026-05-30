@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
 import { log } from './logger.mjs';
 import { uploadFile } from './media.mjs';
+import { persistContextToken, loadPersistedContextToken } from './db.mjs';
 
 const PLUGIN_VERSION = '2.4.4';
 const ILINK_APP_ID = 'bot';
@@ -40,12 +41,23 @@ function ctxPairKey(botId, userId) { return `${botId || ''}|${userId || ''}`; }
 export function rememberContextToken(botId, userId, token) {
   if (!botId || !userId || !token) return;
   lastContextTokenByPair.set(ctxPairKey(botId, userId), { token, at: Date.now() });
+  // v1.4.0 hotfix: 同步持久化到 sqlite，让重启 / 独立脚本也能取到。
+  // 失败静默，不阻塞热路径。
+  try { persistContextToken(botId, userId, token); } catch { /* DB 不可用时降级到纯内存 */ }
 }
 export function recallContextToken(botId, userId, maxAgeMs = 24 * 60 * 60 * 1000) {
   const entry = lastContextTokenByPair.get(ctxPairKey(botId, userId));
-  if (!entry) return null;
-  if (Date.now() - entry.at > maxAgeMs) return null;
-  return entry.token;
+  if (entry && (Date.now() - entry.at) <= maxAgeMs) return entry.token;
+  // miss → 回查持久化表（解决进程重启 / 独立脚本场景）
+  try {
+    const persisted = loadPersistedContextToken(botId, userId, maxAgeMs);
+    if (persisted) {
+      // 回填内存 cache，下次走快路径
+      lastContextTokenByPair.set(ctxPairKey(botId, userId), { token: persisted, at: Date.now() });
+      return persisted;
+    }
+  } catch { /* DB miss 不阻塞 */ }
+  return null;
 }
 
 function generateClientId() {
@@ -418,7 +430,23 @@ export async function sendMessageItem(ctx, toUserId, item, contextToken) {
     return false;
   }
 
+  // v1.4.0 hotfix: 主动消息（语音 / 图片 / sticker）没有原始入站 msg → context_token
+  // 是 null。iLink 协议要求 voice 必须带一个合法 context；不带的话服务端虽然返 HTTP 200
+  // 但实际不会推送给微信端（用户看不到消息）。sendMessage 一直有 cached token 兜底，
+  // sendMessageItem 之前漏了 → 主动语音永远收不到。这里补齐。
+  let useToken = contextToken;
+  if (!useToken) {
+    const cached = recallContextToken(ctx.botId, toUserId);
+    if (cached) {
+      useToken = cached;
+      log('debug', `[iLink] sendMessageItem using cached context_token bot=${shortBot(ctx.botId)}`);
+    } else {
+      log('warn', `[iLink] sendMessageItem no context_token (neither passed nor cached) bot=${shortBot(ctx.botId)} to=${toUserId} type=${item?.type}`);
+    }
+  }
+
   const clientId = generateClientId();
+  const itemKind = item?.type === 3 ? 'sendVoice' : 'sendImage';
   try {
     const result = await requestIlink(ctx, 'ilink/bot/sendmessage', {
       msg: {
@@ -428,16 +456,16 @@ export async function sendMessageItem(ctx, toUserId, item, contextToken) {
         message_type: MessageType.BOT,
         message_state: MessageState.FINISH,
         item_list: [item],
-        context_token: contextToken ?? undefined,
+        context_token: useToken ?? undefined,
       },
       base_info: BASE_INFO,
-    }, { timeoutMs: 20_000, label: `sendImage[${shortBot(ctx.botId)}]` });
-    setLastStatus(ctx.botId, 'sendImage', { ok: true, ...result });
-    log('info', `[iLink] sendImage success bot=${shortBot(ctx.botId)} HTTP=${result.httpStatus} clientId=${clientId} type=${item.type}`);
+    }, { timeoutMs: 20_000, label: `${itemKind}[${shortBot(ctx.botId)}]` });
+    setLastStatus(ctx.botId, itemKind, { ok: true, ...result });
+    log('info', `[iLink] ${itemKind} success bot=${shortBot(ctx.botId)} HTTP=${result.httpStatus} clientId=${clientId} type=${item.type}`);
     return true;
   } catch (err) {
-    setLastStatus(ctx.botId, 'sendImage', { ok: false, err });
-    log('warn', `[iLink] sendImage failed bot=${shortBot(ctx.botId)} HTTP=${err.httpStatus ?? 'null'} errcode=${err.errcode ?? 'null'} errmsg=${err.errmsg ?? err.message} clientId=${clientId}`);
+    setLastStatus(ctx.botId, itemKind, { ok: false, err });
+    log('warn', `[iLink] ${itemKind} failed bot=${shortBot(ctx.botId)} HTTP=${err.httpStatus ?? 'null'} errcode=${err.errcode ?? 'null'} errmsg=${err.errmsg ?? err.message} clientId=${clientId}`);
     return false;
   }
 }
