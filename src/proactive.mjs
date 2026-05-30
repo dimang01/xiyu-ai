@@ -182,10 +182,19 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
   const jitteredEnd = Math.min(LAST_MINUTE,
     endMinute === GOODNIGHT_MINUTE ? jitteredGoodnight : Math.max(endMinute, jitteredGoodnight));
 
-  // Pro: 5-15 条/天 含晚安；Free: 1-3 条/天，无晚安
-  const fullCount = isPro
-    ? Math.floor(Math.random() * 11) + 5
-    : Math.floor(Math.random() * 3) + 1;
+  // v1.3.2: 用户可在 dashboard 调节频率。companion.proactive_frequency 早就在
+  // 表里（DEFAULT '适中'），但旧代码完全没读它。区间按"少/适中/多"三档 × Pro 状态：
+  //   少    Free 0-1   Pro 2-5
+  //   适中  Free 1-3   Pro 5-15  （和旧默认完全一致，老用户体验不变）
+  //   多    Free 3-5   Pro 12-25
+  const freqRanges = {
+    '少':   { free: [0, 1],  pro: [2, 5] },
+    '适中': { free: [1, 3],  pro: [5, 15] },
+    '多':   { free: [3, 5],  pro: [12, 25] },
+  };
+  const freq = freqRanges[companion?.proactive_frequency] || freqRanges['适中'];
+  const [lo, hi] = isPro ? freq.pro : freq.free;
+  const fullCount = lo + Math.floor(Math.random() * (hi - lo + 1));
 
   // 关键修复：重启后只从「现在 → 结束」区间挑随机时间，否则前半天的时间点全被标 sent 浪费配额
   // 等比例缩放：若已过去 60%，则今天剩余配额按 40% × fullCount 来挑
