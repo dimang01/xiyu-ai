@@ -386,6 +386,10 @@
               <select id="s2-tts-provider" class="input">
                 <option value="">不启用</option>
                 <option value="minimax">MiniMax speech-02-turbo（推荐 · 新户送 500 字符）</option>
+                <option value="openai">OpenAI tts-1 / tts-1-hd（6 个内置音色 · 国内需代理）</option>
+                <option value="azure">Azure Speech（zh-CN-XiaoxiaoNeural 等海量音色 · 需 Region）</option>
+                <option value="doubao">豆包 TTS（火山引擎 · 需 AppID + Cluster）</option>
+                <option value="qwen">通义 CosyVoice / Qwen-TTS（DashScope · OpenAI 兼容模式）</option>
               </select>
             </div>
             <div class="mb-2">
@@ -396,12 +400,28 @@
             <div class="mb-2">
               <label class="block text-[12px] font-semibold mb-1">Voice ID（选填）</label>
               <input id="s2-tts-voice-id" class="input font-mono" type="text"
-                     placeholder="MiniMax 默认 female-tianmei；可改 male-* 或克隆音色 ID" autocomplete="off" spellcheck="false" />
+                     placeholder="留空使用该 provider 默认音色" autocomplete="off" spellcheck="false" />
+              <p id="s2-tts-voice-hint" class="text-[11px] text-mute/80 mt-1"></p>
+            </div>
+            <!-- Azure 专属：Region -->
+            <div class="mb-2 hidden" id="s2-tts-azure-row">
+              <label class="block text-[12px] font-semibold mb-1">Azure Region</label>
+              <input id="s2-tts-azure-region" class="input font-mono" type="text"
+                     placeholder="如 eastasia / westus / japaneast" autocomplete="off" spellcheck="false" />
+            </div>
+            <!-- 豆包专属：AppID + Cluster -->
+            <div class="mb-2 hidden" id="s2-tts-doubao-row">
+              <label class="block text-[12px] font-semibold mb-1">豆包 AppID</label>
+              <input id="s2-tts-doubao-appid" class="input font-mono mb-2" type="text"
+                     placeholder="火山引擎控制台 · 应用 ID" autocomplete="off" spellcheck="false" />
+              <label class="block text-[12px] font-semibold mb-1">Cluster</label>
+              <input id="s2-tts-doubao-cluster" class="input font-mono" type="text"
+                     placeholder="一般填 volcano_tts" autocomplete="off" spellcheck="false" />
             </div>
             <div class="mb-3">
-              <label class="block text-[12px] font-semibold mb-1">API Key</label>
+              <label class="block text-[12px] font-semibold mb-1" id="s2-tts-key-label">API Key</label>
               <input id="s2-tts-key" class="input font-mono" type="password"
-                     placeholder="MiniMax 控制台拿 · 新式 sk-api- 开头的 key 无需 GroupId" autocomplete="off" />
+                     placeholder="对应 provider 控制台拿" autocomplete="off" />
             </div>
             <div class="flex gap-2 flex-wrap">
               <button class="btn-outline" id="s2-tts-save" style="padding:6px 16px;font-size:13px">保存语音合成</button>
@@ -970,11 +990,47 @@ async function refreshOptional() {
       if (sel.querySelector(`option[value="${t.active}"]`)) sel.value = t.active;
       document.getElementById('s2-tts-model').value = t.model || '';
       document.getElementById('s2-tts-voice-id').value = t.voice_id || '';
+      // 回填额外字段（azure region / doubao appid+cluster）
+      if (t.extras) {
+        if (t.extras.region) document.getElementById('s2-tts-azure-region').value = t.extras.region;
+        if (t.extras.appid)  document.getElementById('s2-tts-doubao-appid').value = t.extras.appid;
+        if (t.extras.cluster) document.getElementById('s2-tts-doubao-cluster').value = t.extras.cluster;
+      }
       document.getElementById('s2-tts-state').textContent =
         t.configured ? `已启用：${t.active}（${t.model || '默认'} · ${t.voice_id || 'default'}）` : '未配置';
+      updateTtsProviderHints(sel.value);
     }
   } catch {}
 }
+
+// ─── TTS Provider 切换：显示对应 provider 的额外字段 + 占位提示 ──────────────
+const TTS_VOICE_HINTS = {
+  minimax: 'MiniMax 默认 female-tianmei；可改 male-* 或克隆音色 ID',
+  openai:  '6 选：alloy / echo / fable / onyx / nova / shimmer（默认 nova）',
+  azure:   '如 zh-CN-XiaoxiaoNeural / zh-CN-YunxiNeural（默认 Xiaoxiao）',
+  doubao:  '如 BV700_streaming / BV001_streaming（火山引擎控制台音色列表）',
+  qwen:    '如 longxiaochun / longjingjing / longwan（CosyVoice 音色）',
+};
+const TTS_KEY_LABELS = {
+  minimax: 'MiniMax API Key',
+  openai:  'OpenAI API Key（sk-...）',
+  azure:   'Azure Speech Key',
+  doubao:  '豆包 Access Token',
+  qwen:    'DashScope API Key（sk-...）',
+};
+function updateTtsProviderHints(provider) {
+  const azureRow  = document.getElementById('s2-tts-azure-row');
+  const doubaoRow = document.getElementById('s2-tts-doubao-row');
+  const hintEl    = document.getElementById('s2-tts-voice-hint');
+  const keyLabel  = document.getElementById('s2-tts-key-label');
+  azureRow.classList.toggle('hidden',  provider !== 'azure');
+  doubaoRow.classList.toggle('hidden', provider !== 'doubao');
+  hintEl.textContent = TTS_VOICE_HINTS[provider] || '';
+  keyLabel.textContent = TTS_KEY_LABELS[provider] || 'API Key';
+}
+document.getElementById('s2-tts-provider').addEventListener('change', e => {
+  updateTtsProviderHints(e.target.value);
+});
 
 async function saveOptional(capability) {
   const prefix = capability === 'vision' ? 's2-vision' : capability === 'asr' ? 's2-asr' : 's2-tts';
@@ -987,12 +1043,25 @@ async function saveOptional(capability) {
     setMsg(msgId, '请选择 Provider，或点"清除"关闭该能力', 'err');
     return;
   }
+  // TTS 各 provider 的额外字段
+  const extras = {};
+  if (capability === 'tts') {
+    if (provider === 'azure') {
+      extras.region = document.getElementById('s2-tts-azure-region').value.trim();
+      if (!extras.region) { setMsg(msgId, '请填 Azure Region（如 eastasia）', 'err'); return; }
+    } else if (provider === 'doubao') {
+      extras.appid   = document.getElementById('s2-tts-doubao-appid').value.trim();
+      extras.cluster = document.getElementById('s2-tts-doubao-cluster').value.trim();
+      if (!extras.appid)   { setMsg(msgId, '请填豆包 AppID', 'err'); return; }
+      if (!extras.cluster) { setMsg(msgId, '请填 Cluster（一般 volcano_tts）', 'err'); return; }
+    }
+  }
   setMsg(msgId, '保存中…', 'info');
   try {
     const r = await fetch('/api/setup/provider-config', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ capability, provider, model, api_key: apiKey, voice_id: voiceId }),
+      body: JSON.stringify({ capability, provider, model, api_key: apiKey, voice_id: voiceId, extras }),
     });
     const d = await r.json();
     if (d.ok) {
@@ -1021,10 +1090,17 @@ async function clearOptional(capability) {
     const d = await r.json();
     if (d.ok) {
       setMsg(msgId, '✅ 已清除', 'ok');
-      const prefix = capability === 'vision' ? 's2-vision' : 's2-asr';
+      const prefix = capability === 'vision' ? 's2-vision' : capability === 'asr' ? 's2-asr' : 's2-tts';
       document.getElementById(`${prefix}-provider`).value = '';
       document.getElementById(`${prefix}-model`).value = '';
       document.getElementById(`${prefix}-key`).value = '';
+      if (capability === 'tts') {
+        document.getElementById('s2-tts-voice-id').value = '';
+        document.getElementById('s2-tts-azure-region').value = '';
+        document.getElementById('s2-tts-doubao-appid').value = '';
+        document.getElementById('s2-tts-doubao-cluster').value = '';
+        updateTtsProviderHints('');
+      }
       await refreshOptional();
     } else {
       setMsg(msgId, '❌ ' + (d.error || d.message || '清除失败'), 'err');
