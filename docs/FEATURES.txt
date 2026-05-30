@@ -1,0 +1,349 @@
+════════════════════════════════════════════════════════════════════════
+  溪语 AI · 完整功能清单
+  生成于 2026-05-30 · 对应代码 = main HEAD（含 v1.4.1 改动，package.json
+  还停在 1.3.4，下次发版统一升）
+  仓库：/root/xiyu-ai-opensource  ·  GitHub dimang01/xiyu-ai
+  共 32 个 src/.mjs · 15 个 public/app HTML · 16 个 scripts
+════════════════════════════════════════════════════════════════════════
+
+
+【一】核心人设与对话（P0）
+──────────────────────────────────────────────────────────────────────
+人设引擎                  注册时一次性生成 46+ 条具体人生记忆（不是"喜欢
+                          音乐"而是"小学三年级被狗追过一次"）
+                          ▸ src/companion.mjs::buildSystemPrompt() 18 节
+                            结构化 prompt 合成
+
+日程系统                  每天 00:30 cron 生成 8-12 段日程，区分工作日/
+                          周末，三段情绪段，调度失败自动自愈
+                          ▸ src/plan_tasks.mjs::runDailySchedules
+                          ▸ DB: companion_daily_schedule
+
+5 阶段关系                陌生人 → 朋友 → 暧昧 → 恋人 → 深爱
+                          每阶段称呼 / 撒娇 / 话题深度差异化
+                          ▸ src/memory.mjs::computeRelationshipStage
+
+像真人发微信              ≤15 字一条、多条 || 连发、剥离 AI 味
+                          ▸ src/bot.mjs::splitReplySegments
+
+人设守卫 Persona Guard    回复后一致性校验，自动检测"我是 AI"、客服话术、
+                          阶段违规；轻问题后处理，重问题重生成
+                          ▸ src/persona_guard.mjs
+
+
+【二】主动消息与情感反馈
+──────────────────────────────────────────────────────────────────────
+主动消息 v2              早安 / 晚安 / 日间随机 / 主动告白 / 场景照；基于
+                          motivation score 动态触发；防骚扰冷却
+                          ▸ src/proactive.mjs + proactive_engine.mjs
+
+频率滑块 (v1.3.3)        Dashboard 拖动滑块 0-30 条/天，无 Pro/Free 区分
+                          ▸ companions.proactive_daily_target INTEGER
+
+纪念日主动祝福 (v1.2.12) 生日 / 纪念日 / 节日到期当天主动祝福；自动登记
+                          「认识 100 天 / 在一起一周年」里程碑
+                          ▸ src/db.mjs::ensureRelationshipReminders
+                          ▸ DB: companion_reminders（含 once + 未来日期防
+                            yearly day-0 误触发）
+
+主动告白                 normal 时段 + 好感>=50 + 双方未表白 + 认识>=5 天
+                          时她会主动告白，告白后自动升关系到恋人
+                          ▸ src/proactive.mjs effectiveKind='confession'
+
+今天她想对你说 (v1.4.1) 每天 02:35 cron 生成一句独立于聊天的话，按想念
+                          档（0-4）调口吻；dashboard 顶部气泡卡显示，可 🔊
+                          ▸ src/thoughts.mjs + companion_daily_thoughts
+
+
+【三】情绪状态机（v1.4.1 大升级）
+──────────────────────────────────────────────────────────────────────
+7 维状态                 affection / trust / dependency / possessiveness
+                          / security / energy / mood（9 种 mood）
+                          ▸ src/emotion_state.mjs
+                          ▸ DB: companion_emotion_state + emotion_history
+
+规则驱动更新             用户消息关键词触发各维度增减（感谢/夸赞/冷淡/嫉妒
+                          /担心/晚安）
+                          ▸ updateEmotionFromUserMessage
+
+idle 想念递增 (v1.4.1)   30m/3h/6h/12h/24h 五档阈值，dep 自动累加；12h+
+                          强制 mood=clingy（旧版只有 1h/6h/24h，曲线太平）
+
+想念档 (v1.4.1)         getMissingLevel 综合 dep + idle 算出 0-4 五级
+                          0 没想 · 1 有点想 · 2 挺想的 · 3 很想 · 4 想死了
+
+emotion prompt 升级 (v1.4.1)
+                          多维度叠加描述（mood + dep + poss + sec + trust
+                          + energy）+ 按 missingLevel 分档给可执行口吻指令
+                          + 总指令强制把状态写进回复
+                          ▸ src/emotion_state.mjs::buildEmotionPromptHint
+
+情绪趋势曲线             dashboard 显示近 7 天 4 维度变化
+                          ▸ GET /api/companions/:id/emotion-trend
+
+想念度小条 (v1.4.1)      Dashboard 好感度下方加粉色渐变条可视化 0-4 档
+
+
+【四】记忆系统
+──────────────────────────────────────────────────────────────────────
+Memory v2                7 层分类（core_persona/relationship_rule/
+                          user_fact/preference/event/emotion/summary）
+                          × 0-5 权重 × 遗忘曲线
+                          pin / lock / archive / do-not-mention
+                          敏感内容过滤 + token 去重
+                          ▸ src/memory_v2.mjs · DB: companion_memories
+
+语义召回                 embedding 优先 + 关键词 fallback
+                          ▸ findSimilarMemoryByEmbedding
+
+记忆衰减                 每天 03:20 cron 写回 decay_score
+                          ▸ applyMemoryDecayBatch
+
+Memory Reflection        每日 02:15 / 每周日 02:45 AI 反思，提炼新记忆
+                          自动入库 Memory v2
+                          ▸ src/reflection.mjs
+
+她的日记 (v1.2.11)      每日 02:20 / 每周日 02:50 第一人称日记
+                          /app/diary.html 翻日记本式阅读 + 每篇 🔊 朗读
+                          (v1.4.0+) 按句切段连续播放
+                          ▸ src/diary.mjs · DB: companion_diary
+
+事件图谱 (P2A)          memory_entities + memory_relations，从记忆文本
+                          规则驱动自动提取（无额外 LLM 调用）
+                          ▸ src/event_graph.mjs
+
+长期记忆摘要             每天 02:00 总结昨日，每周日 02:30 合并周记，
+                          每月 1 号 03:00 合并月记
+                          ▸ runDaily/runWeekly/runMonthly in plan_tasks
+
+
+【五】多 Provider 抽象（5 类能力可独立切换）
+──────────────────────────────────────────────────────────────────────
+Chat (11 家)            DeepSeek / OpenAI / Claude / xAI / 智谱 / 豆包 /
+                         千问 / Kimi / 文心 / MiniMax / StepFun
+                         ▸ src/providers/chat.mjs · CHAT_PROVIDER 环境变量
+
+Image (5 家)            生成图片 / 头像 / 场景照
+                         ▸ src/providers/image.mjs
+
+Vision (5 家)           智谱 GLM-4V / OpenAI gpt-4o-mini / 通义 VL / 豆包
+                         视觉 / Anthropic Claude
+                         ▸ src/providers/vision.mjs
+
+ASR (3 家)              Gemini / OpenAI Whisper / 通义 paraformer
+                         ▸ src/providers/asr.mjs
+
+Embedding (4 家)        OpenAI / 智谱 / 通义 / xAI
+                         ▸ src/providers/embedding.mjs
+
+TTS (1 家，v1.4.0+)     MiniMax speech-02-turbo（Sprint 3 会加 豆包 /
+                         Azure / OpenAI）
+                         ▸ src/providers/tts.mjs
+
+联网搜索 (v1.2.8)       Tavily / Brave / SerpAPI / SearXNG 四家
+                         ▸ src/web_search.mjs
+
+定价配置 (P2A)          config/provider_pricing.json（gitignored）
+                         AI 用量面板估算成本，自填不硬编码价格
+
+
+【六】v1.4.0 网页语音体系
+──────────────────────────────────────────────────────────────────────
+TTS pipeline (Sprint 1)  text → MiniMax → mp3 → wx-voice → SILK
+                         ffmpeg + wx-voice npm + postinstall 自动编译
+                         ▸ src/voice_pipeline.mjs
+
+试听 API                POST /api/companions/:id/tts-preview → mp3 字节
+                         Dashboard 试听按钮直接播
+
+播放在哪里能听到？
+  • Dashboard「网页语音体验」卡片 → 🔊 试听
+  • Playground 每条她的回复旁 🔊（v1.4.0）
+  • Diary 每篇 🔊 按句切段连续播
+  • Dashboard「今天她想对你说」🔊（v1.4.1）
+
+ASR 录音 (v1.4.0)       Playground 输入框旁 🎙️ 按住说话，停止自动识别成
+                         文字发出，无需打字也能聊
+                         ▸ POST /api/companions/:id/asr-transcribe
+
+⚠️ 微信端不支持发语音    iLink/ClawBot 协议禁止 bot outbound voice（实测
+                         HTTP 200 但消息静默丢弃，腾讯官方 SDK 无
+                         sendVoiceMessageWeixin）。语音仅在网页/PWA 端工作。
+                         详见 docs/voice-sprint-plan.md 末尾 Sprint 2 失败
+                         结论。SILK 编码路径保留备用。
+
+context_token 持久化     side-effect of v1.4.0：ilink_context_tokens 表
+                         让进程重启不丢 outbound media 的 token（image 也
+                         受益）
+
+
+【七】微信对接
+──────────────────────────────────────────────────────────────────────
+网页扫码绑定             /app/bind.html 后端直接向腾讯 iLink 申请二维码，
+                         无需预填 ILINK_* 环境变量
+                         需要微信号在腾讯 iLink/ClawBot 已准入
+
+多租户长轮询             每个微信账号一个独立 getUpdates 长轮询
+                         ▸ index.mjs Pool 实现
+
+发送消息能力             ✅ 文本 sendTextMessage
+                         ✅ 图片 sendMessageItem (type=2)
+                         ✅ 文件 sendMessageItem (type=4)
+                         ✅ 视频 sendMessageItem (type=5)
+                         ❌ 语音（协议不允许）
+
+打字指示器              主动消息发出前 sendTyping → 微信显示"对方正在
+                         输入..."增加真人感
+
+媒体 CDN AES-128-ECB     ▸ src/media.mjs::uploadFile
+
+
+【八】网页端（15 个 HTML 页面）
+──────────────────────────────────────────────────────────────────────
+落地页 /                public/index.html
+
+注册登录                /app/auth.html（含 Forgot），本地账号 6 位/邮箱 8 位
+
+创建 AI 角色             /app/create.html · 4 步向导
+
+控制台 Dashboard        /app/dashboard.html · 头像 mood 圆环 / 好感度 /
+                         关系阶段 / 想念度小条 (v1.4.1) / "她现在在做"
+                         / 时间轴 / CP 卡片 / 主动找你滑块 / 语音体验 /
+                         今天她想你气泡 (v1.4.1) / 情绪趋势 / AI 用量
+
+记忆管理                /app/memories.html · 7 层筛选、增删改查、置顶/
+                         锁定/归档
+
+她的日记                /app/diary.html · 翻日记本风、心情色块、
+                         daily/weekly 筛选、🔊 按句朗读
+
+网页 Playground         /app/playground.html · 浏览器内聊天，跑同款人设/
+                         记忆/情绪管线
+                         (v1.4.0+) 🎙️ 录音 / 每条 🔊 朗读
+
+绑定微信                /app/bind.html
+
+Setup Wizard            /app/setup.html · 配 chat/vision/asr/search/tts
+                         provider，无需碰 .env
+
+Admin                   /app/admin.html · 密码在 .admin-credentials
+
+提示词调试               /app/debug-prompt.html · 实时 prompt 拼接
+
+升级页                  /app/upgrade.html · 开源版无套餐限制说明 (v1.3.4)
+
+法律页                  /app/privacy.html / terms.html
+
+PWA                     manifest.webmanifest + sw.js（v1.3.0 改 network-
+                         first 让 HTML 实时更新）
+
+液态玻璃 UI (v1.3.0)    public/app/glass.css 共享主题层
+                         毛玻璃卡片 + 漂浮光斑背景 + 丝滑微动效
+                         尊重 prefers-reduced-motion
+                         v1.3.1/v1.4.0 hotfix 排除 .btn-primary 等已渐变
+                         按钮（避免被覆盖成白底白字）
+
+
+【九】成就与可视化（P2A）
+──────────────────────────────────────────────────────────────────────
+成就/里程碑              10 个内置事件：初次对话 / 7 天在一起 / 关系阶段
+                         变化 / 首张照片 / 首次告白 / 首次主动消息…
+                         ▸ src/achievements.mjs · DB: companion_achievements
+
+角色导入/导出 (P2A 实验)  GET /export · POST /import 可移植 JSON
+                         敏感字段自动过滤
+                         ▸ src/persona_export.mjs
+
+
+【十】运维 / DX
+──────────────────────────────────────────────────────────────────────
+npm run setup           生成最小 .env，预检 better-sqlite3 编译工具
+
+npm run doctor          一键诊断自托管环境：Node 版本 / SQLite 可写 /
+                        API key / iLink / 端口 / 服务健康
+
+npm run check:p0        P0/P1 回归检查 124 项
+
+npm run smoke           release smoke test 10 项
+
+scripts/voice_smoke.mjs  TTS pipeline 端到端验证（dev only）
+
+opensource_check.sh     6 项合规：forbidden files / secret patterns /
+                         production paths / package.json / 文件大小 / .env
+
+Docker                  ghcr.io/dimang01/xiyu-ai:latest（自带 ffmpeg）
+                        WITH_VOICE=1 / WITH_IMAGE=1 build-arg 可裁剪
+
+systemd unit            deploy/xiyu-ai.service 已带安全加固
+
+nginx 模板              deploy/nginx.conf.example
+
+
+【十一】安全与合规
+──────────────────────────────────────────────────────────────────────
+凭据                    .env / .auth-secret / .admin-credentials /
+                        .weixin-credentials.json / data/bot.db* 全部
+                        gitignored
+                        管理员密码首次启动自动生成 20 位
+                        AUTH_SECRET 留空会自动生成但每次重启重生
+
+CORS                    默认关，公开服务自己加白名单
+
+Rate Limit              src/ratelimit.mjs 个人量级，公开部署前置 WAF
+
+合规自负                README ⚖️ 合规说明列出隐私政策/AI 标识/未成年/
+                        个人信息保护/内容审核/危机话术/provider ToS 等
+                        7 项部署者自查清单
+
+
+【十二】不存在的功能（避免误以为有）
+──────────────────────────────────────────────────────────────────────
+✗ Pro/Free 付费分级       v1.3.4 全部撤掉，开源版所有功能对所有人开放
+✗ 微信 outbound voice    iLink 协议禁止，永远做不了（除非腾讯放开协议）
+✗ 多模态 RAG             暂无文档检索
+✗ Live2D/3D 形象          与项目"微信单一伴侣"定位冲突
+✗ 多角色市场             同上
+✗ 邮箱真实发送（默认）    EMAIL_DEV_MODE=true 时验证码打到日志，要发邮件
+                          需配 RESEND_API_KEY
+✗ 实时语音通话           协议层做不到
+
+
+════════════════════════════════════════════════════════════════════════
+  关键数据库表（参考）
+════════════════════════════════════════════════════════════════════════
+user_accounts             网站账号（username/email/password_hash scrypt）
+users                     wechat_user_id 映射
+companions                AI 角色（100+ 字段）
+wechat_accounts           bot/微信号绑定
+companion_memories        Memory v2 主表
+companion_emotion_state   7 维实时
+companion_emotion_history 趋势曲线源
+companion_daily_schedule  每日日程
+companion_conversation_turns  对话历史
+companion_diary           她的日记 (v1.2.11)
+companion_daily_thoughts  今天她想你 (v1.4.1)
+companion_reminders       纪念日/节日提醒
+companion_achievements    成就
+companion_voice_usage     TTS 用量上限（网页朗读不计入此表，留给未来微信
+                          端用）
+ilink_context_tokens      context_token 持久化 (v1.4.0)
+memory_entities/relations 事件图谱 (P2A)
+ai_usage_daily            AI 用量统计
+
+
+════════════════════════════════════════════════════════════════════════
+  最近 8 个 PR / Release（按时间倒序）
+════════════════════════════════════════════════════════════════════════
+#35  v1.4.1  情绪存在感升级 + 今天她想你 widget
+#34  v1.4.0  pivot to browser voice（撤微信端语音、做 playground/diary
+            朗读 + 录音）
+#33  v1.4.0  glass.css 也排除 .btn-primary（登录按钮空白 hotfix）
+#32  v1.4.0  WeChat outbound voice beta（后来被 #34 撤）
+#31  v1.4.0  voice pipeline 修复（wx-voice callback + 可选 GroupId）
+#30  v1.4.0  TTS pipeline alpha（MiniMax + wx-voice）
+#29  v1.3.4  全面去 Pro/Free 分级
+#28  v1.4.0  Sprint plan 文档
+
+最新已发布 release tag：v1.3.4
+v1.4.0 / v1.4.1 代码已合并 main 但**没打 tag、没发 release**（package.json
+还停在 1.3.4）—— 下次发版应该统一升到 1.4.1 + tag + release。
