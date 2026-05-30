@@ -85,6 +85,7 @@ import { getActiveAsrProvider, REGISTRY as ASR_REGISTRY } from './providers/asr.
 import { getActiveEmbeddingProvider } from './providers/embedding.mjs';
 import { synthesizeMp3Only } from './voice_pipeline.mjs';
 import { recognizeVoice } from './ai.mjs';
+import { REGISTRY as TTS_REGISTRY, getTtsStatus } from './providers/tts.mjs';
 import { getActiveSearchProvider, REGISTRY as SEARCH_REGISTRY } from './web_search.mjs';
 import {
   buildCompanionExport, validateCompanionImport, importCompanionForUser,
@@ -1891,6 +1892,7 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
   }
   const visionActive = getActiveVisionProvider();
   const asrActive    = getActiveAsrProvider();
+  const ttsActive    = getTtsStatus();   // { active, configured, voice_id, ... }
   // 联网搜索 search section（独立结构：无 model 概念，custom provider 是 searxng 用 base URL）
   const searchActive = getActiveSearchProvider();
   const searchProviders = {};
@@ -1915,6 +1917,14 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
     providers,
     vision: buildOptionalSection(VISION_REGISTRY, 'VISION_PROVIDER', 'VISION_MODEL', visionActive),
     asr:    buildOptionalSection(ASR_REGISTRY,    'ASR_PROVIDER',    'ASR_MODEL',    asrActive),
+    tts:    {
+      active: ttsActive.active || null,
+      configured: !!ttsActive.configured,
+      label: ttsActive.label || null,
+      model: ttsActive.model || null,
+      voice_id: ttsActive.voice_id || null,
+      providers: ttsActive.providers || Object.keys(TTS_REGISTRY),
+    },
     search: {
       active: searchActive.id,
       active_configured: Boolean(searchActive.configured),
@@ -1929,18 +1939,26 @@ router.post('/setup/provider-config',
   async (req, res) => {
     const capability = (req.body?.capability || 'chat').toLowerCase();
 
-    // ── 可选能力：vision / asr ────────────────────────────────────────────
-    // 字段：{ capability: 'vision'|'asr', provider, model?, api_key?, clear? }
+    // ── 可选能力：vision / asr / tts ──────────────────────────────────────
+    // 字段：{ capability: 'vision'|'asr'|'tts', provider, model?, api_key?, clear? }
+    // tts 额外字段：voice_id?
     // 保存：<CAP>_PROVIDER（非 secret） + <CAP>_MODEL（非 secret） +
-    //       <entry.apiKeyEnv>（secret，对应 provider 共用 key，如 ZHIPU_API_KEY）
-    if (capability === 'vision' || capability === 'asr') {
-      const REG = capability === 'vision' ? VISION_REGISTRY : ASR_REGISTRY;
-      const PROVIDER_KEY = capability === 'vision' ? 'VISION_PROVIDER' : 'ASR_PROVIDER';
-      const MODEL_KEY    = capability === 'vision' ? 'VISION_MODEL'    : 'ASR_MODEL';
-      const { provider, api_key, model, clear = false } = req.body || {};
+    //       <entry.apiKeyEnv>（secret，对应 provider 共用 key，如 MINIMAX_API_KEY）
+    if (capability === 'vision' || capability === 'asr' || capability === 'tts') {
+      const REG = capability === 'vision' ? VISION_REGISTRY
+               : capability === 'asr'    ? ASR_REGISTRY
+               : TTS_REGISTRY;
+      const PROVIDER_KEY = capability === 'vision' ? 'VISION_PROVIDER'
+                         : capability === 'asr'    ? 'ASR_PROVIDER'
+                         : 'TTS_PROVIDER';
+      const MODEL_KEY    = capability === 'vision' ? 'VISION_MODEL'
+                         : capability === 'asr'    ? 'ASR_MODEL'
+                         : 'TTS_MODEL';
+      const { provider, api_key, model, voice_id, clear = false } = req.body || {};
       if (clear) {
         deleteAppSetting(PROVIDER_KEY);
         deleteAppSetting(MODEL_KEY);
+        if (capability === 'tts') deleteAppSetting('TTS_VOICE_ID');
         log('info', `[Setup] provider-config: ${capability} 已清除`);
         return ok(res, { capability, cleared: true });
       }
@@ -1959,12 +1977,22 @@ router.post('/setup/provider-config',
         keySaved = true;
         log('info', `[Setup] provider-config: ${capability}/${pName} ${pEntry.apiKeyEnv} 已更新（已隐藏）`);
       }
+      // TTS 还要存 voice_id（可选）
+      let voiceIdSaved = false;
+      if (capability === 'tts') {
+        const trimmedVoice = typeof voice_id === 'string' ? voice_id.trim() : '';
+        if (trimmedVoice) {
+          setAppSetting('TTS_VOICE_ID', trimmedVoice, { secret: 0 });
+          voiceIdSaved = true;
+        }
+      }
       return ok(res, {
         capability,
         provider: pName,
         label: pEntry.label,
         model_saved: Boolean(trimmedModel),
         key_saved: keySaved,
+        voice_id_saved: voiceIdSaved,
       });
     }
 
@@ -2514,6 +2542,25 @@ router.put('/companions/:id/scene', requireAuth, (req, res) => {
   return ok(res, { companion_id: id, current_scene: scene, scene_history: history });
 });
 
+// POST /api/companions/:id/reset-to-crush  (v1.4.2)
+// 把 companion 一键拉回「她暗恋你」的默认起步状态。
+// 影响：affection=35 / stage='暧昧' / mood='shy' / dependency=40。
+// 不动：记忆 / 对话历史 / 日记 / 想念记录 —— 历史情感保留。
+router.post('/companions/:id/reset-to-crush', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    patchCompanion(id, { affection_level: 35, relationship_stage: '暧昧', current_mood: '害羞' });
+    // 顺手把情绪状态也拨回"暗恋"基线
+    upsertEmotionState(id, { mood: 'shy', dependency: 40, affection: 35, trust: 50 });
+    log('info', `[API] reset-to-crush id=${id}`);
+    return ok(res, { companion_id: id, affection_level: 35, relationship_stage: '暧昧', mood: 'shy' });
+  } catch (e) {
+    log('error', `[API] reset-to-crush 失败 id=${id}: ${e.message}`);
+    return err(res, e.message || '重置失败', 500);
+  }
+});
+
 // PUT /api/companions/:id/affection
 router.put('/companions/:id/affection', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
@@ -2899,6 +2946,18 @@ router.get('/companions/:id/diary', requireAuth, (req, res) => {
   const entries = getDiaryEntries(id, { limit, offset, kind });
   const total   = countDiaryEntries(id, { kind });
   return ok(res, { total, limit, offset, kind: kind || 'all', entries });
+});
+
+// GET /api/me/capabilities  (v1.4.2)
+// 给前端 dashboard/playground/diary 用的"哪些能力可用"轻量查询。
+// 不暴露 key 任何片段，只返 boolean。
+router.get('/me/capabilities', requireAuth, (_req, res) => {
+  const tts = getTtsStatus();
+  return ok(res, {
+    tts:    !!tts.configured,
+    voice_id: tts.voice_id || null,
+    // 其它能力按需扩展（vision/asr/search 各自有专门状态接口，前端按需查）
+  });
 });
 
 // GET /api/companions/:id/daily-thought  (v1.4.1)

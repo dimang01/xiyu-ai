@@ -19,9 +19,18 @@
                           ▸ src/plan_tasks.mjs::runDailySchedules
                           ▸ DB: companion_daily_schedule
 
-5 阶段关系                陌生人 → 朋友 → 暧昧 → 恋人 → 深爱
+5 阶段关系                **默认起点 = 暧昧（暗恋你）**（v1.4.2 修正定位）
+                          affection 默认 35/100 而非 0；stage 默认 '暧昧'
+                          可演进：暧昧→恋人→深爱（也可手动回退到朋友/陌生人）
                           每阶段称呼 / 撒娇 / 话题深度差异化
+                          阈值：0-14陌生 / 15-29朋友 / 30-54暧昧 / 55-79恋人 / 80+深爱
                           ▸ src/memory.mjs::computeRelationshipStage
+                          ▸ src/companion.mjs 暧昧/陌生人/朋友档都加"她心里
+                            悄悄喜欢他"的人格指令（v1.4.2）
+
+重置为暗恋初心 (v1.4.2)   Dashboard 一键按钮把 affection/stage/mood/dependency
+                          拨回默认起点，聊天/记忆/日记保留
+                          ▸ POST /api/companions/:id/reset-to-crush
 
 像真人发微信              ≤15 字一条、多条 || 连发、剥离 AI 味
                           ▸ src/bot.mjs::splitReplySegments

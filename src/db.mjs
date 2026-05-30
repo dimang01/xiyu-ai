@@ -248,8 +248,12 @@ function initSchema() {
       mood_updated_at DATETIME,
 
       -- 【15. 好感度/关系进展】
-      affection_level INTEGER DEFAULT 0,
-      relationship_stage TEXT DEFAULT '陌生人',
+      -- v1.4.2: 修正定位错位 —— 这是 AI 女友框架，默认从「暧昧」起步（她已经
+      -- 对你有好感、心里悄悄喜欢你），不是陌生人慢慢培养的体验。35 落在
+      -- 暧昧档中段 (30-54)，保留向恋人/深爱演进的空间。
+      -- 已存在的 companion 不动（CREATE TABLE DEFAULT 只对新行生效）。
+      affection_level INTEGER DEFAULT 35,
+      relationship_stage TEXT DEFAULT '暧昧',
 
       -- 【16. 场景】
       current_scene TEXT DEFAULT '在家',

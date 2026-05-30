@@ -371,6 +371,45 @@
             <p id="s2-search-msg" class="mt-2 msg-info"></p>
           </div>
 
+          <!-- 语音合成（tts）—— v1.4.2 -->
+          <div class="p-4 rounded-xl bg-cloud">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-[14px] font-bold">🔊 语音合成（tts）</h3>
+              <span id="s2-tts-state" class="text-[12px] text-mute">未配置</span>
+            </div>
+            <p class="text-[12px] text-mute mb-3">
+              开启后她在网页 / playground / 日记里的回复都能 🔊 朗读。<br>
+              <span class="text-[11px] text-mute/80">⚠️ iLink 协议不支持微信端发语音，所以语音仅在网页/PWA 生效。不配也能正常聊天，只是没有朗读。</span>
+            </p>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Provider</label>
+              <select id="s2-tts-provider" class="input">
+                <option value="">不启用</option>
+                <option value="minimax">MiniMax speech-02-turbo（推荐 · 新户送 500 字符）</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Model（选填）</label>
+              <input id="s2-tts-model" class="input font-mono" type="text"
+                     placeholder="留空使用该 provider 默认模型" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="mb-2">
+              <label class="block text-[12px] font-semibold mb-1">Voice ID（选填）</label>
+              <input id="s2-tts-voice-id" class="input font-mono" type="text"
+                     placeholder="MiniMax 默认 female-tianmei；可改 male-* 或克隆音色 ID" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="mb-3">
+              <label class="block text-[12px] font-semibold mb-1">API Key</label>
+              <input id="s2-tts-key" class="input font-mono" type="password"
+                     placeholder="MiniMax 控制台拿 · 新式 sk-api- 开头的 key 无需 GroupId" autocomplete="off" />
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <button class="btn-outline" id="s2-tts-save" style="padding:6px 16px;font-size:13px">保存语音合成</button>
+              <button class="btn-ghost"   id="s2-tts-clear">清除</button>
+            </div>
+            <p id="s2-tts-msg" class="mt-2 msg-info"></p>
+          </div>
+
         </div>
       </details>
 
@@ -891,8 +930,10 @@ document.getElementById('s2-btn-next').addEventListener('click', () => {
 // 每个能力独立保存到 app_settings；不阻塞主流程；Step 3 测试会一并 ping。
 S.visionConfigured = false;
 S.asrConfigured    = false;
+S.ttsConfigured    = false;
 S.visionProvider   = '';
 S.asrProvider      = '';
+S.ttsProvider      = '';
 
 async function refreshOptional() {
   try {
@@ -921,14 +962,26 @@ async function refreshOptional() {
     }
     const s = d.data?.search;
     if (s) refreshSearchUI(s.active, s.active_configured, s.providers);
+    const t = d.data?.tts;
+    if (t) {
+      S.ttsConfigured = Boolean(t.configured);
+      S.ttsProvider   = t.active || '';
+      const sel = document.getElementById('s2-tts-provider');
+      if (sel.querySelector(`option[value="${t.active}"]`)) sel.value = t.active;
+      document.getElementById('s2-tts-model').value = t.model || '';
+      document.getElementById('s2-tts-voice-id').value = t.voice_id || '';
+      document.getElementById('s2-tts-state').textContent =
+        t.configured ? `已启用：${t.active}（${t.model || '默认'} · ${t.voice_id || 'default'}）` : '未配置';
+    }
   } catch {}
 }
 
 async function saveOptional(capability) {
-  const prefix = capability === 'vision' ? 's2-vision' : 's2-asr';
+  const prefix = capability === 'vision' ? 's2-vision' : capability === 'asr' ? 's2-asr' : 's2-tts';
   const provider = document.getElementById(`${prefix}-provider`).value;
   const model    = document.getElementById(`${prefix}-model`).value.trim();
   const apiKey   = document.getElementById(`${prefix}-key`).value;
+  const voiceId  = capability === 'tts' ? document.getElementById('s2-tts-voice-id').value.trim() : '';
   const msgId    = `${prefix}-msg`;
   if (!provider) {
     setMsg(msgId, '请选择 Provider，或点"清除"关闭该能力', 'err');
@@ -939,7 +992,7 @@ async function saveOptional(capability) {
     const r = await fetch('/api/setup/provider-config', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ capability, provider, model, api_key: apiKey }),
+      body: JSON.stringify({ capability, provider, model, api_key: apiKey, voice_id: voiceId }),
     });
     const d = await r.json();
     if (d.ok) {
@@ -957,7 +1010,7 @@ async function saveOptional(capability) {
 }
 
 async function clearOptional(capability) {
-  const msgId = capability === 'vision' ? 's2-vision-msg' : 's2-asr-msg';
+  const msgId = capability === 'vision' ? 's2-vision-msg' : capability === 'asr' ? 's2-asr-msg' : 's2-tts-msg';
   setMsg(msgId, '清除中…', 'info');
   try {
     const r = await fetch('/api/setup/provider-config', {
@@ -981,8 +1034,10 @@ async function clearOptional(capability) {
 
 document.getElementById('s2-vision-save').addEventListener('click', () => saveOptional('vision'));
 document.getElementById('s2-asr-save').addEventListener('click', () => saveOptional('asr'));
+document.getElementById('s2-tts-save').addEventListener('click', () => saveOptional('tts'));
 document.getElementById('s2-vision-clear').addEventListener('click', () => clearOptional('vision'));
 document.getElementById('s2-asr-clear').addEventListener('click', () => clearOptional('asr'));
+document.getElementById('s2-tts-clear').addEventListener('click', () => clearOptional('tts'));
 
 // ─── 联网搜索（search） ───────────────────────────────────────────────────
 S.searchConfigured = false;
