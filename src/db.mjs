@@ -49,6 +49,7 @@ export function getDb() {
     migrateProactiveDailyTarget();
     migrateVoiceReply();
     migrateContextTokenCache();
+    migrateDailyThoughts();
     migrateAppSettings();
   }
   return db;
@@ -2883,6 +2884,61 @@ export function loadPersistedContextToken(botId, userId, maxAgeMs = 24 * 60 * 60
   if (!row) return null;
   if (Date.now() - row.updated_at > maxAgeMs) return null;
   return row.token;
+}
+
+// ─── companion_daily_thoughts (v1.4.1) ────────────────────────────────────────
+// 每天一句"她今天想对你说的话"。由 src/thoughts.mjs 在 02:30 cron 生成（紧跟反思/日记），
+// dashboard 顶部「她今天想你」卡显示，可点 🔊 朗读。每天每个 companion 一条（UNIQUE）。
+function migrateDailyThoughts() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_daily_thoughts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      date_key TEXT NOT NULL,
+      content TEXT NOT NULL,
+      missing_level INTEGER DEFAULT 0,
+      mood TEXT,
+      generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(companion_id, date_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_thoughts_companion_date
+      ON companion_daily_thoughts(companion_id, date_key DESC);
+  `);
+}
+
+export function upsertDailyThought({ companionId, dateKey, content, missingLevel = 0, mood = null }) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO companion_daily_thoughts (companion_id, date_key, content, missing_level, mood, generated_at)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(companion_id, date_key) DO UPDATE SET
+      content = excluded.content,
+      missing_level = excluded.missing_level,
+      mood = excluded.mood,
+      generated_at = CURRENT_TIMESTAMP
+  `).run(companionId, dateKey, String(content).slice(0, 500), missingLevel, mood);
+  return db.prepare('SELECT * FROM companion_daily_thoughts WHERE companion_id = ? AND date_key = ?')
+    .get(companionId, dateKey);
+}
+
+export function getDailyThought(companionId, dateKey) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT id, date_key, content, missing_level, mood, generated_at
+    FROM companion_daily_thoughts
+    WHERE companion_id = ? AND date_key = ?
+  `).get(companionId, dateKey) || null;
+}
+
+export function getRecentDailyThoughts(companionId, limit = 7) {
+  const db = getDb();
+  const n = Math.min(Math.max(Number(limit) || 7, 1), 30);
+  return db.prepare(`
+    SELECT id, date_key, content, missing_level, mood, generated_at
+    FROM companion_daily_thoughts
+    WHERE companion_id = ?
+    ORDER BY date_key DESC LIMIT ?
+  `).all(companionId, n);
 }
 
 // ─── voice usage 存取（v1.4.0 Sprint 2）─────────────────────────────────────
