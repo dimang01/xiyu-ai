@@ -137,14 +137,16 @@
       b.className = 'bubble-them whitespace-pre-wrap text-[14px]';
       b.textContent = text;
       row.appendChild(b);
-      // v1.4.0 Sprint 2.5: 朗读按钮（浏览器播 mp3）
-      const playBtn = document.createElement('button');
-      playBtn.type = 'button';
-      playBtn.title = '朗读这条';
-      playBtn.className = 'mb-1 text-[16px] text-sakura-deep/60 hover:text-sakura-deep hover:scale-110 transition-all';
-      playBtn.textContent = '🔊';
-      playBtn.addEventListener('click', () => playTextAsVoice(text, playBtn));
-      row.appendChild(playBtn);
+      // v1.4.0 Sprint 2.5 / v1.4.2: 朗读按钮（TTS 未配时直接不渲染）
+      if (window.__CAPS?.tts) {
+        const playBtn = document.createElement('button');
+        playBtn.type = 'button';
+        playBtn.title = '朗读这条';
+        playBtn.className = 'mb-1 text-[16px] text-sakura-deep/60 hover:text-sakura-deep hover:scale-110 transition-all';
+        playBtn.textContent = '🔊';
+        playBtn.addEventListener('click', () => playTextAsVoice(text, playBtn));
+        row.appendChild(playBtn);
+      }
       msgs.appendChild(row);
       scrollEnd();
     }
@@ -383,7 +385,15 @@
     }
 
     // ─── go ────────────────────────────────────────────────────────────────
-    loadCompanion().then(() => loadHistory());
+    // v1.4.2: 探测能力，决定 🔊/🎙️ 是否渲染
+    window.__CAPS = { tts: false };
+    fetch('/api/me/capabilities', { headers: { Authorization: 'Bearer ' + token } })
+      .then(r => r.json()).then(d => {
+        if (d?.ok) window.__CAPS = d.data || window.__CAPS;
+        // mic 按钮：TTS 没配也允许（ASR 是另一回事）；只在 ASR 调用失败时报错。这里暂不藏 mic
+      })
+      .catch(() => {})
+      .finally(() => loadCompanion().then(() => loadHistory()));
   </script>
 </body>
 </html>

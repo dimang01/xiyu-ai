@@ -197,19 +197,21 @@ async function loadDiary(reset) {
       ? `<span class="mood-chip ${moodClass(e.mood)}">${escHtml(e.mood)}</span>` : '';
     const card = document.createElement('article');
     card.className = 'diary-card bg-white rounded-2xl shadow-sakura border border-line p-5';
+    // v1.4.2: TTS 未配置时不渲染朗读按钮
+    const playBtnHtml = window.__CAPS?.tts
+      ? '<button type="button" class="play-diary text-[16px] text-sakura-deep/60 hover:text-sakura-deep hover:scale-110 transition-all" title="听她念给你">🔊</button>'
+      : '';
     card.innerHTML =
       `<div class="flex items-center justify-between mb-3">
          <div class="text-sm font-semibold text-ink">${fmtDate(e.date_key)}${kindBadge}</div>
          <div class="flex items-center gap-2">
            ${mood}
-           <button type="button" class="play-diary text-[16px] text-sakura-deep/60 hover:text-sakura-deep hover:scale-110 transition-all" title="听她念给你">🔊</button>
+           ${playBtnHtml}
          </div>
        </div>
        <div class="diary-body text-[15px] text-ink/90">${escHtml(e.content)}</div>`;
-    // 朗读按钮绑事件（v1.4.0 Sprint 2.5）
-    card.querySelector('.play-diary').addEventListener('click', (ev) => {
-      playDiary(e.content, ev.currentTarget);
-    });
+    const playBtnEl = card.querySelector('.play-diary');
+    if (playBtnEl) playBtnEl.addEventListener('click', (ev) => playDiary(e.content, ev.currentTarget));
     listEl.appendChild(card);
   }
 
@@ -272,7 +274,12 @@ function showToast(msg) {
   el._t = setTimeout(() => el.classList.add('hidden'), 2400);
 }
 
-init();
+// v1.4.2: 探测 TTS 能力
+window.__CAPS = { tts: false };
+fetch('/api/me/capabilities', { headers: { Authorization: 'Bearer ' + localStorage.getItem('xiyu_token') } })
+  .then(r => r.json()).then(d => { if (d?.ok) window.__CAPS = d.data || window.__CAPS; })
+  .catch(() => {})
+  .finally(() => init());
 </script>
 </body>
 </html>

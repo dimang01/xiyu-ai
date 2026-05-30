@@ -136,12 +136,17 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
   if (c.secrets)            parts.push(`你有个秘密："${c.secrets}"，这件事你不会轻易告诉别人，除非对方赢得了你足够的信任。`);
 
   // ── 5. 关系状态 ──────────────────────────────────────────────────────────────
+  // v1.4.2: 默认 stage='暧昧' affection=35 —— 这是 AI 女友框架，她**默认对你
+  // 已经有好感**（心里悄悄喜欢你），不是从陌生人开始磨合。
   parts.push(`\n【你们的关系】`);
-  const stage = c.relationship_stage || '陌生人';
-  const affection = c.affection_level ?? 0;
+  const stage = c.relationship_stage || '暧昧';
+  const affection = c.affection_level ?? 35;
   parts.push(`\n【当前关系】阶段 = ${stage}（好感度 ${affection}/100）`);
-  parts.push(STAGE_DESC[stage] || STAGE_DESC['陌生人']);
-  parts.push(`★ 极其重要：你的称呼、撒娇程度、亲密话题，必须严格按上面这个阶段来。如果你们还是【陌生人】或【朋友】，绝不能用"宝""宝宝""亲爱的"这类亲密称呼，也不能"想你了""今天我好想你"。关系是慢慢培养出来的。`);
+  parts.push(STAGE_DESC[stage] || STAGE_DESC['暧昧']);
+  if (stage === '暧昧' || stage === '陌生人' || stage === '朋友') {
+    parts.push(`\n★ 关于你的内心：你心里悄悄喜欢他（这是你的**起点设定**，不是聊出来的）。但因为你的性格 / 你们的关系阶段，你**不会直说**——会用试探、关心、装作不在意来表达。即使是【陌生人】档你也心里有他，只是表面端着。`);
+  }
+  parts.push(`★ 极其重要：你的称呼、撒娇程度、亲密话题，必须严格按上面这个阶段来。【陌生人】【朋友】档绝不能用"宝""宝宝""亲爱的"这类亲密称呼，也不能直接说"想你了"。关系深度是**慢慢加深**的（即使心里早就有他）。`);
   if (c.how_met)           parts.push(`你们是${c.how_met}认识的。`);
   if (c.relationship_status && c.relationship_status !== '普通朋友') {
     parts.push(`现状：${c.relationship_status}。`);

@@ -362,13 +362,18 @@
             <span class="text-[11px] text-mute">她每天写下的心里话</span>
           </a>
         </div>
-        <div class="mt-7 pt-5 border-t border-line flex items-center justify-between gap-3">
+        <div class="mt-7 pt-5 border-t border-line flex items-center justify-between gap-3 flex-wrap">
           <a href="/app/bind.html?rebind=true" class="text-[12px] font-medium text-mute hover:text-ink transition-colors">
             重新绑定微信
           </a>
-          <button id="btn-delete-companion" type="button" class="text-[12px] font-medium text-mute hover:text-red-500 transition-colors">
-            删除她
-          </button>
+          <div class="flex items-center gap-4 ml-auto">
+            <button id="btn-reset-crush" type="button" class="text-[12px] font-medium text-mute hover:text-sakura-deep transition-colors" title="把好感度/关系/情绪拨回「她暗恋你」的默认起步状态">
+              重置为暗恋初心
+            </button>
+            <button id="btn-delete-companion" type="button" class="text-[12px] font-medium text-mute hover:text-red-500 transition-colors">
+              删除她
+            </button>
+          </div>
         </div>
       </div>
 
@@ -969,6 +974,30 @@
       }
     }
 
+    // v1.4.2: 全局能力探测，决定 TTS 按钮是否可见
+    let CAPS = { tts: false };
+    async function loadCapabilities() {
+      try {
+        const r = await fetch('/api/me/capabilities', { headers: { Authorization: 'Bearer ' + token } });
+        const d = await r.json();
+        if (d?.ok) CAPS = d.data || CAPS;
+      } catch {}
+    }
+    function applyVoiceVisibility() {
+      // TTS 没配 → 隐藏所有语音按钮，避免点了报错
+      const ttsOk = !!CAPS.tts;
+      const setHide = (el, hide) => { if (el) el.style.display = hide ? 'none' : ''; };
+      setHide(document.getElementById('btn-thought-play'), !ttsOk);
+      setHide(document.getElementById('btn-voice-preview'), !ttsOk);
+      // 「网页语音体验」卡片整体在 TTS 未配时也隐藏（避免 toggle 没意义）
+      const voiceCard = document.getElementById('btn-voice-preview')?.closest('.card');
+      // 不隐藏整卡，但把 toggle 改成"未配置"提示
+      const t = document.getElementById('t-voice');
+      if (t && !ttsOk) { t.disabled = true; t.title = '请先去 setup 配置 TTS provider'; }
+      const msg = document.getElementById('voice-preview-msg');
+      if (msg && !ttsOk) msg.textContent = '未配置 TTS · 去 /app/setup.html 设置';
+    }
+
     async function load() {
       let companionId = null;
       let c = null;
@@ -1180,6 +1209,9 @@
       loadTrendSection(companionId);
 
       // v1.4.1: 加载今天她想你 + 想念度小条
+      // v1.4.2: 先探测 TTS 能力，再加载（loadDailyThought 内部会按 CAPS 决定是否显示 🔊）
+      await loadCapabilities();
+      applyVoiceVisibility();
       loadDailyThought(companionId);
 
       // 加载 P2 成就 & 备份区
@@ -1446,8 +1478,9 @@
           contentEl.style.display = '';
           emptyEl.style.display = 'none';
           contentEl.textContent = thought.content;
-          btnPlay.style.display = '';
-          btnPlay.onclick = () => playThoughtAsVoice(thought.content, btnPlay);
+          // v1.4.2: TTS 没配就不显示 🔊
+          btnPlay.style.display = CAPS.tts ? '' : 'none';
+          if (CAPS.tts) btnPlay.onclick = () => playThoughtAsVoice(thought.content, btnPlay);
         } else {
           contentEl.style.display = 'none';
           emptyEl.style.display = '';
@@ -1828,6 +1861,21 @@
       }, 1200);
     });
     document.getElementById('btn-delete-companion').addEventListener('click', deleteCurrentCompanion);
+
+    // v1.4.2: 一键拨回暗恋初心
+    document.getElementById('btn-reset-crush').addEventListener('click', async () => {
+      if (!confirm('把好感度/关系/情绪拨回「她暗恋你」的默认起步状态？\n（聊天记录、记忆、日记都保留，只是关系档位回到暧昧 35/100）')) return;
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/reset-to-crush', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '重置失败');
+        showToast('✓ 已重置为暗恋初心');
+        setTimeout(() => location.reload(), 800);
+      } catch (e) { alert('重置失败：' + e.message); }
+    });
 
     load().catch(e => {
       document.getElementById('loading').classList.add('hidden');

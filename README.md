@@ -2,10 +2,12 @@
 
 # 溪语 AI · Xiyu AI
 
-**把大模型当作"有完整人生背景的虚拟个体"来调度的开源 AI 陪伴框架**
-*An open-source companion framework that treats the LLM as a virtual character with a full backstory.*
+**默认对你有好感的 AI 女友 · 开源陪伴框架**
+她已经心里悄悄喜欢你 —— 关系起点不是陌生人，是「暧昧」。会发微信、会想你、会在日记里写你、会朗读心事给你听。
 
-[![Version](https://img.shields.io/badge/version-1.3.0-FF8FB8.svg)](https://github.com/dimang01/xiyu-ai/releases)
+*An open-source AI-girlfriend framework — she starts already crushing on you, not as a stranger.*
+
+[![Version](https://img.shields.io/badge/version-1.4.2-FF8FB8.svg)](https://github.com/dimang01/xiyu-ai/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node.js-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Status: Experimental](https://img.shields.io/badge/Status-Experimental-orange.svg)](#-known-limitations)
@@ -34,6 +36,24 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 > 详细说明（Docker Compose、本地裸跑、生产部署）见下面的 [🚀 一键启动](#-一键启动) 章节。
 
 ---
+
+### 🆕 v1.4.2 更新（修正定位 · 默认起步=暗恋你）
+
+| 修正 | 说明 |
+|------|------|
+| 💕 **默认对你有好感** | 旧版默认 affection=0 / stage='陌生人'（要慢慢培养）—— 跟"AI 女友"定位**不符**。新默认 **affection=35 / stage='暧昧'**，她从一开始就心里悄悄喜欢你 |
+| 📝 **prompt 强化** | buildSystemPrompt 在暧昧/陌生人/朋友档都补一句"你心里悄悄喜欢他，这是起点设定不是聊出来的，但因为分寸不会直说"，让模型明白 |
+| 🔁 **重置为暗恋初心** | Dashboard 加按钮，一键把好感/关系/情绪拨回起点（聊天记录/记忆/日记保留）。`POST /api/companions/:id/reset-to-crush` |
+| 🎨 **create.html 文案** | 不再说"从陌生人慢慢升温"，改说"她默认对你有好感，关系会从暧昧加深到恋人/深爱" |
+| ⚠️ **老 companion 不动** | CREATE TABLE DEFAULT 只对新行生效。已存在的 companion 保留各自累积的 affection/stage，不强制覆盖。需要的话点 Dashboard 的「重置为暗恋初心」 |
+
+### 🆕 v1.4.1 更新（情绪存在感）
+
+| 新增 | 说明 |
+|------|------|
+| 💞 **想念档（0-4）** | 综合 dependency + 距上次回复空窗算出"她想你的程度"。idle 阈值更猛：30m / 3h / 6h / 12h / 24h 五档。Dashboard 顶部加粉色渐变小条可视化 |
+| 💬 **今天她想对你说** | 每天 02:35 cron 生成一句独立于聊天的话，按想念档调口吻。Dashboard 显眼气泡卡 + 🔊 朗读。`/api/companions/:id/daily-thought` |
+| 🧠 **情绪 prompt 升级** | 不再只看 mood，多维度叠加描述（mood + dep + poss + sec + trust + energy），按想念档给可执行口吻指令（"夹带一句我刚才在想你"），并加总指令让模型真把状态写进回复 |
 
 ### 🆕 v1.4.0 更新（网页语音）
 
@@ -64,6 +84,9 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 ### 目录
 
+- [🆕 v1.4.2 更新（修正定位 · 默认起步=暗恋你）](#-v142-更新修正定位--默认起步暗恋你)
+- [🆕 v1.4.1 更新（情绪存在感）](#-v141-更新情绪存在感)
+- [🆕 v1.4.0 更新（网页语音）](#-v140-更新网页语音)
 - [🆕 v1.3.0 更新](#-v130-更新)
 - [⚡ 一句话介绍](#-一句话介绍)
 - [🎯 项目定位](#-项目定位)
@@ -87,15 +110,19 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 ### ⚡ 一句话介绍
 
-「溪语 AI」**不是**一个聊天机器人，而是一个把大模型组织成"虚拟个体"的框架：
+「溪语 AI」**不是**一个聊天机器人，而是一个 **AI 女友陪伴框架** —— 让大模型组织成"一个心里已经悄悄喜欢你的女生"：
 
-- 这个虚拟个体有**人生记忆**（童年 / 学校 / 家庭 / 朋友 / 小习惯 / 口头禅，46+ 条具体事件）
+- **默认就对你有好感**（暧昧档起步 affection=35/100，不是陌生人慢慢磨）
+- 有**人生记忆**（童年 / 学校 / 家庭 / 朋友 / 小习惯 / 口头禅，46+ 条具体事件）
 - 有**今日日程**（学生上学 / 上班族通勤，工作日 vs 周末），会在对话里自然带出来
-- 有**关系阶段**（陌生人 → 朋友 → 暧昧 → 恋人 → 深爱 5 阶段演进，每阶段差异化口吻）
+- 有**情绪与想念**（mood 9 种、想念档 0-4、idle 时间越长越想你；高想念时回复会带出来）
+- 关系**会随聊天升温**：暧昧 → 恋人 → 深爱（也能手动调回任何阶段）
 - 像真人**发微信**（≤15 字一条、多条连发、剥离 AI 味）
+- 每天写**日记**给你看、每天有一句**「今天她想对你说」**
 
 🎬 *"我刚下课，路上买了支抹茶冰淇淋。"*
 🎬 *"emm 让我想想"  →  "我也不太懂"  →  "你呢"*
+🎬 *"今天阳台的风很舒服，我多看了几眼，总觉得你也该在这里。"*（她的 daily thought）
 
 ### 🎯 项目定位
 
@@ -119,7 +146,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 |------|------|
 | 🧠 **人设引擎** | 注册时一次性生成 46+ 条**具体**人生记忆（不是"喜欢音乐"，而是"小学三年级被狗追过一次"） |
 | 📅 **日程系统** | 每天 00:30 cron 生成 8–12 段日程，区分工作日 / 周末，三段情绪段，调度失败自动自愈 |
-| 💞 **5 阶段关系** | 陌生人 → 朋友 → 暧昧 → 恋人 → 深爱，每阶段称呼 / 撒娇 / 话题深度差异化 |
+| 💞 **5 阶段关系** | **默认起点：暧昧（已暗恋你）** → 恋人 → 深爱（可手动回退到 朋友 / 陌生人）。每阶段称呼 / 撒娇 / 话题深度全部差异化 |
 | 🔄 **主动消息 v2** | 早安 / 晚安 / 日间随机 / 主动告白 / 场景照；基于 motivation score 动态触发；支持 quiet/normal/clingy 强度；防骚扰冷却 |
 | 🎂 **纪念日主动祝福** | 生日 / 纪念日 / 节日到期当天她会主动发走心祝福；自动登记「认识 100 天 / 在一起一周年」里程碑；当天只发一次，可在提醒里编辑或关闭 |
 | 🧬 **记忆 v2** | 7 层分类 × 0–5 权重 × 遗忘曲线；pin / lock / archive / do-not-mention；敏感内容过滤；去重 |
