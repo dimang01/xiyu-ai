@@ -77,9 +77,13 @@ body::after {
  * 重要：用 :not() 排除"已经有自己背景渐变 / 粉色实色"的元素（小按钮、图标方框、
  * 头像等），否则会把它们的彩色背景覆盖成半透明白，导致彩色文字/图标贴白底
  * 看不见（修 v1.3.0 初版 dashboard "打开微信"按钮和"聊天模式"图标空白问题）。
+ *
+ * v1.4.0 hotfix: 再加 .btn-primary（auth.html 的登录/注册按钮用的是这个 class，
+ * 它的粉色渐变背景由下方 .bg-sakura/.btn-primary 规则提供，本玻璃规则若不排除
+ * 会盖掉它）。
  */
-.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.bg-pink-500),
-.shadow-card:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.bg-pink-500),
+.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.bg-pink-500):not(.btn-primary),
+.shadow-card:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.bg-pink-500):not(.btn-primary),
 .glass {
   background: var(--glass-bg) !important;
   backdrop-filter: blur(var(--glass-blur)) saturate(180%);
@@ -93,9 +97,9 @@ body::after {
 
 /* 卡片 hover 时轻轻浮起（仅给明确可交互/链接卡片，避免大面板乱动；
    同样排除已有彩色背景的元素，让它们保留各自的 hover 样式） */
-a.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):hover,
-a.shadow-card:not([class*="bg-gradient"]):not([class*="bg-sakura"]):hover,
-button.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):hover,
+a.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.btn-primary):hover,
+a.shadow-card:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.btn-primary):hover,
+button.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.btn-primary):hover,
 .glass-hover:hover {
   box-shadow: var(--glass-shadow-hover) !important;
   transform: translateY(-2px);
