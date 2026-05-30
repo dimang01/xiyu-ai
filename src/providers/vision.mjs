@@ -58,6 +58,27 @@ export const REGISTRY = {
     label: 'Anthropic Claude (vision)',
     kind: 'anthropic-native',
   },
+  kimi: {
+    baseURL: 'https://api.moonshot.cn/v1',
+    defaultModel: 'moonshot-v1-8k-vision-preview',
+    apiKeyEnv: 'MOONSHOT_API_KEY',
+    label: 'Kimi（Moonshot）vision',
+    kind: 'openai-compat',
+  },
+  stepfun: {
+    baseURL: 'https://api.stepfun.com/v1',
+    defaultModel: 'step-1v-8k',
+    apiKeyEnv: 'STEPFUN_API_KEY',
+    label: 'StepFun step-1v',
+    kind: 'openai-compat',
+  },
+  minimax: {
+    baseURL: 'https://api.minimax.chat/v1',
+    defaultModel: 'abab7-chat-preview',
+    apiKeyEnv: 'MINIMAX_API_KEY',     // 与 TTS / ASR 复用
+    label: 'MiniMax abab vision',
+    kind: 'openai-compat',
+  },
 };
 
 const PROMPT = '请详细描述这张图片：主体、场景、颜色、氛围、情绪等。用中文，控制在 100 字以内。';

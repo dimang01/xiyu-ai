@@ -282,6 +282,9 @@
                 <option value="qwen">通义千问 VL</option>
                 <option value="doubao">豆包视觉 (Ark)</option>
                 <option value="anthropic">Anthropic Claude</option>
+                <option value="kimi">Kimi（Moonshot）vision</option>
+                <option value="stepfun">StepFun step-1v</option>
+                <option value="minimax">MiniMax abab vision（key 与 TTS 复用）</option>
               </select>
             </div>
             <div class="mb-2">
@@ -313,14 +316,34 @@
               <select id="s2-asr-provider" class="input">
                 <option value="">不启用</option>
                 <option value="gemini">Google Gemini</option>
-                <option value="openai">OpenAI Whisper</option>
+                <option value="openai">OpenAI Whisper / gpt-4o-transcribe</option>
                 <option value="qwen">通义千问 paraformer</option>
+                <option value="groq">Groq Whisper-large-v3（速度快 · 免费额度）</option>
+                <option value="minimax">MiniMax ASR（key 与 TTS 复用）</option>
+                <option value="azure">Azure Speech-to-Text（与 TTS 共用 key + Region）</option>
+                <option value="doubao">豆包 ASR 一句话识别（需 AppID + Cluster）</option>
               </select>
             </div>
             <div class="mb-2">
               <label class="block text-[12px] font-semibold mb-1">Model（选填）</label>
               <input id="s2-asr-model" class="input font-mono" type="text"
                      placeholder="留空使用该 provider 默认模型" autocomplete="off" spellcheck="false" />
+              <p id="s2-asr-model-hint" class="text-[11px] text-mute/80 mt-1"></p>
+            </div>
+            <!-- Azure 专属：Region（与 TTS 共用） -->
+            <div class="mb-2 hidden" id="s2-asr-azure-row">
+              <label class="block text-[12px] font-semibold mb-1">Azure Region</label>
+              <input id="s2-asr-azure-region" class="input font-mono" type="text"
+                     placeholder="如 eastasia / westus（与 TTS 共用，留空使用 TTS 已配）" autocomplete="off" spellcheck="false" />
+            </div>
+            <!-- 豆包专属：AppID + Cluster -->
+            <div class="mb-2 hidden" id="s2-asr-doubao-row">
+              <label class="block text-[12px] font-semibold mb-1">豆包 AppID</label>
+              <input id="s2-asr-doubao-appid" class="input font-mono mb-2" type="text"
+                     placeholder="火山引擎控制台 · 应用 ID" autocomplete="off" spellcheck="false" />
+              <label class="block text-[12px] font-semibold mb-1">Cluster</label>
+              <input id="s2-asr-doubao-cluster" class="input font-mono" type="text"
+                     placeholder="一般填 volcengine_input_common" autocomplete="off" spellcheck="false" />
             </div>
             <div class="mb-3">
               <label class="block text-[12px] font-semibold mb-1">API Key（选填）</label>
@@ -977,8 +1000,15 @@ async function refreshOptional() {
       const sel = document.getElementById('s2-asr-provider');
       if (sel.querySelector(`option[value="${a.active}"]`)) sel.value = a.active;
       document.getElementById('s2-asr-model').value = a.active_model || '';
+      // 回填 ASR extras（azure region / doubao appid+cluster）
+      if (a.extras) {
+        if (a.extras.region)  document.getElementById('s2-asr-azure-region').value  = a.extras.region;
+        if (a.extras.appid)   document.getElementById('s2-asr-doubao-appid').value  = a.extras.appid;
+        if (a.extras.cluster) document.getElementById('s2-asr-doubao-cluster').value = a.extras.cluster;
+      }
       document.getElementById('s2-asr-state').textContent =
         a.active_configured ? `已启用：${a.active}（${a.active_model || '默认模型'}）` : '未配置';
+      updateAsrProviderHints(sel.value);
     }
     const s = d.data?.search;
     if (s) refreshSearchUI(s.active, s.active_configured, s.providers);
@@ -1032,6 +1062,28 @@ document.getElementById('s2-tts-provider').addEventListener('change', e => {
   updateTtsProviderHints(e.target.value);
 });
 
+// ─── ASR Provider 切换：显示额外字段 + model 占位提示 ────────────────────────
+const ASR_MODEL_HINTS = {
+  openai:  '默认 whisper-1；可填 gpt-4o-mini-transcribe / gpt-4o-transcribe（更准）',
+  groq:    '默认 whisper-large-v3；可填 whisper-large-v3-turbo 等',
+  qwen:    '默认 paraformer-v2',
+  azure:   '此处填语言代码，默认 zh-CN；可改 en-US / ja-JP 等',
+  doubao:  '豆包一句话识别无 model 概念',
+  minimax: '默认 speech-01',
+  gemini:  '默认 gemini-2.5-flash',
+};
+function updateAsrProviderHints(provider) {
+  const azureRow  = document.getElementById('s2-asr-azure-row');
+  const doubaoRow = document.getElementById('s2-asr-doubao-row');
+  const hintEl    = document.getElementById('s2-asr-model-hint');
+  azureRow.classList.toggle('hidden',  provider !== 'azure');
+  doubaoRow.classList.toggle('hidden', provider !== 'doubao');
+  hintEl.textContent = ASR_MODEL_HINTS[provider] || '';
+}
+document.getElementById('s2-asr-provider').addEventListener('change', e => {
+  updateAsrProviderHints(e.target.value);
+});
+
 async function saveOptional(capability) {
   const prefix = capability === 'vision' ? 's2-vision' : capability === 'asr' ? 's2-asr' : 's2-tts';
   const provider = document.getElementById(`${prefix}-provider`).value;
@@ -1043,17 +1095,24 @@ async function saveOptional(capability) {
     setMsg(msgId, '请选择 Provider，或点"清除"关闭该能力', 'err');
     return;
   }
-  // TTS 各 provider 的额外字段
+  // 各 provider 的额外字段（azure region / doubao appid+cluster），按 capability 取对应输入框
   const extras = {};
-  if (capability === 'tts') {
+  if (capability === 'tts' || capability === 'asr') {
     if (provider === 'azure') {
-      extras.region = document.getElementById('s2-tts-azure-region').value.trim();
-      if (!extras.region) { setMsg(msgId, '请填 Azure Region（如 eastasia）', 'err'); return; }
+      const regionId = capability === 'tts' ? 's2-tts-azure-region' : 's2-asr-azure-region';
+      extras.region = document.getElementById(regionId).value.trim();
+      // ASR azure 允许留空——后端会 fallback 到 TTS_AZURE_REGION（同 env var）
+      if (capability === 'tts' && !extras.region) {
+        setMsg(msgId, '请填 Azure Region（如 eastasia）', 'err'); return;
+      }
     } else if (provider === 'doubao') {
-      extras.appid   = document.getElementById('s2-tts-doubao-appid').value.trim();
-      extras.cluster = document.getElementById('s2-tts-doubao-cluster').value.trim();
+      const appidId   = capability === 'tts' ? 's2-tts-doubao-appid'   : 's2-asr-doubao-appid';
+      const clusterId = capability === 'tts' ? 's2-tts-doubao-cluster' : 's2-asr-doubao-cluster';
+      extras.appid   = document.getElementById(appidId).value.trim();
+      extras.cluster = document.getElementById(clusterId).value.trim();
+      const defaultCluster = capability === 'tts' ? 'volcano_tts' : 'volcengine_input_common';
       if (!extras.appid)   { setMsg(msgId, '请填豆包 AppID', 'err'); return; }
-      if (!extras.cluster) { setMsg(msgId, '请填 Cluster（一般 volcano_tts）', 'err'); return; }
+      if (!extras.cluster) { setMsg(msgId, `请填 Cluster（一般 ${defaultCluster}）`, 'err'); return; }
     }
   }
   setMsg(msgId, '保存中…', 'info');
@@ -1100,6 +1159,11 @@ async function clearOptional(capability) {
         document.getElementById('s2-tts-doubao-appid').value = '';
         document.getElementById('s2-tts-doubao-cluster').value = '';
         updateTtsProviderHints('');
+      } else if (capability === 'asr') {
+        document.getElementById('s2-asr-azure-region').value = '';
+        document.getElementById('s2-asr-doubao-appid').value = '';
+        document.getElementById('s2-asr-doubao-cluster').value = '';
+        updateAsrProviderHints('');
       }
       await refreshOptional();
     } else {

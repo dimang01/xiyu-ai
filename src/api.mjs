@@ -1887,6 +1887,7 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
       active: active.id,
       active_model: active.model,
       active_configured: Boolean(active.configured),
+      extras: active.extras || {},
       providers: items,
     };
   }
@@ -1957,16 +1958,12 @@ router.post('/setup/provider-config',
                          : 'TTS_MODEL';
       const { provider, api_key, model, voice_id, extras = {}, clear = false } = req.body || {};
       if (clear) {
+        // 仅停用：删 PROVIDER_KEY + MODEL_KEY（让 capability inactive）。
+        // 保留 api_key / voice_id / region / appid / cluster，避免误删被其它 capability 复用的字段
+        // （如 MiniMax key、Azure region），用户重启用时无需重填。
         deleteAppSetting(PROVIDER_KEY);
         deleteAppSetting(MODEL_KEY);
-        if (capability === 'tts') {
-          deleteAppSetting('TTS_VOICE_ID');
-          // 一并清掉 azure / doubao 的额外字段（即使当前 active 不是这俩也无妨）
-          deleteAppSetting('TTS_AZURE_REGION');
-          deleteAppSetting('TTS_DOUBAO_APPID');
-          deleteAppSetting('TTS_DOUBAO_CLUSTER');
-        }
-        log('info', `[Setup] provider-config: ${capability} 已清除`);
+        log('info', `[Setup] provider-config: ${capability} 已停用（key/extras 保留）`);
         return ok(res, { capability, cleared: true });
       }
       if (!provider || typeof provider !== 'string') return err(res, 'provider 不能为空');
@@ -1984,7 +1981,7 @@ router.post('/setup/provider-config',
         keySaved = true;
         log('info', `[Setup] provider-config: ${capability}/${pName} ${pEntry.apiKeyEnv} 已更新（已隐藏）`);
       }
-      // TTS 还要存 voice_id（可选）+ provider 专属 extras
+      // voice_id 只 tts 用；extras 按 entry 声明的 env 字段保存（vision/asr/tts 通用）
       let voiceIdSaved = false;
       const extrasSaved = [];
       if (capability === 'tts') {
@@ -1993,20 +1990,18 @@ router.post('/setup/provider-config',
           setAppSetting('TTS_VOICE_ID', trimmedVoice, { secret: 0 });
           voiceIdSaved = true;
         }
-        // azure: TTS_AZURE_REGION
-        if (pEntry.regionEnv && typeof extras.region === 'string' && extras.region.trim()) {
-          setAppSetting(pEntry.regionEnv, extras.region.trim(), { secret: 0 });
-          extrasSaved.push('region');
-        }
-        // doubao: TTS_DOUBAO_APPID / TTS_DOUBAO_CLUSTER
-        if (pEntry.appidEnv && typeof extras.appid === 'string' && extras.appid.trim()) {
-          setAppSetting(pEntry.appidEnv, extras.appid.trim(), { secret: 0 });
-          extrasSaved.push('appid');
-        }
-        if (pEntry.clusterEnv && typeof extras.cluster === 'string' && extras.cluster.trim()) {
-          setAppSetting(pEntry.clusterEnv, extras.cluster.trim(), { secret: 0 });
-          extrasSaved.push('cluster');
-        }
+      }
+      if (pEntry.regionEnv && typeof extras.region === 'string' && extras.region.trim()) {
+        setAppSetting(pEntry.regionEnv, extras.region.trim(), { secret: 0 });
+        extrasSaved.push('region');
+      }
+      if (pEntry.appidEnv && typeof extras.appid === 'string' && extras.appid.trim()) {
+        setAppSetting(pEntry.appidEnv, extras.appid.trim(), { secret: 0 });
+        extrasSaved.push('appid');
+      }
+      if (pEntry.clusterEnv && typeof extras.cluster === 'string' && extras.cluster.trim()) {
+        setAppSetting(pEntry.clusterEnv, extras.cluster.trim(), { secret: 0 });
+        extrasSaved.push('cluster');
       }
       return ok(res, {
         capability,
