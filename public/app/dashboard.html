@@ -411,6 +411,31 @@
           <p class="text-[12px] text-mute font-medium mt-3">让她在合适的时刻发表情包</p>
         </div>
 
+        <!-- 语音回复（v1.4.0） -->
+        <div class="card p-7">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+                <i data-lucide="mic" class="w-5 h-5 text-sakura-deep"></i>
+              </div>
+              <h3 class="text-[15px] font-bold">语音回复</h3>
+            </div>
+            <label class="toggle">
+              <input id="t-voice" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <p class="text-[12px] text-mute font-medium mt-3 leading-relaxed">
+            晚安 / 告白 / 纪念日时她会发微信语音。需先在 setup 配置 TTS provider。
+          </p>
+          <div class="mt-3 flex items-center gap-2">
+            <button id="btn-voice-preview" type="button" class="text-[12px] font-semibold text-sakura-deep border border-sakura-soft rounded-full px-3 py-1.5 hover:bg-sakura-soft transition-all">
+              <i data-lucide="play" class="inline w-3 h-3 align-[-1px]"></i> 试听
+            </button>
+            <span id="voice-preview-msg" class="text-[11px] text-mute"></span>
+          </div>
+        </div>
+
         <!-- 长期记忆 -->
         <div class="card p-7">
           <div class="flex items-center justify-between">
@@ -1005,9 +1030,11 @@
       const tProactive = document.getElementById('t-proactive');
       const tSticker = document.getElementById('t-sticker');
       const tMemory = document.getElementById('t-memory');
+      const tVoice = document.getElementById('t-voice');
       tProactive.checked = !!c.proactive_enabled;
       tSticker.checked = !!c.sticker_reply_enabled;
       tMemory.checked = c.memory_enabled !== false;   // 默认开
+      tVoice.checked = !!c.voice_reply_enabled;        // v1.4.0 默认关
 
       async function patchCompanion(field, value) {
         try {
@@ -1030,6 +1057,39 @@
       });
       tSticker.addEventListener('change', () => patchCompanion('sticker_reply_enabled', tSticker.checked));
       tMemory.addEventListener('change', () => patchCompanion('memory_enabled', tMemory.checked));
+      tVoice.addEventListener('change', () => patchCompanion('voice_reply_enabled', tVoice.checked));
+
+      // 语音试听：调 /tts-preview 拿 mp3 字节，浏览器 Audio 直接播
+      const btnVoicePreview = document.getElementById('btn-voice-preview');
+      const voicePreviewMsg = document.getElementById('voice-preview-msg');
+      let voicePreviewAudio = null;
+      btnVoicePreview.addEventListener('click', async () => {
+        if (btnVoicePreview.disabled) return;
+        btnVoicePreview.disabled = true;
+        voicePreviewMsg.textContent = '合成中…';
+        try {
+          const r = await fetch(`/api/companions/${companionId}/tts-preview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: '你好呀，我是' + (c.name || '溪语') + '，今天过得怎么样？' }),
+          });
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            throw new Error(j.error || ('HTTP ' + r.status));
+          }
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          if (voicePreviewAudio) { voicePreviewAudio.pause(); URL.revokeObjectURL(voicePreviewAudio.src); }
+          voicePreviewAudio = new Audio(url);
+          voicePreviewAudio.onended = () => { voicePreviewMsg.textContent = '播放完毕'; };
+          await voicePreviewAudio.play();
+          voicePreviewMsg.textContent = '播放中…';
+        } catch (e) {
+          voicePreviewMsg.textContent = '失败：' + e.message;
+        } finally {
+          setTimeout(() => { btnVoicePreview.disabled = false; }, 800);
+        }
+      });
 
       // 主动消息：用户拖动滑块直接调每天目标条数 (proactive_daily_target, 0-30)
       const slider = document.getElementById('proactive-target-slider');

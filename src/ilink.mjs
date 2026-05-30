@@ -17,6 +17,7 @@ import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
 import { log } from './logger.mjs';
+import { uploadFile } from './media.mjs';
 
 const PLUGIN_VERSION = '2.4.4';
 const ILINK_APP_ID = 'bot';
@@ -364,6 +365,44 @@ export async function sendMessage(ctx, msg, text) {
 
 export async function sendTextMessage(ctx, toUserId, text, contextToken) {
   return sendMessage(ctx, { to_user_id: toUserId, context_token: contextToken }, text);
+}
+
+/**
+ * 发送一条语音（SILK）消息。v1.4.0 Sprint 2。
+ * 流程：CDN 加密上传 silk 字节 → 构造 voice_item → sendmessage。
+ * 任何一步失败抛错 → caller 负责降级（src/proactive.mjs 会回退到文本）。
+ *
+ * @param {object} ctx           - { baseUrl, token, botId }
+ * @param {string} toUserId      - 接收方 wechat_user_id
+ * @param {Buffer} silk          - SILK v3 字节流
+ * @param {number} durationMs    - 音频时长毫秒
+ * @param {string} [contextToken]
+ * @returns {Promise<boolean>}   - true = 发送成功
+ */
+export async function sendVoiceMessage(ctx, toUserId, silk, durationMs, contextToken) {
+  if (!toUserId) {
+    log('warn', `[iLink] sendVoiceMessage missing to_user_id bot=${shortBot(ctx.botId)}`);
+    return false;
+  }
+  if (!silk || !silk.length) {
+    log('warn', `[iLink] sendVoiceMessage empty silk bot=${shortBot(ctx.botId)}`);
+    return false;
+  }
+  if (!durationMs || durationMs <= 0) {
+    log('warn', `[iLink] sendVoiceMessage bad duration=${durationMs} bot=${shortBot(ctx.botId)}`);
+    return false;
+  }
+  // 1. CDN 上传（uploadFile 失败会抛）
+  const { item } = await uploadFile({
+    data: silk,
+    fileName: `voice_${Date.now()}.silk`,
+    toUserId,
+    ctx,
+    mediaType: 'voice',
+    durationMs,
+  });
+  // 2. 走通用 sendMessageItem 通道（拿到 voice item 后就和图片/文件一样了）
+  return sendMessageItem(ctx, toUserId, item, contextToken);
 }
 
 /**

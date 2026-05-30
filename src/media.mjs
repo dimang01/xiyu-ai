@@ -23,10 +23,13 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 // iLink 端 type 字段：1 IMAGE, 2 IMAGE_FILE? 我们目前只发图片
 export const ItemType = { TEXT: 1, IMAGE: 2, VOICE: 3, FILE: 4, VIDEO: 5 };
+// v1.4.0 Sprint 2: VOICE CDN type — openclaw-weixin 协议把语音和文件走同一个 CDN 桶
+// （都是任意二进制 + AES-128-ECB），用 FILE(3) 作为 cdnType 上传，仅 ItemType 不同。
 export const CDNMediaType = { IMAGE: 1, VIDEO: 2, FILE: 3 };
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.webm', '.mkv', '.avi']);
+const VOICE_EXTS = new Set(['.silk', '.slk', '.amr']);
 
 function aesEcbPaddedSize(plaintextSize) {
   return Math.ceil((plaintextSize + 1) / 16) * 16;
@@ -37,10 +40,21 @@ function encryptAesEcb(plaintext, key) {
   return Buffer.concat([cipher.update(plaintext), cipher.final()]);
 }
 
-function classifyMedia(fileName) {
+function classifyMedia(fileName, mediaTypeOverride = null) {
+  // 显式覆盖优先（caller 说"这是 voice"就当 voice，不靠后缀猜）
+  if (mediaTypeOverride === 'voice') {
+    return { cdnType: CDNMediaType.FILE, itemType: ItemType.VOICE };
+  }
+  if (mediaTypeOverride === 'image') {
+    return { cdnType: CDNMediaType.IMAGE, itemType: ItemType.IMAGE };
+  }
+  if (mediaTypeOverride === 'video') {
+    return { cdnType: CDNMediaType.VIDEO, itemType: ItemType.VIDEO };
+  }
   const ext = path.extname(fileName || '').toLowerCase();
   if (IMAGE_EXTS.has(ext)) return { cdnType: CDNMediaType.IMAGE, itemType: ItemType.IMAGE };
   if (VIDEO_EXTS.has(ext)) return { cdnType: CDNMediaType.VIDEO, itemType: ItemType.VIDEO };
+  if (VOICE_EXTS.has(ext)) return { cdnType: CDNMediaType.FILE,  itemType: ItemType.VOICE };
   return { cdnType: CDNMediaType.FILE, itemType: ItemType.FILE };
 }
 
@@ -82,18 +96,24 @@ export async function readMediaBuffer(filePath) {
  * 加密上传一个媒体文件到 iLink CDN，返回可以塞进 sendmessage 的 MessageItem。
  *
  * @param {object} args
- * @param {Buffer} args.data        - 文件二进制
- * @param {string} args.fileName    - 文件名（用于识别扩展名）
- * @param {string} args.toUserId    - 接收方
- * @param {object} args.ctx         - { baseUrl, token }
+ * @param {Buffer} args.data           - 文件二进制
+ * @param {string} args.fileName       - 文件名（用于识别扩展名，voice 没扩展名时也要传一个）
+ * @param {string} args.toUserId       - 接收方
+ * @param {object} args.ctx            - { baseUrl, token }
+ * @param {string} [args.mediaType]    - 显式覆盖：'voice' / 'image' / 'video' / 'file'；
+ *                                       默认按 fileName 扩展名识别
+ * @param {number} [args.durationMs]   - voice 必填：音频时长毫秒
  */
-export async function uploadFile({ data, fileName, toUserId, ctx }) {
+export async function uploadFile({ data, fileName, toUserId, ctx, mediaType = null, durationMs = null }) {
   if (!data || !data.length) throw new Error('uploadFile: empty data');
   if (!ctx?.token) throw new Error('uploadFile: missing ctx.token');
   if (!toUserId) throw new Error('uploadFile: missing toUserId');
 
   const baseUrl = (ctx.baseUrl || 'https://ilinkai.weixin.qq.com').replace(/\/$/, '');
-  const { cdnType, itemType } = classifyMedia(fileName);
+  const { cdnType, itemType } = classifyMedia(fileName, mediaType);
+  if (itemType === ItemType.VOICE && (!durationMs || durationMs <= 0)) {
+    throw new Error('uploadFile: voice 类型必须传 durationMs');
+  }
 
   const filekey = crypto.randomBytes(16).toString('hex');
   const aesKey = crypto.randomBytes(16);
@@ -199,6 +219,17 @@ export async function uploadFile({ data, fileName, toUserId, ctx }) {
     item = { type: ItemType.IMAGE, image_item: { media, mid_size: cipherSize } };
   } else if (itemType === ItemType.VIDEO) {
     item = { type: ItemType.VIDEO, video_item: { media, video_size: cipherSize } };
+  } else if (itemType === ItemType.VOICE) {
+    // SILK 是 encode_type=6（参见 iLink 协议）；voice_size 用密文长度（与 image 同范式）
+    item = {
+      type: ItemType.VOICE,
+      voice_item: {
+        media,
+        voice_size: cipherSize,
+        duration_ms: Math.round(durationMs),
+        encode_type: 6,
+      },
+    };
   } else {
     item = {
       type: ItemType.FILE,
@@ -206,6 +237,6 @@ export async function uploadFile({ data, fileName, toUserId, ctx }) {
     };
   }
 
-  log('info', `[Media] uploaded filename=${fileName} size=${data.length} cipherSize=${cipherSize} to=${String(toUserId).slice(0, 20)}`);
+  log('info', `[Media] uploaded filename=${fileName} size=${data.length} cipherSize=${cipherSize} type=${itemType} to=${String(toUserId).slice(0, 20)}`);
   return { item, downloadParam, aesKeyHex, fileSize: data.length, cipherSize };
 }
