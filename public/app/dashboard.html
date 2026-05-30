@@ -58,6 +58,11 @@
     .toggle input:checked + .slider { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); }
     .toggle input:checked + .slider::before { transform: translateX(18px); }
 
+    /* 主动消息频率三档按钮 */
+    .freq-btn.active { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); color:#fff; box-shadow: 0 2px 8px rgba(255,143,184,.28); }
+    .freq-btn:not(.active):hover { color:#FF8FB8; }
+    .freq-btn[disabled] { opacity:.4; cursor:not-allowed; }
+
     .pro-chip { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); color:#fff; box-shadow: 0 2px 8px rgba(255,143,184,.32); }
     .free-chip { background:#FAFAFA; color:#86868B; border:1px solid #F0F0F2; }
 
@@ -363,6 +368,15 @@
           <p class="text-[12px] text-mute font-medium leading-relaxed mt-2" id="proactive-hint">
             打开后她会在日常时段主动找你聊天
           </p>
+          <!-- 频率三档：少 / 适中 / 多 -->
+          <div class="mt-3" id="proactive-freq-row">
+            <div class="text-[11px] text-mute font-medium mb-1.5">频率</div>
+            <div class="inline-flex p-0.5 rounded-full border border-line bg-white" id="freq-group">
+              <button type="button" data-freq="少"   class="freq-btn px-3 py-1 text-[12px] font-semibold rounded-full text-mute transition-all">少</button>
+              <button type="button" data-freq="适中" class="freq-btn px-3 py-1 text-[12px] font-semibold rounded-full text-mute transition-all">适中</button>
+              <button type="button" data-freq="多"   class="freq-btn px-3 py-1 text-[12px] font-semibold rounded-full text-mute transition-all">多</button>
+            </div>
+          </div>
           <p class="mt-3 text-[11px] text-mute font-medium" id="proactive-quota"></p>
         </div>
 
@@ -785,12 +799,15 @@
       location.href = '/app/auth.html';
     });
 
-    // 内测期：所有人显示"内测 Pro"，主动消息按 Pro 配额提示
-    function loadPlanBadge() {
+    // 内测期：所有人按 Pro 配额；提示文案随频率档位变化（与 proactive.mjs 区间一致）
+    const PRO_QUOTA_HINT = { '少': '每天 2-5 次', '适中': '每天 5-15 次', '多': '每天 12-25 次' };
+    function refreshProactiveQuota(freq) {
       const quota = document.getElementById('proactive-quota');
-      if (quota) quota.textContent = '· 内测期：每天 5-15 次 · 23:00 主动晚安';
+      if (!quota) return;
+      const f = freq || '适中';
+      quota.textContent = '· 内测期：' + (PRO_QUOTA_HINT[f] || PRO_QUOTA_HINT['适中']) + ' · 23:00 主动晚安';
     }
-    loadPlanBadge();
+    refreshProactiveQuota();
 
     function getRecommendedChatMode(now = new Date()) {
       const hour = Number(new Intl.DateTimeFormat('en-US', {
@@ -991,9 +1008,43 @@
         }
       }
 
-      tProactive.addEventListener('change', () => patchCompanion('proactive_enabled', tProactive.checked));
+      tProactive.addEventListener('change', () => {
+        patchCompanion('proactive_enabled', tProactive.checked);
+        syncFreqEnabled();
+      });
       tSticker.addEventListener('change', () => patchCompanion('sticker_reply_enabled', tSticker.checked));
       tMemory.addEventListener('change', () => patchCompanion('memory_enabled', tMemory.checked));
+
+      // 主动消息频率三档（少 / 适中 / 多）—— 走 DB 的 proactive_frequency 字段
+      const freqBtns = document.querySelectorAll('#freq-group .freq-btn');
+      const currentFreq = c.proactive_frequency || '适中';
+      function syncFreqUI(active) {
+        freqBtns.forEach(b => b.classList.toggle('active', b.dataset.freq === active));
+      }
+      function syncFreqEnabled() {
+        const off = !tProactive.checked;
+        freqBtns.forEach(b => { b.disabled = off; });
+      }
+      syncFreqUI(currentFreq);
+      syncFreqEnabled();
+      refreshProactiveQuota(currentFreq);
+      freqBtns.forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const f = btn.dataset.freq;
+          syncFreqUI(f);
+          refreshProactiveQuota(f);
+          try {
+            const r = await fetch('/api/companions/' + companionId, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ proactive_frequency: f }),
+            });
+            const d = await r.json();
+            if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
+            showToast('已保存 · 频率：' + f);
+          } catch (e) { alert(e.message); }
+        });
+      });
 
       // 头像点击 → 弹换头像
       const cAvatarEl = document.getElementById('c-avatar');
