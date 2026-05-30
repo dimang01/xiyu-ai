@@ -2827,6 +2827,44 @@ function migrateProactiveDailyTarget() {
 function migrateVoiceReply() {
   addColIfMissing('companions', 'voice_reply_enabled', 'INTEGER DEFAULT 0');
   addColIfMissing('companions', 'voice_id', 'TEXT');
+
+  // v1.4.0 Sprint 2: 每日 TTS 用量上限保护。
+  // 每天每个 companion 累计字符到 VOICE_DAILY_CHAR_LIMIT 后剩余主动消息回退文本。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_voice_usage (
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      date_key TEXT NOT NULL,
+      char_count INTEGER NOT NULL DEFAULT 0,
+      send_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (companion_id, date_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_voice_usage_date
+      ON companion_voice_usage(date_key);
+  `);
+}
+
+// ─── voice usage 存取（v1.4.0 Sprint 2）─────────────────────────────────────
+export function recordVoiceUsage(companionId, dateKey, charCount) {
+  const db = getDb();
+  const n = Math.max(0, Math.floor(Number(charCount) || 0));
+  db.prepare(`
+    INSERT INTO companion_voice_usage (companion_id, date_key, char_count, send_count, updated_at)
+    VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(companion_id, date_key) DO UPDATE SET
+      char_count = char_count + excluded.char_count,
+      send_count = send_count + 1,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(companionId, dateKey, n);
+}
+
+export function getVoiceUsageToday(companionId, dateKey) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT char_count, send_count FROM companion_voice_usage
+    WHERE companion_id = ? AND date_key = ?
+  `).get(companionId, dateKey);
+  return row || { char_count: 0, send_count: 0 };
 }
 
 export function markRemindersTriggered(companionId, ids, dateKey) {

@@ -10,6 +10,7 @@ import {
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
   getLastPhotoAt, markPhotoSent,
+  recordVoiceUsage, getVoiceUsageToday,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { generateScenePhoto } from './ai.mjs';
@@ -18,7 +19,9 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
-import { sendTextMessage, sendMessageItem } from './ilink.mjs';
+import { sendTextMessage, sendMessageItem, sendVoiceMessage } from './ilink.mjs';
+import { synthesizeAndConvertToSilk } from './voice_pipeline.mjs';
+import { getTtsStatus } from './providers/tts.mjs';
 import { buildLongTermDigest, ensureScheduleForCompanion } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
@@ -380,6 +383,33 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
       log('warn', `[Proactive] 重生后仍撞车，放弃本次主动 companion=${companion.id}`);
       return;
     }
+  }
+
+  // ── v1.4.0 Sprint 2: 语音回复决策 ──────────────────────────────────────────
+  // 仅在 goodnight / confession / reminder 三种高价值场景考虑语音。普通对话不走，
+  // 风控更安全。任何环节失败都优雅降级到下面的文本路径。
+  if (await maybeSendVoice(companion, effectiveKind, reply, ctx)) {
+    // 成功发出语音 → 跳过文本/sticker 路径，直奔后处理（保存对话轮 + achievement）
+    const turnTopicVoice = effectiveKind === 'goodnight' ? '晚安'
+      : effectiveKind === 'confession' ? '主动告白'
+      : effectiveKind === 'reminder' ? '纪念日祝福'
+      : '主动消息';
+    saveConversationTurn(companion.id, 'assistant', reply, turnTopicVoice + '(语音)');
+    if (effectiveKind === 'confession') {
+      try {
+        markCompanionConfessed(companion.id);
+        const newAffV = Math.max(aff, 60);
+        const newStageV = computeRelationshipStage(newAffV);
+        patchCompanion(companion.id, { affection_level: newAffV, relationship_stage: newStageV });
+        log('info', `[Proactive] ★ 主动告白(语音)完成 companion=${companion.id} affection=${aff}→${newAffV} stage→${newStageV}`);
+      } catch (e) {
+        log('warn', `[Proactive] 告白后处理失败: ${e.message}`);
+      }
+    }
+    try { recordProactiveSent(companion.id); } catch {}
+    tryAchievement(companion.id, 'first_proactive_message');
+    log('info', `[Proactive] 已发送(语音) companion=${companion.id} to=${companion.wechat_user_id} kind=${effectiveKind}`);
+    return;
   }
 
   // 像真人：按 || 拆多条短消息
@@ -750,5 +780,74 @@ function shuffle(items) {
   for (let i = items.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [items[i], items[j]] = [items[j], items[i]];
+  }
+}
+
+// ─── v1.4.0 Sprint 2: 语音回复决策 ─────────────────────────────────────────────
+// 决定本次主动消息是否走语音路径。返回 true 表示已发出语音；false 表示让 caller
+// 继续走原文本路径（包括 voice_reply_enabled=0、reply 太长、当日超额、TTS 未配置、
+// TTS/转码/CDN/sendmessage 任何一步抛错的情况）。任何 throw 都被本函数吞掉、
+// 仅记 warn 日志 → 保证文本路径不被打断。
+const VOICE_DAILY_CHAR_LIMIT = Math.max(0, Number(process.env.VOICE_DAILY_CHAR_LIMIT) || 2000);
+const VOICE_REPLY_MAX_LEN = 60;
+const VOICE_ELIGIBLE_KINDS = new Set(['goodnight', 'confession', 'reminder']);
+
+async function maybeSendVoice(companion, kind, reply, ctx) {
+  if (!companion?.voice_reply_enabled) return false;
+  if (!VOICE_ELIGIBLE_KINDS.has(kind)) return false;
+  if (!reply || typeof reply !== 'string') return false;
+
+  // 剥离 || 分段和 sticker markers，得纯文本字符数估算
+  const flat = String(reply).replace(/\|\|/g, '').replace(/\[STICKER:[^\]]*\]/g, '').trim();
+  if (!flat) return false;
+  const charLen = [...flat].length;
+  if (charLen > VOICE_REPLY_MAX_LEN) {
+    log('debug', `[Proactive:voice] reply 超长(${charLen}>${VOICE_REPLY_MAX_LEN}) 走文本 companion=${companion.id}`);
+    return false;
+  }
+
+  // TTS provider 必须配好
+  const tts = getTtsStatus();
+  if (!tts.configured) {
+    log('debug', `[Proactive:voice] TTS 未配置 走文本 companion=${companion.id}`);
+    return false;
+  }
+
+  // 当日用量上限
+  const today = shanghaiDateKey();
+  const usage = getVoiceUsageToday(companion.id, today);
+  if (VOICE_DAILY_CHAR_LIMIT > 0 && (usage.char_count + charLen) > VOICE_DAILY_CHAR_LIMIT) {
+    log('info', `[Proactive:voice] 当日额度 ${usage.char_count}+${charLen}>${VOICE_DAILY_CHAR_LIMIT} 走文本 companion=${companion.id}`);
+    return false;
+  }
+
+  // 真正合成 + 发送（任何步骤抛错都吞掉，回退文本）
+  try {
+    const { silk, duration_ms } = await synthesizeAndConvertToSilk(flat, {
+      voice_id: companion.voice_id || undefined,
+      speed: companion.voice_speed || 1.0,
+    });
+    const ok = await sendVoiceMessage(ctx, companion.wechat_user_id, silk, duration_ms, null);
+    if (!ok) {
+      log('warn', `[Proactive:voice] sendVoiceMessage 返回 false 走文本 companion=${companion.id}`);
+      return false;
+    }
+    // 计入用量 + 留消息记录
+    try { recordVoiceUsage(companion.id, today, charLen); } catch (e) { log('warn', `[Proactive:voice] recordVoiceUsage 失败: ${e.message}`); }
+    try {
+      saveMessage({
+        msgId: `proactive_voice_${companion.id}_${Date.now()}`,
+        fromUser: ctx.botId,
+        toUser: companion.wechat_user_id,
+        msgType: 'voice',
+        content: `[VOICE:${charLen}字 ${duration_ms}ms] ${flat.slice(0, 30)}`,
+        direction: 'out',
+      });
+    } catch (e) { log('warn', `[Proactive:voice] saveMessage 失败: ${e.message}`); }
+    log('info', `[Proactive:voice] sent companion=${companion.id} kind=${kind} chars=${charLen} silk=${silk.length}B dur=${duration_ms}ms used=${usage.char_count + charLen}/${VOICE_DAILY_CHAR_LIMIT}`);
+    return true;
+  } catch (e) {
+    log('warn', `[Proactive:voice] 失败回退文本 companion=${companion.id} kind=${kind}: ${e.message}`);
+    return false;
   }
 }
