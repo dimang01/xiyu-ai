@@ -58,10 +58,22 @@
     .toggle input:checked + .slider { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); }
     .toggle input:checked + .slider::before { transform: translateX(18px); }
 
-    /* 主动消息频率三档按钮 */
-    .freq-btn.active { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); color:#fff; box-shadow: 0 2px 8px rgba(255,143,184,.28); }
-    .freq-btn:not(.active):hover { color:#FF8FB8; }
-    .freq-btn[disabled] { opacity:.4; cursor:not-allowed; }
+    /* 主动消息频率：range slider（液态玻璃粉色 thumb） */
+    .proactive-slider { -webkit-appearance:none; appearance:none; height:6px; border-radius:999px;
+      background: linear-gradient(90deg, #FFB6D9 var(--fill,33%), #F0F0F2 var(--fill,33%));
+      outline:none; cursor:pointer; transition: opacity .2s; }
+    .proactive-slider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none;
+      width:20px; height:20px; border-radius:999px; cursor:grab;
+      background: linear-gradient(135deg, #FFC2E0, #FF8FB8);
+      box-shadow: 0 2px 10px rgba(255,143,184,.45), inset 0 1px 0 rgba(255,255,255,.7);
+      border: 2px solid #fff; transition: transform .15s; }
+    .proactive-slider::-moz-range-thumb { width:20px; height:20px; border-radius:999px; cursor:grab;
+      background: linear-gradient(135deg, #FFC2E0, #FF8FB8);
+      box-shadow: 0 2px 10px rgba(255,143,184,.45);
+      border: 2px solid #fff; }
+    .proactive-slider:active::-webkit-slider-thumb { transform: scale(1.15); cursor:grabbing; }
+    .proactive-slider[disabled] { opacity:.35; cursor:not-allowed; }
+    .proactive-slider[disabled]::-webkit-slider-thumb { cursor:not-allowed; }
 
     .pro-chip { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); color:#fff; box-shadow: 0 2px 8px rgba(255,143,184,.32); }
     .free-chip { background:#FAFAFA; color:#86868B; border:1px solid #F0F0F2; }
@@ -368,13 +380,16 @@
           <p class="text-[12px] text-mute font-medium leading-relaxed mt-2" id="proactive-hint">
             打开后她会在日常时段主动找你聊天
           </p>
-          <!-- 频率三档：少 / 适中 / 多 -->
+          <!-- 每天目标条数（直接拖动滑块） -->
           <div class="mt-3" id="proactive-freq-row">
-            <div class="text-[11px] text-mute font-medium mb-1.5">频率</div>
-            <div class="inline-flex p-0.5 rounded-full border border-line bg-white" id="freq-group">
-              <button type="button" data-freq="少"   class="freq-btn px-3 py-1 text-[12px] font-semibold rounded-full text-mute transition-all">少</button>
-              <button type="button" data-freq="适中" class="freq-btn px-3 py-1 text-[12px] font-semibold rounded-full text-mute transition-all">适中</button>
-              <button type="button" data-freq="多"   class="freq-btn px-3 py-1 text-[12px] font-semibold rounded-full text-mute transition-all">多</button>
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="text-[11px] text-mute font-medium">每天目标条数</div>
+              <div class="text-[13px] font-bold text-sakura-deep" id="proactive-target-val">10</div>
+            </div>
+            <input type="range" min="0" max="30" step="1" value="10" id="proactive-target-slider" class="proactive-slider w-full" />
+            <div class="flex justify-between text-[10px] text-mute mt-1">
+              <span>0 静默</span>
+              <span>30 满档</span>
             </div>
           </div>
           <p class="mt-3 text-[11px] text-mute font-medium" id="proactive-quota"></p>
@@ -799,13 +814,15 @@
       location.href = '/app/auth.html';
     });
 
-    // 内测期：所有人按 Pro 配额；提示文案随频率档位变化（与 proactive.mjs 区间一致）
-    const PRO_QUOTA_HINT = { '少': '每天 2-5 次', '适中': '每天 5-15 次', '多': '每天 12-25 次' };
-    function refreshProactiveQuota(freq) {
+    // 主动消息：用户拖动滑块直接定每天目标条数（与 proactive.mjs ±20% 抖动一致）
+    function refreshProactiveQuota(target) {
       const quota = document.getElementById('proactive-quota');
       if (!quota) return;
-      const f = freq || '适中';
-      quota.textContent = '· 内测期：' + (PRO_QUOTA_HINT[f] || PRO_QUOTA_HINT['适中']) + ' · 23:00 主动晚安';
+      const t = Number.isFinite(target) ? target : 10;
+      if (t === 0) { quota.textContent = '· 静默模式：不主动找你，只响应你的消息'; return; }
+      const lo = Math.max(0, Math.floor(t * 0.8));
+      const hi = Math.max(lo, Math.ceil(t * 1.2));
+      quota.textContent = `· 每天约 ${lo}-${hi} 条 · 23:00 主动晚安`;
     }
     refreshProactiveQuota();
 
@@ -1010,40 +1027,50 @@
 
       tProactive.addEventListener('change', () => {
         patchCompanion('proactive_enabled', tProactive.checked);
-        syncFreqEnabled();
+        syncSliderEnabled();
       });
       tSticker.addEventListener('change', () => patchCompanion('sticker_reply_enabled', tSticker.checked));
       tMemory.addEventListener('change', () => patchCompanion('memory_enabled', tMemory.checked));
 
-      // 主动消息频率三档（少 / 适中 / 多）—— 走 DB 的 proactive_frequency 字段
-      const freqBtns = document.querySelectorAll('#freq-group .freq-btn');
-      const currentFreq = c.proactive_frequency || '适中';
-      function syncFreqUI(active) {
-        freqBtns.forEach(b => b.classList.toggle('active', b.dataset.freq === active));
+      // 主动消息：用户拖动滑块直接调每天目标条数 (proactive_daily_target, 0-30)
+      const slider = document.getElementById('proactive-target-slider');
+      const valEl  = document.getElementById('proactive-target-val');
+      const initTarget = (Number.isFinite(Number(c.proactive_daily_target)) ? Number(c.proactive_daily_target) : 10);
+      function paintSliderFill(v) {
+        slider.style.setProperty('--fill', ((v - slider.min) / (slider.max - slider.min) * 100) + '%');
       }
-      function syncFreqEnabled() {
-        const off = !tProactive.checked;
-        freqBtns.forEach(b => { b.disabled = off; });
+      function syncSliderEnabled() {
+        slider.disabled = !tProactive.checked;
       }
-      syncFreqUI(currentFreq);
-      syncFreqEnabled();
-      refreshProactiveQuota(currentFreq);
-      freqBtns.forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const f = btn.dataset.freq;
-          syncFreqUI(f);
-          refreshProactiveQuota(f);
+      slider.value = String(initTarget);
+      valEl.textContent = String(initTarget);
+      paintSliderFill(initTarget);
+      syncSliderEnabled();
+      refreshProactiveQuota(initTarget);
+
+      // 拖动时实时显示数字 + 染色；松开手才写后端（debounce 替代）
+      let pendingSave = null;
+      slider.addEventListener('input', () => {
+        const v = Number(slider.value);
+        valEl.textContent = String(v);
+        paintSliderFill(v);
+        refreshProactiveQuota(v);
+      });
+      slider.addEventListener('change', async () => {
+        const v = Number(slider.value);
+        if (pendingSave) clearTimeout(pendingSave);
+        pendingSave = setTimeout(async () => {
           try {
             const r = await fetch('/api/companions/' + companionId, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ proactive_frequency: f }),
+              body: JSON.stringify({ proactive_daily_target: v }),
             });
             const d = await r.json();
             if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
-            showToast('已保存 · 频率：' + f);
+            showToast('已保存 · 每天 ' + v + ' 条');
           } catch (e) { alert(e.message); }
-        });
+        }, 200);
       });
 
       // 头像点击 → 弹换头像
