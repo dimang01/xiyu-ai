@@ -13,7 +13,8 @@
     "ilink:login": "node scripts/ilink_login.mjs",
     "doctor": "node scripts/doctor.mjs",
     "check:p0": "node scripts/p0_regression_check.mjs",
-    "smoke": "bash scripts/release_smoke_test.sh"
+    "smoke": "bash scripts/release_smoke_test.sh",
+    "postinstall": "wx-voice compile || echo '[postinstall] wx-voice compile failed (语音功能将不可用，先忽略)'"
   },
   "keywords": [
     "ai-companion",
@@ -39,7 +40,8 @@
     "node-fetch": "^3.3.2",
     "openai": "^4.67.0",
     "qrcode": "^1.5.4",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "wx-voice": "^0.2.1"
   },
   "engines": {
     "node": ">=20"

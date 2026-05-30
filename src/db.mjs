@@ -47,6 +47,7 @@ export function getDb() {
     migrateDiary();
     migrateReminderPush();
     migrateProactiveDailyTarget();
+    migrateVoiceReply();
     migrateAppSettings();
   }
   return db;
@@ -964,6 +965,7 @@ const ALLOWED_FIELDS = new Set([
   'how_met', 'relationship_status', 'shared_memory',
   'memory_priorities',
   'proactive_enabled', 'proactive_frequency', 'proactive_time_window', 'proactive_daily_target',
+  'voice_reply_enabled', 'voice_id',
   'voice_reply_enabled', 'sticker_reply_enabled',
   'call_user_as', 'user_call_her_as',
   'persona_prompt', 'forbidden_topics',
@@ -2816,6 +2818,15 @@ function migrateReminderPush() {
 // 默认 10 与旧"适中"档中位数接近；老 companion 升级后立刻就有合理值。
 function migrateProactiveDailyTarget() {
   addColIfMissing('companions', 'proactive_daily_target', 'INTEGER DEFAULT 10');
+}
+
+// v1.4.0 Sprint 1: 主动发语音功能字段。
+// voice_reply_enabled = 0 表示默认关，用户在 dashboard 手动开启才生效。
+// voice_id 留空则用 provider 默认音色（见 src/providers/tts.mjs::REGISTRY）。
+// voice_speed 早就在 companions 表的 schema 里（DEFAULT 1.0），不重复添加。
+function migrateVoiceReply() {
+  addColIfMissing('companions', 'voice_reply_enabled', 'INTEGER DEFAULT 0');
+  addColIfMissing('companions', 'voice_id', 'TEXT');
 }
 
 export function markRemindersTriggered(companionId, ids, dateKey) {
