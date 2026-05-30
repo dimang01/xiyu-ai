@@ -5,7 +5,8 @@
  * 用途：本地验证 TTS pipeline。
  *
  * 用法：
- *   MINIMAX_API_KEY=sk-xxx MINIMAX_GROUP_ID=xxx TTS_PROVIDER=minimax \
+ *   MINIMAX_API_KEY=sk-xxx TTS_PROVIDER=minimax \
+ *     [MINIMAX_GROUP_ID=xxx]  # 老式 JWT key 才需要，sk-api-... 不需要
  *     node scripts/voice_smoke.mjs ["要合成的中文"]
  *
  * 输出：
@@ -35,10 +36,7 @@ async function main() {
     console.error('✗ 请先设 MINIMAX_API_KEY');
     process.exit(1);
   }
-  if (!process.env.MINIMAX_GROUP_ID) {
-    console.error('✗ 请先设 MINIMAX_GROUP_ID');
-    process.exit(1);
-  }
+  // MINIMAX_GROUP_ID 现在可选（sk-api-... 不需要；老式 JWT key 才需要）
 
   console.log(`→ 合成文本: "${TEXT}" (${TEXT.length} 字)`);
   const t0 = Date.now();
