@@ -2,11 +2,11 @@
  * 用户分级长期记忆任务
  *
  * 时间表（上海时区）：
- *   每天 02:00  → 对所有 active 人设生成"昨日总结"
- *                 - 免费用户：保留最近 7 天 daily_summary
- *                 - Pro 用户：保留最近 60 天 daily_summary
- *   每周日 02:30 → 仅 Pro：把上周 7 天 daily_summary 合并成 weekly_summary
- *   每月 1 号 03:00 → 仅 Pro：把上月所有 weekly_summary 合并成 monthly_summary
+ *   每天 02:00  → 对所有 active 人设生成"昨日总结"，保留最近 60 天 daily_summary
+ *   每周日 02:30 → 把上周 7 天 daily_summary 合并成 weekly_summary
+ *   每月 1 号 03:00 → 把上月所有 weekly_summary 合并成 monthly_summary
+ *
+ * v1.3.4: 开源版无套餐分级，所有 active companion 一视同仁参与所有任务。
  *
  * 双层存储：
  *   1. companion_memories 表：供 AI 实时召回（速度快）
@@ -21,7 +21,7 @@ import path from 'node:path';
 import {
   cleanupPlanMemories, getAllActiveCompanions, getConversationTurnsBetween,
   saveMemory, summaryMemoryExists, getDb, shanghaiDateKey, shanghaiBoundsForDateKey,
-  getUserPlan, getRecentSummaries,
+  getRecentSummaries,
   saveDailySchedule, getDailySchedule,
 } from './db.mjs';
 import { applyMemoryDecayBatch } from './memory_v2.mjs';
@@ -301,7 +301,7 @@ async function runDailyReflections(dateKey) {
 
 // ─── 每周反思 ─────────────────────────────────────────────────────────────────
 async function runWeeklyReflections(dateKey) {
-  const companions = getAllActiveCompanions().filter(c => isProUser(c.user_id));
+  const companions = getAllActiveCompanions();
   log('info', `[PlanTasks] weekly-reflection start date=${dateKey} pro=${companions.length}`);
   for (const c of companions) {
     try {
@@ -327,7 +327,7 @@ async function runDailyDiaries(dateKey) {
 
 // ─── 每周日记（Pro）─────────────────────────────────────────────────────────────
 async function runWeeklyDiaries(dateKey) {
-  const companions = getAllActiveCompanions().filter(c => isProUser(c.user_id));
+  const companions = getAllActiveCompanions();
   log('info', `[PlanTasks] weekly-diary start date=${dateKey} pro=${companions.length}`);
   for (const c of companions) {
     try {
@@ -345,7 +345,7 @@ async function runHourlyCleanup() {
     const r1 = db.prepare(`DELETE FROM pending_bind_sessions WHERE expires_at < datetime('now', '-1 day')`).run();
     const r2 = db.prepare(`DELETE FROM email_verification_codes WHERE expires_at_ms < ?`).run(Date.now());
     const r3 = db.prepare(`DELETE FROM email_verification_sends WHERE sent_at_ms < ?`).run(Date.now() - 7 * 86400_000);
-    // 消息保留 60 天（Pro 用户 180 天上限的折中点；普通用户 30 天）
+    // 消息保留 60 天（开源版统一策略，自托管想加可改这个数）
     const r4 = db.prepare(`DELETE FROM wechat_messages WHERE created_at < datetime('now', '-60 days')`).run();
     // 每个 companion 只保留最新 100 条对话 turn（buildLongTermDigest 已经把更早的归档到 memories 了）
     const r5 = db.prepare(`
@@ -428,7 +428,7 @@ function checkDaysTogetherAchievements(companions) {
 async function runWeekly(todayKey) {
   const endKey = addDays(todayKey, -1);
   const startKey = addDays(endKey, -6);
-  const companions = getAllActiveCompanions().filter(c => isProUser(c.user_id));
+  const companions = getAllActiveCompanions();
   log('info', `[PlanTasks] weekly start range=${startKey}~${endKey} pro=${companions.length}`);
 
   for (const companion of companions) {
@@ -462,7 +462,7 @@ async function runWeekly(todayKey) {
 // ─── 每月 1 号 03:00（仅 Pro） ─────────────────────────────────────────────
 async function runMonthly(todayKey) {
   const month = previousMonthKey(todayKey);
-  const companions = getAllActiveCompanions().filter(c => isProUser(c.user_id));
+  const companions = getAllActiveCompanions();
   log('info', `[PlanTasks] monthly start month=${month} pro=${companions.length}`);
 
   for (const companion of companions) {
@@ -543,23 +543,22 @@ async function writeMemoryFile(companionId, kind, key, summary, meta = {}) {
  * 给 bot.mjs / proactive.mjs 调用：拼一段"长期记忆档案"喂给 system prompt。
  * 优先级：月记忆 > 周记忆 > 最近几天日记忆。
  */
-export async function buildLongTermDigest(companionId, userId, { isPro = false } = {}) {
+// v1.3.4: 第三个参数 { isPro } 已废弃（向后兼容仍接受但忽略）。开源版所有 companion
+// 都注入完整长期记忆（月+周+日），不再按账号付费层级筛选。
+export async function buildLongTermDigest(companionId, userId, _opts = {}) {
   if (!companionId || !userId) return '';
   const blocks = [];
 
-  if (isPro) {
-    const monthly = getRecentSummaries(companionId, userId, 'monthly_summary', 3);
-    if (monthly.length > 0) {
-      blocks.push('【月度回顾（最近 3 个月）】\n' + monthly.map(m => `- ${m.content}`).join('\n'));
-    }
-    const weekly = getRecentSummaries(companionId, userId, 'weekly_summary', 4);
-    if (weekly.length > 0) {
-      blocks.push('【近期周记（最近 4 周）】\n' + weekly.map(w => `- ${w.content}`).join('\n'));
-    }
+  const monthly = getRecentSummaries(companionId, userId, 'monthly_summary', 3);
+  if (monthly.length > 0) {
+    blocks.push('【月度回顾（最近 3 个月）】\n' + monthly.map(m => `- ${m.content}`).join('\n'));
+  }
+  const weekly = getRecentSummaries(companionId, userId, 'weekly_summary', 4);
+  if (weekly.length > 0) {
+    blocks.push('【近期周记（最近 4 周）】\n' + weekly.map(w => `- ${w.content}`).join('\n'));
   }
 
-  const dailyLimit = isPro ? 7 : 7;
-  const daily = getRecentSummaries(companionId, userId, 'daily_summary', dailyLimit);
+  const daily = getRecentSummaries(companionId, userId, 'daily_summary', 7);
   if (daily.length > 0) {
     blocks.push('【最近每日小结】\n' + daily.map(d => `- ${d.content}`).join('\n'));
   }
@@ -568,10 +567,8 @@ export async function buildLongTermDigest(companionId, userId, { isPro = false }
 }
 
 // ─── 工具 ────────────────────────────────────────────────────────────────────
-function isProUser(userId) {
-  const plan = getUserPlan(userId);
-  return plan?.isPro === true;
-}
+// v1.3.4: isProUser() 已移除。开源版周反思 / 周日记 / 周月总结对所有 active
+// companion 一视同仁触发，不再按账号付费层级过滤。
 
 function getSummaryMemoriesInRange(companionId, userId, memoryType, startKey, endKey, limit) {
   const db = getDb();

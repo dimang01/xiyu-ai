@@ -763,16 +763,17 @@ router.post('/auth/reset-password',
 // Plan 识别 + 支付预插件接口
 // ─────────────────────────────────────────────────────────────────────────────
 
+// v1.3.4: 开源版无 free/pro 区分。两条记录保留是为兼容前端读取，但 free 已和 pro 等价。
 const PLAN_LIMITS = {
   free: {
-    plan: 'free',
-    daily_inbound_messages: 50,
-    daily_summary_retention_days: 30,
-    weekly_summary: false,
-    monthly_summary: false,
+    plan: 'open',
+    daily_inbound_messages: -1,
+    daily_summary_retention_days: 60,
+    weekly_summary: true,
+    monthly_summary: true,
     sticker_send: true,
-    image_recognition: false,
-    voice_recognition: false,
+    image_recognition: true,
+    voice_recognition: true,
   },
   pro: {
     plan: 'pro',
@@ -882,23 +883,18 @@ router.delete('/me/account', requireAuth, (req, res) => {
 });
 
 // GET /api/me/plan?user_id=...
+// v1.3.4: 开源版无套餐分级；统一返回"开源"plan + 全部功能开放。
+// 老前端字段保留兼容（plan/is_pro/limits）。
 router.get('/me/plan', requireAuth, (req, res) => {
   const accountId = intId(req.query.user_id ?? req.query.account_id ?? req.get('x-user-id'));
   if (!accountId) return err(res, '缺少 user_id');
   const account = getUserAccountById(accountId);
   if (!account) return err(res, '用户不存在', 404);
-
-  const binding = getWechatAccountByAccountId(accountId);
-  // userId 优先从 wechat 绑定关联的 users.id 取，没有就退回 accountId
-  const userId = binding?.user_id || accountId;
-  const plan = getUserPlan(userId);
-  const limits = PLAN_LIMITS[plan.isPro ? 'pro' : 'free'];
-
   return ok(res, {
-    plan: plan.isPro ? 'pro' : 'free',
-    plan_expires_at: plan.plan_expires_at,
-    is_pro: plan.isPro,
-    limits,
+    plan: 'open',
+    plan_expires_at: null,
+    is_pro: true,
+    limits: PLAN_LIMITS.pro, // 开源版所有 limits 都按 pro 给（无限）
   });
 });
 
@@ -2397,20 +2393,8 @@ router.post('/companions', requireAuth, (req, res) => {
   }
   if (!botId) return err(res, '缺少 bot_id');
   const accountId = resolveAccountIdByWechat(wechat_user_id);
-  // 数量上限：免费 1 个 / Pro 3 个
-  if (accountId) {
-    const plan = getUserPlan(accountId);
-    const limit = plan.isPro ? 3 : 1;
-    const existing = getDb().prepare(`
-      SELECT COUNT(*) AS n FROM companions c
-      JOIN users u ON u.id = c.user_id
-      JOIN wechat_accounts wa ON wa.wechat_user_id = u.wechat_user_id AND wa.is_active = 1
-      WHERE wa.account_id = ?
-    `).get(accountId)?.n ?? 0;
-    if (existing >= limit) {
-      return err(res, plan.isPro ? `Pro 用户最多 ${limit} 个人设` : `免费用户最多 ${limit} 个人设，升级 Pro 后可创建更多`, 409);
-    }
-  }
+  // v1.3.4: 开源版无 companion 数量上限。自托管想加上限可在此处加 hard cap。
+
   let guarded;
   try {
     guarded = applyCompanionAgeGuard(data);

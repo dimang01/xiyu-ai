@@ -40,7 +40,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | 新增 | 说明 |
 |------|------|
 | 🪟 **液态玻璃 UI** | 全站换上苹果风 Liquid Glass 视觉：毛玻璃卡片、漂浮光斑背景、丝滑微动效。纯 CSS 层（`public/app/glass.css`），不改任何业务逻辑 |
-| 📔 **她的日记** | 她每天深夜用第一人称写下和你相处的心里话，带心情标签；`/app/diary.html` 翻日记本式阅读页，Pro 还有周记 |
+| 📔 **她的日记** | 她每天深夜用第一人称写下和你相处的心里话，带心情标签；`/app/diary.html` 翻日记本式阅读页，含每日+每周两种 |
 | 🎂 **纪念日主动祝福** | 生日 / 纪念日 / 节日到期当天主动发祝福；自动登记「认识 100 天 / 在一起一周年」里程碑，当天只发一次 |
 | ⚡ **默认更生动** | 对话默认采样调亮（temperature 0.8 / top_p 0.95 / 上下文 16 轮），回复更自然连贯 |
 | 🩹 **缓存修复** | Service Worker 改为 HTML network-first，修掉「更新后页面被旧缓存挡住」的问题 |
@@ -124,7 +124,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | 🩺 **npm run doctor** | 一键诊断自托管环境：Node 版本 / SQLite 可写 / API key / iLink / 端口 / 服务健康 |
 | 🧪 **npm run check:p0** | P0/P1 回归检查：验证核心模块导出、数据表、页面、未登录 API 返回 401/403 |
 | 🧠 **Memory Reflection** | 每日/每周 AI 驱动结构化记忆反思，自动提炼对用户新认识并更新 Memory v2 |
-| 📔 **她的日记** *(P2B)* | 每天深夜她用第一人称写下和你相处的心里话，区分心情；`/app/diary.html` + `GET /api/companions/:id/diary`。Pro 用户额外有周记 |
+| 📔 **她的日记** *(P2B)* | 每天深夜她用第一人称写下和你相处的心里话，区分心情；`/app/diary.html` + `GET /api/companions/:id/diary`。含每日 + 每周两种 |
 | 📈 **Emotion Trend** | Dashboard 显示近 7 天情绪曲线（好感 / 信任 / 安全感 / 精力）；`/api/companions/:id/emotion-trend` |
 | 🔍 **Prompt Debug Panel** | `/app/debug-prompt.html` — 开发者查看实时 prompt 拼接，分区显示 |
 | 📦 **角色导入/导出** *(P2A 实验性)* | 将角色人设导出为可移植 JSON，可备份 / 迁移 / 分享；导入时所有权归当前用户，敏感字段自动过滤 |
@@ -712,7 +712,7 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 | New | Description |
 |------|-------------|
 | 🪟 **Liquid Glass UI** | Apple-style Liquid Glass refresh: frosted-glass cards, drifting color orbs, silky micro-interactions. Pure CSS layer (`public/app/glass.css`); zero business-logic changes |
-| 📔 **Her Diary** | She writes a first-person diary every night reflecting on your day together, with mood tag; readable at `/app/diary.html`. Pro users also get a weekly entry |
+| 📔 **Her Diary** | She writes a first-person diary every night reflecting on your day together, with mood tag; readable at `/app/diary.html`. Includes daily + weekly entries |
 | 🎂 **Anniversary Proactive Greetings** | Birthdays / anniversaries / holidays get a warm proactive message on the day; auto-registered milestones (100 days, 1-year together) included, exactly one greeting per occasion |
 | ⚡ **Livelier Default Tuning** | Default sampling bumped (temperature 0.8 / top_p 0.95 / 16-turn context) for more natural, connected replies |
 | 🩹 **SW Cache Hotfix** | Service Worker switched to network-first for HTML — fresh deploys no longer hide behind stale cached pages |
@@ -761,7 +761,7 @@ CHECK_BASE_URL=http://localhost:3000 npm run check:p0
 | 🎭 **Emotion state machine** | 7 dimensions: affection / trust / dependency / possessiveness / security / energy / mood; rule-driven real-time updates |
 | 💬 **Multi-provider** | chat / image / vision / ASR / embedding — each capability independently swappable, no code changes |
 | 🪟 **Liquid Glass UI** *(v1.3.0)* | Apple-style Liquid Glass visual layer (`/app/glass.css`): frosted cards, drifting color orbs, silky micro-interactions across all core pages; respects `prefers-reduced-motion` |
-| 📔 **Her Diary** *(v1.3.0)* | She writes a first-person diary every night reflecting on your day together, with mood tag; readable at `/app/diary.html` (`GET /api/companions/:id/diary`). Pro users also get a weekly entry |
+| 📔 **Her Diary** *(v1.3.0)* | She writes a first-person diary every night reflecting on your day together, with mood tag; readable at `/app/diary.html` (`GET /api/companions/:id/diary`). Includes daily + weekly entries |
 | 🎛️ **Full dashboard** | Affection progress, relationship stage, "what she's doing right now", timeline, avatar manager, shareable CP-card, **memory panel entry**, **diary entry** |
 | 🗂️ **Memory Control Panel** | `/app/memories.html` — visual memory browser: filter by layer/status, add, edit, pin, lock, archive, delete |
 | 🧪 **Browser playground** | Chat with the AI in the browser without WeChat — runs the same persona/memory/emotion pipeline as inbound WeChat messages |
