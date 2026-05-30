@@ -6,7 +6,7 @@ import {
   getActiveBotAccounts, getRecentHistory, getUserProfile, recallMemories,
   getConversationContext, getDueReminders, markRemindersTriggered, ensureRelationshipReminders,
   saveMessage, saveConversationTurn,
-  getCompanionById, getBotContextForCompanion, getUserPlan, getDb,
+  getCompanionById, getBotContextForCompanion, getDb,
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
   getLastPhotoAt, markPhotoSent,
@@ -75,8 +75,6 @@ async function tick(now = new Date()) {
       if (minuteNow < window.start) continue;
       if (minuteNow > window.end) continue;
 
-      const planInfo = getUserPlan(companion.user_id);
-      const isPro = !!planInfo?.isPro;
       // 自愈：若 DB 里没有今天的日程（cron 失败或刚绑定），按需触发一次生成
       // ensureScheduleForCompanion 内置 30 分钟级 debounce 防止持续失败时反复重试
       if (!getDailySchedule(companion.id, dateKey)) {
@@ -98,7 +96,7 @@ async function tick(now = new Date()) {
         log('warn', `[Proactive] reminder 推送异常 companion=${companion.id}: ${e.message}`);
       }
 
-      const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, isPro, companion);
+      const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, companion);
       const dueItems = schedule.items.filter(item => !item.sent && item.minute <= minuteNow);
       for (const item of dueItems) {
         if (currentMinute(new Date()) > window.end) break;
@@ -169,7 +167,8 @@ function shouldSendPhotoToday(companion) {
   return days >= threshold;
 }
 
-function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMinute = GOODNIGHT_MINUTE, isPro = false, companion = null) {
+// v1.3.4: 移除 isPro 参数；开源版所有 companion 享受相同调度（晚安 + 场景照机会）
+function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMinute = GOODNIGHT_MINUTE, companion = null) {
   const existing = schedules.get(companionId);
   if (existing?.dateKey === dateKey) return existing;
 
@@ -201,10 +200,10 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
     : fullCount;
 
   const effectiveStart = Math.max(jitteredStart, minuteNow + 1);   // +1 避免 tick 同分钟立即触发
-  const items = buildDailyItems(remainCount, effectiveStart, jitteredEnd, isPro, jitteredGoodnight);
+  const items = buildDailyItems(remainCount, effectiveStart, jitteredEnd, jitteredGoodnight);
 
-  // 若需要今天发场景照：把某个 normal item 替换成 photo（仅 Pro 用户，且白天时段 09:00-21:00）
-  if (companion && shouldSendPhotoToday(companion) && isPro) {
+  // v1.3.4: 场景照对所有 active companion 开放（旧版仅 Pro），仍限白天时段 09:00-21:00
+  if (companion && shouldSendPhotoToday(companion)) {
     const candidates = items
       .map((it, idx) => ({ it, idx }))
       .filter(x => x.it.kind === 'normal' && x.it.minute >= 9 * 60 && x.it.minute <= 21 * 60);
@@ -221,9 +220,10 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
   return schedule;
 }
 
-function buildDailyItems(count, startMinute, endMinute, isPro = false, goodnightMinute = GOODNIGHT_MINUTE) {
+// v1.3.4: 移除 isPro；所有 companion 在 goodnight 窗口内都会安排晚安
+function buildDailyItems(count, startMinute, endMinute, goodnightMinute = GOODNIGHT_MINUTE) {
   // Free 不发晚安专用消息；Pro 在抖动后的晚安时间发晚安
-  const goodnight = (isPro && endMinute >= goodnightMinute && goodnightMinute >= startMinute) ? goodnightMinute : null;
+  const goodnight = (endMinute >= goodnightMinute && goodnightMinute >= startMinute) ? goodnightMinute : null;
   const lastRandom = (goodnight != null ? goodnight - 30 : endMinute);
   const randomCount = Math.max(count - (goodnight != null ? 1 : 0), 0);
   const randomMinutes = pickRandomMinutes(randomCount, startMinute, lastRandom, MIN_GAP_MINUTES);
@@ -288,8 +288,8 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     ? recallMemories(companion.id, companion.user_id, timeContext.searchText, 7)
     : [];
   const history = getRecentHistory(companion.wechat_user_id, companion.bot_id, 20);
-  const plan = getUserPlan(companion.user_id);
-  const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id, { isPro: plan.isPro });
+  // v1.3.4: 开源版所有 companion 享受完整长期记忆摘要（不再按 plan 区分）
+  const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id);
 
   const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();
   const stickerHint = buildStickerPromptHint(stickerEnabled);

@@ -75,8 +75,8 @@
     .proactive-slider[disabled] { opacity:.35; cursor:not-allowed; }
     .proactive-slider[disabled]::-webkit-slider-thumb { cursor:not-allowed; }
 
+    /* v1.3.4: 开源版徽章（保留类名 pro-chip 兼容原有结构，含义改为"开源版"） */
     .pro-chip { background: linear-gradient(135deg, #FFB6D9, #FF8FB8); color:#fff; box-shadow: 0 2px 8px rgba(255,143,184,.32); }
-    .free-chip { background:#FAFAFA; color:#86868B; border:1px solid #F0F0F2; }
 
     /* 卡片悬浮反馈 */
     .card { background:#fff; border-radius:24px; box-shadow: 0 12px 48px rgba(0,0,0,0.04), 0 1px 0 rgba(0,0,0,0.02); transition: transform .25s, box-shadow .25s; }
@@ -191,8 +191,7 @@
           <span>⚙</span><span id="header-model-label">AI 模型</span>
         </button>
         <span id="user-name" class="text-[13px] font-medium text-mute"></span>
-        <span id="plan-badge" class="text-[11px] font-bold px-2 py-0.5 rounded-full pro-chip">内测 Pro</span>
-        <a id="btn-upgrade" href="/app/upgrade.html" class="hidden text-[12px] font-semibold text-mute hover:text-ink transition-colors">了解套餐</a>
+        <span id="plan-badge" class="text-[11px] font-bold px-2 py-0.5 rounded-full pro-chip">开源版</span>
         <button id="btn-logout" class="text-[13px] font-medium text-mute hover:text-ink transition-colors">登出</button>
       </div>
     </div>

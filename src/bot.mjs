@@ -13,8 +13,8 @@ import { parseMessage, sendTextMessage, sendTyping, sendMessageItem, rememberCon
 import { generateReply, recognizeImage, recognizeVoice, embedText } from './ai.mjs';
 import {
   saveMessage, getRecentHistory, getUserProfile, recallMemories, recallMemoriesSemantic,
-  getConversationContext, saveConversationTurn, getUserPlan, countInboundMessagesBetween,
-  shanghaiDayBounds, getActiveWechatBinding, getCompanionById, consumePendingBindSessionForWechat,
+  getConversationContext, saveConversationTurn,
+  getActiveWechatBinding, getCompanionById, consumePendingBindSessionForWechat,
   isAccountBanned, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markUserConfessed, patchCompanion,
 } from './db.mjs';
@@ -226,18 +226,9 @@ export async function handleMessage(rawMsg, botContext = {}) {
       log('info', `[Bot] 绑定存在但 companion 缺失 account=${binding.account_id}`);
       return;
     }
-    const plan = getUserPlan(companion.user_id);
-    const isPro = plan.isPro;
-
-    if (!isPro) {
-      const { startSql, endSql } = shanghaiDayBounds();
-      const todayCount = countInboundMessagesBetween(msg.fromUser, botId, startSql, endSql);
-      if (todayCount > 50) {
-        await sendAndRecord(ctx, msg.fromUser, '今日免费 50 条消息已用完，升级 Pro 继续聊～', msg.contextToken);
-        log('info', `[Bot] free 用户日限额已用完 user=${companion.user_id} count=${todayCount}`);
-        return;
-      }
-    }
+    // v1.3.4: 开源版无套餐分级。所有用户、所有能力（文本/图片/语音）一视同仁。
+    // 历史上这里有 free 用户 50 条/天上限 + 图片/语音识别拦截，已全部移除。
+    // 自托管用户的"限流"应通过 src/ratelimit.mjs 或上游 WAF 控制，不再按账号分级。
 
     let userText = null;
 
@@ -251,12 +242,6 @@ export async function handleMessage(rawMsg, botContext = {}) {
       userText = msg.text;
 
     } else if (msg.msgType === 'image') {
-      if (!isPro) {
-        await sendAndRecord(ctx, msg.fromUser, '升级Pro解锁图片识别', msg.contextToken);
-        log('info', `[Bot] free 用户图片识别拦截 user=${companion.user_id}`);
-        return;
-      }
-
       const cdnUrl = msg.imageItem?.cdn_url
         ?? msg.imageItem?.thumb_cdn_url
         ?? msg.imageItem?.url
@@ -272,12 +257,6 @@ export async function handleMessage(rawMsg, botContext = {}) {
       }
 
     } else if (msg.msgType === 'voice') {
-      if (!isPro) {
-        await sendAndRecord(ctx, msg.fromUser, '升级Pro解锁语音识别', msg.contextToken);
-        log('info', `[Bot] free 用户语音识别拦截 user=${companion.user_id}`);
-        return;
-      }
-
       const cdnUrl = msg.voiceItem?.cdn_url ?? msg.voiceItem?.url ?? null;
       if (cdnUrl) {
         log('info', `[Bot] 下载语音 ${cdnUrl.slice(0, 60)}`);
@@ -327,7 +306,8 @@ export async function handleMessage(rawMsg, botContext = {}) {
     await sendTyping(ctx, msg.fromUser, msg.contextToken);
 
     // ── 构建完整系统提示词（含记忆 + 画像 + 心情 + 场景 + 长期总结 + 今日日程 + 近期日程 + 表情包）
-    const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id, { isPro });
+    // v1.3.4: 开源版所有人享受完整长期记忆摘要（不再按 isPro 区分）
+    const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id, { isPro: true });
     const todayKey = shanghaiDateKey();
     const dailyRaw = getDailySchedule(companion.id, todayKey);
     const dailySchedule = dailyRaw ? { ...dailyRaw, date_key: todayKey } : null;

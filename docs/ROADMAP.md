@@ -49,7 +49,7 @@
 | **Memory Decay** | `shouldWriteBackDecay` threshold guard (avoids redundant writes) | ✅ Done |
 | **Reflection Engine** | `src/reflection.mjs` — AI-driven structured memory extraction | ✅ Done |
 | **Reflection Engine** | `runDailyReflectionForCompanion` — triggers at 02:15 daily | ✅ Done |
-| **Reflection Engine** | `runWeeklyReflectionForCompanion` — Pro users, Sunday 02:45 | ✅ Done |
+| **Reflection Engine** | `runWeeklyReflectionForCompanion` — Sunday 02:45 (all companions in v1.3.4+) | ✅ Done |
 | **Reflection Engine** | Confidence threshold (≥ 0.7), locked/pinned guard, sensitive filter | ✅ Done |
 | **Semantic Dedup** | `findSimilarMemoryByEmbedding` — embedding cosine sim, fallback token | ✅ Done |
 | **Semantic Dedup** | `addOrMergeMemory` — insert or merge into existing similar memory | ✅ Done |
@@ -125,7 +125,7 @@
 |---|---|---|
 | **Diary** | `companion_diary` table (UNIQUE per companion/date/kind) | ✅ Done |
 | **Diary** | `src/diary.mjs` — first-person daily/weekly diary in her own voice | ✅ Done |
-| **Diary** | Cron wiring: daily 02:20, weekly (Pro) Sun 02:50 | ✅ Done |
+| **Diary** | Cron wiring: daily 02:20, weekly Sun 02:50 (all companions in v1.3.4+) | ✅ Done |
 | **Diary** | `GET /api/companions/:id/diary` (read-only, ownership-checked) | ✅ Done |
 | **Diary** | `/app/diary.html` reading view + dashboard entry point | ✅ Done |
 | **Diary** | Sensitive-content filter on generated entries | ✅ Done |
