@@ -83,6 +83,7 @@ import { getActiveImageProvider } from './providers/image.mjs';
 import { getActiveVisionProvider, REGISTRY as VISION_REGISTRY } from './providers/vision.mjs';
 import { getActiveAsrProvider, REGISTRY as ASR_REGISTRY } from './providers/asr.mjs';
 import { getActiveEmbeddingProvider } from './providers/embedding.mjs';
+import { synthesizeMp3Only } from './voice_pipeline.mjs';
 import { getActiveSearchProvider, REGISTRY as SEARCH_REGISTRY } from './web_search.mjs';
 import {
   buildCompanionExport, validateCompanionImport, importCompanionForUser,
@@ -2895,6 +2896,31 @@ router.get('/companions/:id/diary', requireAuth, (req, res) => {
   const entries = getDiaryEntries(id, { limit, offset, kind });
   const total   = countDiaryEntries(id, { kind });
   return ok(res, { total, limit, offset, kind: kind || 'all', entries });
+});
+
+// POST /api/companions/:id/tts-preview  (v1.4.0 Sprint 1)
+// body: { text: string }    text 长度限 100 字符
+// query: ?voice_id=...      可选覆盖（让 dashboard 试听任意音色）
+// 返回：audio/mpeg 字节流 (mp3)。不返 SILK——浏览器试听用 mp3 简单。
+// SILK 转码留给微信路径（Sprint 2 才接进 proactive）。
+router.post('/companions/:id/tts-preview', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const text = String(req.body?.text || '').trim();
+  if (!text) return err(res, '缺少 text');
+  if (text.length > 100) return err(res, 'text 最长 100 字符');
+  const voice_id = req.query.voice_id || c.voice_id || undefined; // 让 provider 自取默认
+  const speed = c.voice_speed || 1.0;
+  try {
+    const { mp3 } = await synthesizeMp3Only(text, { voice_id, speed });
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', mp3.length);
+    return res.status(200).end(mp3);
+  } catch (e) {
+    log('warn', `[API] tts-preview 失败 companion=${id}: ${e.message}`);
+    return err(res, e.message || 'TTS 调用失败', 500);
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -42,16 +42,17 @@ ENV NODE_ENV=production \
     DB_PATH=/app/data/bot.db \
     XIYU_DATA_DIR=/app/data
 
-# imagemagick 用于头像 / 场景照后处理（image post-processing pipeline）；
-# 不需要图像功能时也可以 docker build --build-arg WITH_IMAGE=0 跳过
+# imagemagick 用于头像 / 场景照后处理；ffmpeg 用于 v1.4.0+ 的语音功能（mp3 → SILK）
+# 不需要图像/语音功能时可用 build-arg WITH_IMAGE=0 / WITH_VOICE=0 跳过
 ARG WITH_IMAGE=1
-RUN if [ "$WITH_IMAGE" = "1" ]; then \
-      apt-get update \
-      && apt-get install -y --no-install-recommends imagemagick ca-certificates wget \
-      && rm -rf /var/lib/apt/lists/*; \
-    else \
-      apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/*; \
-    fi
+ARG WITH_VOICE=1
+RUN set -eux; \
+    PKGS="ca-certificates wget"; \
+    if [ "$WITH_IMAGE" = "1" ]; then PKGS="$PKGS imagemagick"; fi; \
+    if [ "$WITH_VOICE" = "1" ]; then PKGS="$PKGS ffmpeg"; fi; \
+    apt-get update \
+    && apt-get install -y --no-install-recommends $PKGS \
+    && rm -rf /var/lib/apt/lists/*
 
 # 用非 root 用户跑
 RUN groupadd --system --gid 1001 xiyu \
