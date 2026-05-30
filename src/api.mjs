@@ -157,10 +157,12 @@ import {
   getEmotionState, upsertEmotionState,
   getEmotionHistoryTrend,
   getDiaryEntries, countDiaryEntries,
+  getDailyThought, getRecentDailyThoughts,
   getAppSetting, setAppSetting, deleteAppSetting,
 } from './db.mjs';
 import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, normalizeMemoryWeight } from './memory_v2.mjs';
-import { getEmotionTrend } from './emotion_state.mjs';
+import { getEmotionTrend, getEmotionStateWithDefaults, getMissingLevel, getMissingLabel } from './emotion_state.mjs';
+import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 
 // 由 index.mjs 注入：{ registerBotAccount, unregisterBotAccount, listBotPool }
 let botPoolHandle = null;
@@ -2897,6 +2899,55 @@ router.get('/companions/:id/diary', requireAuth, (req, res) => {
   const entries = getDiaryEntries(id, { limit, offset, kind });
   const total   = countDiaryEntries(id, { kind });
   return ok(res, { total, limit, offset, kind: kind || 'all', entries });
+});
+
+// GET /api/companions/:id/daily-thought  (v1.4.1)
+// 返回「今天她想对你说的话」+ 实时算出的想念档（meter）
+// 没有今日记录时，自愈触发一次生成（异步，不阻塞此次返回）。
+router.get('/companions/:id/daily-thought', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+
+  const tz = 'Asia/Shanghai';
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date());
+
+  const thought = getDailyThought(id, today);
+  const emotion = getEmotionStateWithDefaults(id);
+  const missingLevel = getMissingLevel(emotion, c.last_user_reply_at);
+  const recent = getRecentDailyThoughts(id, 7);
+
+  // 自愈：今日还没有 thought 时（首次安装 / cron 没跑到 / 新建 companion），
+  // 后台异步生成一次。当前请求仍按现状返回（thought 可能为 null）。
+  if (!thought) {
+    generateDailyThoughtForCompanion(id, { dateKey: today })
+      .catch(e => log('warn', `[API] daily-thought 自愈生成失败 companion=${id}: ${e.message}`));
+  }
+
+  return ok(res, {
+    today,
+    thought: thought || null,
+    missing: {
+      level: missingLevel,
+      label: getMissingLabel(missingLevel),
+      dependency: emotion.dependency ?? 30,
+      mood: emotion.mood || 'neutral',
+    },
+    recent_thoughts: recent,
+  });
+});
+
+// POST /api/companions/:id/daily-thought/regenerate  (v1.4.1, dev/手动用)
+// 强制生成今日的 thought（force=true 覆盖现有）。
+router.post('/companions/:id/daily-thought/regenerate', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const r = await generateDailyThoughtForCompanion(id, { force: true });
+    return ok(res, r);
+  } catch (e) {
+    return err(res, e.message || 'thought 生成失败', 500);
+  }
 });
 
 // POST /api/companions/:id/tts-preview  (v1.4.0 Sprint 1)

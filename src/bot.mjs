@@ -28,7 +28,7 @@ import { safeOutboundReply, inboundIsBlocked } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
-import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint } from './emotion_state.mjs';
+import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel } from './emotion_state.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
@@ -319,7 +319,9 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
     const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();
     const stickerHint = buildStickerPromptHint(stickerEnabled);
-    const emotionHint = buildEmotionPromptHint(emotionState);
+    // v1.4.1: 算出 missingLevel 让 prompt 按"想念档"给出指令
+    const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
+    const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel });
     let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts }) + stickerHint + emotionHint;
     // 关系阶段刚升级 → 这条回复要自然体现这种变化
     const celebration = consumePendingCelebration(companion.id);

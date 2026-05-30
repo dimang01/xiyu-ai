@@ -27,6 +27,7 @@ import {
 import { applyMemoryDecayBatch } from './memory_v2.mjs';
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
 import { generateDailyDiaryForCompanion, generateWeeklyDiaryForCompanion } from './diary.mjs';
+import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -68,8 +69,10 @@ async function tick(now = new Date()) {
   await runOnce(parts, 'weekly-reflection', parts.weekday === 0 && parts.hour === 2 && parts.minute === 45, () => runWeeklyReflections(parts.dateKey));
   // 02:20 — 每日日记（在反思 02:15 之后，复用同一批昨日对话）
   await runOnce(parts, 'daily-diary', parts.hour === 2 && parts.minute === 20, () => runDailyDiaries(parts.dateKey));
-  // 周日 02:50 — 每周日记（Pro，紧随每周反思）
+  // 周日 02:50 — 每周日记（紧随每周反思）
   await runOnce(parts, 'weekly-diary', parts.weekday === 0 && parts.hour === 2 && parts.minute === 50, () => runWeeklyDiaries(parts.dateKey));
+  // v1.4.1: 02:35 — 「她今天想对你说的话」（紧跟日记，复用情绪 + 近 3 天对话）
+  await runOnce(parts, 'daily-thought', parts.hour === 2 && parts.minute === 35, () => runDailyThoughts(parts.dateKey));
 }
 
 // ─── 日程归档为记忆 ─────────────────────────────────────────────────────────
@@ -308,6 +311,19 @@ async function runWeeklyReflections(dateKey) {
       await runWeeklyReflectionForCompanion(c.id, { userId: c.user_id });
     } catch (e) {
       log('warn', `[PlanTasks] weekly-reflection 异常 companion=${c.id}: ${e.message}`);
+    }
+  }
+}
+
+// ─── 今天她想你（v1.4.1）─────────────────────────────────────────────────────
+async function runDailyThoughts(dateKey) {
+  const companions = getAllActiveCompanions();
+  log('info', `[PlanTasks] daily-thought start date=${dateKey} companions=${companions.length}`);
+  for (const c of companions) {
+    try {
+      await generateDailyThoughtForCompanion(c.id, { userId: c.user_id });
+    } catch (e) {
+      log('warn', `[PlanTasks] daily-thought 异常 companion=${c.id}: ${e.message}`);
     }
   }
 }
