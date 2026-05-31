@@ -668,6 +668,11 @@ function migrateEmotionState() {
       updated_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  // v1.6: 扩 4 维 — patience（耐心）/ excitement（兴奋短期）/ annoyance（烦躁短期）/ gratitude（感激）
+  addColIfMissing('companion_emotion_state', 'patience',   'INTEGER DEFAULT 60');
+  addColIfMissing('companion_emotion_state', 'excitement', 'INTEGER DEFAULT 30');
+  addColIfMissing('companion_emotion_state', 'annoyance',  'INTEGER DEFAULT 0');
+  addColIfMissing('companion_emotion_state', 'gratitude',  'INTEGER DEFAULT 40');
 }
 
 // ─── Proactive Engine v2 ───────────────────────────────────────────────────────
@@ -697,14 +702,21 @@ function migrateEmotionHistory() {
     CREATE INDEX IF NOT EXISTS idx_emotion_history_companion_created
       ON companion_emotion_history(companion_id, created_at DESC);
   `);
+  // v1.6: 历史表也加 4 维（旧行保持 NULL）
+  addColIfMissing('companion_emotion_history', 'patience',   'INTEGER');
+  addColIfMissing('companion_emotion_history', 'excitement', 'INTEGER');
+  addColIfMissing('companion_emotion_history', 'annoyance',  'INTEGER');
+  addColIfMissing('companion_emotion_history', 'gratitude',  'INTEGER');
 }
 
 export function insertEmotionHistory(companionId, state, source = 'auto') {
   const db = getDb();
   db.prepare(`
     INSERT INTO companion_emotion_history
-      (companion_id, affection, trust, dependency, possessiveness, security, energy, mood, source, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (companion_id, affection, trust, dependency, possessiveness, security, energy, mood,
+       patience, excitement, annoyance, gratitude,
+       source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     companionId,
     state.affection   ?? null,
@@ -714,6 +726,10 @@ export function insertEmotionHistory(companionId, state, source = 'auto') {
     state.security    ?? null,
     state.energy      ?? null,
     state.mood        ?? null,
+    state.patience    ?? null,
+    state.excitement  ?? null,
+    state.annoyance   ?? null,
+    state.gratitude   ?? null,
     source,
     new Date().toISOString(),
   );
