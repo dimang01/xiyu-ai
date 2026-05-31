@@ -9,14 +9,9 @@ import {
   getCompanionById, getBotContextForCompanion, getDb,
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
-  getLastPhotoAt, markPhotoSent,
   recordProactiveSentTimestamp, getProactiveLastSent,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
-import { generateScenePhoto } from './ai.mjs';
-import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
-import { spawn } from 'node:child_process';
-import path from 'node:path';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem } from './ilink.mjs';
@@ -28,6 +23,7 @@ import { dedupSegments } from './text_similarity.mjs';
 import { buildLongTermDigest, ensureScheduleForCompanion } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
+import { sendCompanionPhoto } from './photo_sender.mjs';
 import { safeOutboundReply } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel } from './emotion_state.mjs';
@@ -524,135 +520,31 @@ export async function sendScenePhotoManually(companion) {
   return sendScenePhoto(companion, ctx);
 }
 
-// ── 场景照片：生成 + 去水印 + 上传 + 发送 + AI 配文字 ──
-const SCENE_PHOTO_DIR = path.resolve(process.cwd(), 'public/avatars/scenes');
-
 async function sendScenePhoto(companion, ctx) {
-  // 派生当前活动
-  const todayKey = shanghaiDateKey();
-  const sched = getDailySchedule(companion.id, todayKey);
-  const nowMin = (() => {
-    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }).formatToParts(new Date()).filter(x => x.type !== 'literal').map(x => [x.type, x.value]));
-    return Number(p.hour) * 60 + Number(p.minute);
-  })();
-
-  let curActivity = companion.current_scene || '在家';
-  let timeSlot = 'afternoon';
-  let mood = '';
-  if (sched?.items?.length) {
-    for (const it of sched.items) {
-      const m = (it.time || '').match(/^(\d{1,2}):(\d{2})/);
-      if (!m) continue;
-      const itMin = Number(m[1]) * 60 + Number(m[2]);
-      if (itMin <= nowMin) curActivity = it.activity;
-    }
-    if (sched.mood_segments) {
-      mood = nowMin < 12 * 60 ? sched.mood_segments.morning
-        : nowMin < 18 * 60 ? sched.mood_segments.afternoon
-        : sched.mood_segments.evening;
-    }
-  }
-  if (nowMin < 11 * 60) timeSlot = 'morning';
-  else if (nowMin < 14 * 60) timeSlot = 'noon';
-  else if (nowMin < 17 * 60) timeSlot = 'afternoon';
-  else if (nowMin < 19 * 60) timeSlot = 'golden hour';
-  else if (nowMin < 22 * 60) timeSlot = 'evening';
-  else timeSlot = 'night';
-
-  // 1. 生成场景照片 URL
-  log('info', `[Proactive] 生成场景照 companion=${companion.id} activity="${curActivity}" timeSlot=${timeSlot}`);
-  let cogResult;
-  try {
-    cogResult = await generateScenePhoto({ activity: curActivity, timeSlot, mood });
-  } catch (e) {
-    log('warn', `[Proactive] CogView 生成失败: ${e.message}`);
+  const result = await sendCompanionPhoto({
+    companion,
+    context: ctx,
+    source: 'proactive',
+    generateCaption: true,
+    recordTurn: true,
+  });
+  if (!result.ok) {
+    log('warn', `[Proactive] 场景照未发送 companion=${companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
     return;
   }
-
-  // 2. 下载 + 去水印 + 转 webp
-  if (!existsSync(SCENE_PHOTO_DIR)) mkdirSync(SCENE_PHOTO_DIR, { recursive: true });
-  const ts = Date.now();
-  const outName = `scene_${companion.id}_${ts}.webp`;
-  const outPath = path.join(SCENE_PHOTO_DIR, outName);
-  const tmpPath = outPath + '.tmp';
-  try {
-    const r = await fetch(cogResult.url, { signal: AbortSignal.timeout(30_000) });
-    if (!r.ok) throw new Error('download HTTP ' + r.status);
-    const buf = Buffer.from(await r.arrayBuffer());
-    writeFileSync(tmpPath, buf);
-    await new Promise((resolve, reject) => {
-      const proc = spawn('convert', [
-        tmpPath, '-auto-orient',
-        '-resize', '1157x1157^',
-        '-gravity', 'north',
-        '-crop', '1024x1024+0+0', '+repage',
-        '-strip', '-quality', '85', outPath,
-      ]);
-      proc.on('close', code => code === 0 ? resolve() : reject(new Error('convert code=' + code)));
-      proc.on('error', reject);
-    });
-    try { unlinkSync(tmpPath); } catch {}
-  } catch (e) {
-    log('warn', `[Proactive] 下载/转码失败: ${e.message}`);
-    try { unlinkSync(tmpPath); } catch {}
-    return;
-  }
-
-  // 3. 上传到 iLink CDN
-  const buf = (await import('node:fs/promises')).readFile(outPath);
-  const fileBuf = await buf;
-  let item;
-  try {
-    const r = await uploadFile({ data: fileBuf, fileName: outName, toUserId: companion.wechat_user_id, ctx });
-    item = r.item;
-  } catch (e) {
-    log('warn', `[Proactive] uploadFile 失败: ${e.message}`);
-    return;
-  }
-
-  // 4. 让 AI 配一句短文字（"刚拍的""你看"）
-  let caption = '';
-  try {
-    const { generateReply } = await import('./ai.mjs');
-    const personaFacts = getPersonaFacts(companion.id);
-    const sys = buildSystemPrompt(companion, { promptMode: 'proactive', personaFacts });
-    const userMsg = `你刚才在【${curActivity}】，随手拍了一张照片想分享给他。
-现在准备发出去。配一句 5-15 字的简短随手发的话，符合你的口吻和当前心情。
-例子：「窗外的天好好看」「刚到」「我的桌子」「拍的不好哈哈」「分享给你」「猜我在哪」
-**只输出这句话**，不要带【】，不要带表情包标记。`;
-    caption = await generateReply(sys, [], userMsg, { max_tokens: 60, temperature: 0.9 });
-    caption = (caption || '').replace(/[\[【].*?[\]】]/g, '').replace(/\|\|/g, '').trim().slice(0, 40);
-  } catch (e) {
-    log('warn', `[Proactive] caption 生成失败: ${e.message}`);
-  }
-
-  // 5. 发送图片 + 文字
-  try {
-    if (caption) {
-      await sendTextMessage(ctx, companion.wechat_user_id, caption, null);
-      saveMessage({
-        msgId: `proactive_photo_text_${companion.id}_${ts}`,
-        fromUser: ctx.botId, toUser: companion.wechat_user_id,
-        msgType: 'text', content: caption, direction: 'out',
-      });
-      await new Promise(r => setTimeout(r, 800 + Math.random() * 1000));
-    }
-    await sendMessageItem(ctx, companion.wechat_user_id, item, null);
+  if (result.caption) {
+    await new Promise(r => setTimeout(r, 800 + Math.random() * 1000));
+    await sendTextMessage(ctx, companion.wechat_user_id, result.caption, null);
     saveMessage({
-      msgId: `proactive_photo_${companion.id}_${ts}`,
-      fromUser: ctx.botId, toUser: companion.wechat_user_id,
-      msgType: 'image', content: `[PHOTO] ${curActivity}`, direction: 'out',
+      msgId: `proactive_photo_text_${companion.id}_${Date.now()}`,
+      fromUser: ctx.botId,
+      toUser: companion.wechat_user_id,
+      msgType: 'text',
+      content: result.caption,
+      direction: 'out',
     });
-    markPhotoSent(companion.id, curActivity + ' / ' + caption);
-    saveConversationTurn(companion.id, 'assistant', `[场景照片：${curActivity}] ${caption}`, '场景分享');
-    // 首次场景照成就（静默）
-    tryAchievement(companion.id, 'first_scene_photo');
-    log('info', `[Proactive] ★ 场景照已发送 companion=${companion.id} activity="${curActivity}" caption="${caption}"`);
-  } catch (e) {
-    log('warn', `[Proactive] 发送场景照失败: ${e.message}`);
   }
+  log('info', `[Proactive] ★ 场景照已发送 companion=${companion.id} activity="${result.activity}" caption="${result.caption || ''}"`);
 }
 
 // 撞车检测：把回复和最近 assistant 内容比相似度（char 3-gram Jaccard），
