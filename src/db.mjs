@@ -51,6 +51,7 @@ export function getDb() {
     migrateContextTokenCache();
     migrateDailyThoughts();
     migrateAppSettings();
+    migrateTimeCapsules();
   }
   return db;
 }
@@ -3310,4 +3311,84 @@ export function listPublicAppSettings() {
   return getDb()
     .prepare('SELECT key, value, value_type, updated_at FROM app_settings WHERE secret = 0 ORDER BY key')
     .all();
+}
+
+// ─── companion_time_capsules (v1.5) ──────────────────────────────────────────
+// 用户写一段话存她那里 + 设解锁时间。时间到 cron 自动"打开"并让 AI 写一段"现在的我"感想。
+//   body          ← 用户原文（封存后不可改）
+//   unlock_at     ← 解锁时间戳（秒）
+//   opened_at     ← 实际打开时间戳（NULL = 未开封）
+//   her_reaction  ← 她解封时写的感想（NULL = 未生成）
+function migrateTimeCapsules() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_time_capsules (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      body         TEXT    NOT NULL,
+      title        TEXT,
+      created_at   INTEGER NOT NULL,
+      unlock_at    INTEGER NOT NULL,
+      opened_at    INTEGER,
+      her_reaction TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_time_capsules_user
+      ON companion_time_capsules(user_id, companion_id);
+    CREATE INDEX IF NOT EXISTS idx_time_capsules_unlock
+      ON companion_time_capsules(unlock_at) WHERE opened_at IS NULL;
+  `);
+}
+
+export function insertTimeCapsule({ userId, companionId, body, title = null, unlockAt }) {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  const info = db.prepare(`
+    INSERT INTO companion_time_capsules (user_id, companion_id, body, title, created_at, unlock_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(userId, companionId, String(body).slice(0, 2000), title ? String(title).slice(0, 80) : null, now, Math.floor(unlockAt));
+  return db.prepare('SELECT * FROM companion_time_capsules WHERE id = ?').get(info.lastInsertRowid);
+}
+
+export function listTimeCapsulesForCompanion(companionId, { status = 'all' } = {}) {
+  const db = getDb();
+  let where = 'companion_id = ?';
+  if (status === 'pending') where += ' AND opened_at IS NULL';
+  else if (status === 'opened') where += ' AND opened_at IS NOT NULL';
+  return db.prepare(`
+    SELECT id, user_id, companion_id, body, title, created_at, unlock_at, opened_at, her_reaction
+    FROM companion_time_capsules WHERE ${where}
+    ORDER BY
+      CASE WHEN opened_at IS NULL THEN unlock_at ELSE -opened_at END ASC
+  `).all(companionId);
+}
+
+export function getTimeCapsule(id) {
+  return getDb().prepare('SELECT * FROM companion_time_capsules WHERE id = ?').get(id) || null;
+}
+
+export function deleteTimeCapsule(id, userId) {
+  // 只允许 owner 删，且只删未开封的（已开封是历史，保留）
+  const info = getDb().prepare(`
+    DELETE FROM companion_time_capsules WHERE id = ? AND user_id = ? AND opened_at IS NULL
+  `).run(id, userId);
+  return info.changes > 0;
+}
+
+export function findMaturedTimeCapsules(limit = 50) {
+  const now = Math.floor(Date.now() / 1000);
+  return getDb().prepare(`
+    SELECT id, user_id, companion_id, body, title, created_at, unlock_at
+    FROM companion_time_capsules
+    WHERE opened_at IS NULL AND unlock_at <= ?
+    ORDER BY unlock_at ASC LIMIT ?
+  `).all(now, limit);
+}
+
+export function markTimeCapsuleOpened(id, herReaction) {
+  const now = Math.floor(Date.now() / 1000);
+  getDb().prepare(`
+    UPDATE companion_time_capsules
+    SET opened_at = ?, her_reaction = ?
+    WHERE id = ? AND opened_at IS NULL
+  `).run(now, String(herReaction || '').slice(0, 1500), id);
 }

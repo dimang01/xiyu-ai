@@ -165,6 +165,10 @@ import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, n
 import { getEmotionTrend, getEmotionStateWithDefaults, getMissingLevel, getMissingLabel } from './emotion_state.mjs';
 import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 import { generateOfflineLetter, renderLetterToText, parseLetterText, verifyLetterSignature } from './letter.mjs';
+import {
+  insertTimeCapsule, listTimeCapsulesForCompanion, getTimeCapsule, deleteTimeCapsule,
+} from './db.mjs';
+import { openOneCapsule } from './time_capsule.mjs';
 
 // 由 index.mjs 注入：{ registerBotAccount, unregisterBotAccount, listBotPool }
 let botPoolHandle = null;
@@ -3259,7 +3263,7 @@ router.post('/companions/:id/offline-letter',
     const c  = requireOwnedCompanion(req, res, id); if (!c) return;
     const hint = typeof req.body?.hint === 'string' ? req.body.hint.slice(0, 200) : '';
     try {
-      const letter = await generateOfflineLetter(c, { hint, accountId: req.account?.id || null });
+      const letter = await generateOfflineLetter(c, { hint, accountId: req.authUser?.id || null });
       const hostHint = req.get('host') ? `${req.protocol}://${req.get('host')}` : '';
       const text = renderLetterToText(letter, { hostHint });
       const filename = `xiyu-letter-${c.id}-${letter.issued}.txt`;
@@ -3306,6 +3310,95 @@ router.post('/verify-letter',
       issued: Number(issued),
       issued_human: new Date(Number(issued) * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
     });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.5: 时光胶囊（time capsule）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/time-capsules?status=all|pending|opened
+router.get('/companions/:id/time-capsules', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const status = ['all', 'pending', 'opened'].includes(req.query.status) ? req.query.status : 'all';
+  try {
+    const rows = listTimeCapsulesForCompanion(id, { status });
+    return ok(res, { capsules: rows, status });
+  } catch (e) {
+    log('error', `[API] time-capsules list failed companion=${id}: ${e.message}`);
+    return err(res, '加载失败', 500);
+  }
+});
+
+// POST /api/companions/:id/time-capsules
+// body: { body: string (≤2000), title?: string (≤80), unlock_at: number (seconds, future) }
+router.post('/companions/:id/time-capsules',
+  rateLimit({ scope: 'time-capsule-create', maxPerWindow: 20, windowMs: 60 * 60 * 1000, message: '创建过于频繁，请稍后再试' }),
+  requireAuth,
+  (req, res) => {
+    const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+    const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+    const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : null;
+    const unlockAtRaw = Number(req.body?.unlock_at);
+    if (body.length < 5) return err(res, '内容太短（至少 5 字）');
+    if (body.length > 2000) return err(res, '内容过长（最多 2000 字）');
+    if (!Number.isFinite(unlockAtRaw) || unlockAtRaw <= 0) return err(res, 'unlock_at 无效');
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (unlockAtRaw <= nowSec + 60) return err(res, '解锁时间必须在未来（至少 1 分钟后）');
+    // 上限：100 年（防止数值溢出 / 误填）
+    if (unlockAtRaw > nowSec + 100 * 365 * 86400) return err(res, '解锁时间不能超过 100 年后');
+    try {
+      const row = insertTimeCapsule({
+        userId: req.authUser.id,
+        companionId: id,
+        body, title,
+        unlockAt: unlockAtRaw,
+      });
+      log('info', `[API] time-capsule created id=${row.id} companion=${id} unlock-in=${unlockAtRaw - nowSec}s`);
+      return ok(res, { capsule: row });
+    } catch (e) {
+      log('error', `[API] time-capsule create failed: ${e.message}`);
+      return err(res, '保存失败', 500);
+    }
+  },
+);
+
+// DELETE /api/companions/:id/time-capsules/:capsuleId  —— 只能删未开封的
+router.delete('/companions/:id/time-capsules/:capsuleId', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const cid = intId(req.params.capsuleId); if (!cid) return err(res, 'capsuleId 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  const capsule = getTimeCapsule(cid);
+  if (!capsule || capsule.companion_id !== id) return err(res, '胶囊不存在', 404);
+  if (capsule.opened_at) return err(res, '已开封的胶囊不能删除（属于历史回忆）');
+  const ok2 = deleteTimeCapsule(cid, req.authUser.id);
+  if (!ok2) return err(res, '删除失败（可能已被他人操作）', 409);
+  return ok(res, { deleted: true });
+});
+
+// POST /api/companions/:id/time-capsules/:capsuleId/open-now  —— 强制立即解封
+// 用于"等不及，让她现在就看"。严格限速防滥用。
+router.post('/companions/:id/time-capsules/:capsuleId/open-now',
+  rateLimit({ scope: 'time-capsule-open-now', maxPerWindow: 5, windowMs: 60 * 60 * 1000, message: '强制解封过于频繁' }),
+  requireAuth,
+  async (req, res) => {
+    const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+    const cid = intId(req.params.capsuleId); if (!cid) return err(res, 'capsuleId 无效');
+    const c = requireOwnedCompanion(req, res, id); if (!c) return;
+    const capsule = getTimeCapsule(cid);
+    if (!capsule || capsule.companion_id !== id) return err(res, '胶囊不存在', 404);
+    if (capsule.opened_at) return err(res, '已经打开过了', 409);
+    try {
+      const r = await openOneCapsule(capsule, { accountId: req.authUser.id });
+      if (r.status === 'error') return err(res, r.error || '生成失败', 500);
+      const updated = getTimeCapsule(cid);
+      return ok(res, { capsule: updated });
+    } catch (e) {
+      log('error', `[API] time-capsule open-now failed id=${cid}: ${e.message}`);
+      return err(res, e.message || '开封失败', 500);
+    }
   },
 );
 

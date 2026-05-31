@@ -28,6 +28,7 @@ import { applyMemoryDecayBatch } from './memory_v2.mjs';
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
 import { generateDailyDiaryForCompanion, generateWeeklyDiaryForCompanion } from './diary.mjs';
 import { generateDailyThoughtForCompanion } from './thoughts.mjs';
+import { openMaturedCapsulesBatch } from './time_capsule.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -73,6 +74,8 @@ async function tick(now = new Date()) {
   await runOnce(parts, 'weekly-diary', parts.weekday === 0 && parts.hour === 2 && parts.minute === 50, () => runWeeklyDiaries(parts.dateKey));
   // v1.4.1: 02:35 — 「她今天想对你说的话」（紧跟日记，复用情绪 + 近 3 天对话）
   await runOnce(parts, 'daily-thought', parts.hour === 2 && parts.minute === 35, () => runDailyThoughts(parts.dateKey));
+  // v1.5: 每小时第 10 分钟 — 扫描所有到期未开封的时光胶囊，让"现在的她"写感想
+  await runOnce(parts, `time-capsules-${parts.hour}`, parts.minute === 10, () => openMaturedCapsulesBatch({ limit: 20 }));
 }
 
 // ─── 日程归档为记忆 ─────────────────────────────────────────────────────────
