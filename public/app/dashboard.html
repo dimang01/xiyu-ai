@@ -398,6 +398,26 @@
           </div>
         </div>
 
+        <!-- 沉默陪伴模式（v1.5） -->
+        <div class="card p-7" id="silent-mode-card">
+          <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+                <i data-lucide="moon" class="w-5 h-5 text-sakura-deep"></i>
+              </div>
+              <h3 class="text-[15px] font-bold">沉默陪伴模式</h3>
+            </div>
+            <label class="toggle">
+              <input id="t-silent" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <p class="text-[12px] text-mute font-medium leading-relaxed mt-2">
+            打开后她不会主动发消息，但她还"在"。<br>
+            <span class="text-[11px] text-mute/80">屏幕右下会显示一个粉色呼吸光点；你主动找她她依然会回。适合不想聊只想"在"的时刻。</span>
+          </p>
+        </div>
+
         <!-- 主动消息 settings -->
         <div class="card p-7">
           <div class="flex items-center justify-between mb-1">
@@ -1164,10 +1184,17 @@
       const tSticker = document.getElementById('t-sticker');
       const tMemory = document.getElementById('t-memory');
       const tVoice = document.getElementById('t-voice');
+      const tSilent = document.getElementById('t-silent');
+      const silentOrb = document.getElementById('silent-orb');
       tProactive.checked = !!c.proactive_enabled;
       tSticker.checked = !!c.sticker_reply_enabled;
       tMemory.checked = c.memory_enabled !== false;   // 默认开
       tVoice.checked = !!c.voice_reply_enabled;        // v1.4.0 默认关
+      if (tSilent) tSilent.checked = !!c.silent_mode;
+      function paintSilentOrb(on) {
+        if (silentOrb) silentOrb.style.display = on ? '' : 'none';
+      }
+      paintSilentOrb(!!c.silent_mode);
 
       async function patchCompanion(field, value) {
         try {
@@ -1191,6 +1218,20 @@
       tSticker.addEventListener('change', () => patchCompanion('sticker_reply_enabled', tSticker.checked));
       tMemory.addEventListener('change', () => patchCompanion('memory_enabled', tMemory.checked));
       tVoice.addEventListener('change', () => patchCompanion('voice_reply_enabled', tVoice.checked));
+      if (tSilent) {
+        tSilent.addEventListener('change', async () => {
+          await patchCompanion('silent_mode', tSilent.checked);
+          paintSilentOrb(tSilent.checked);
+        });
+      }
+      if (silentOrb) {
+        silentOrb.addEventListener('click', async () => {
+          if (tSilent) tSilent.checked = false;
+          await patchCompanion('silent_mode', false);
+          paintSilentOrb(false);
+          showToast && showToast('已退出沉默陪伴模式');
+        });
+      }
 
       // 语音试听：调 /tts-preview 拿 mp3 字节，浏览器 Audio 直接播
       const btnVoicePreview = document.getElementById('btn-voice-preview');
@@ -2385,5 +2426,34 @@
       });
     }
   </script>
+
+  <!-- 沉默陪伴模式：右下角呼吸光点（v1.5） -->
+  <style>
+    @keyframes silentBreath {
+      0%, 100% { transform: scale(1); opacity: 0.55; box-shadow: 0 0 14px 6px rgba(255,182,217,.35); }
+      50%      { transform: scale(1.22); opacity: 1; box-shadow: 0 0 24px 12px rgba(255,143,184,.55); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #silent-orb { animation: none !important; opacity: 0.7; }
+    }
+    #silent-orb {
+      position: fixed; right: 22px; bottom: 22px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #FFC1E0, #FF8FB8 70%);
+      cursor: pointer; z-index: 60;
+      animation: silentBreath 3.2s ease-in-out infinite;
+      transition: opacity .2s;
+      display: none;
+    }
+    #silent-orb:hover { opacity: 1; }
+    #silent-orb::after {
+      content: '她在'; position: absolute; right: 22px; top: 50%;
+      transform: translateY(-50%); white-space: nowrap;
+      font-size: 11px; color: #FF8FB8; font-weight: 600;
+      opacity: 0; transition: opacity .25s; pointer-events: none;
+    }
+    #silent-orb:hover::after { opacity: 1; }
+  </style>
+  <div id="silent-orb" title="沉默陪伴模式开启中 · 点击退出"></div>
 </body>
 </html>

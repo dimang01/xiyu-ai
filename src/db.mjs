@@ -52,6 +52,7 @@ export function getDb() {
     migrateDailyThoughts();
     migrateAppSettings();
     migrateTimeCapsules();
+    migrateSilentMode();
   }
   return db;
 }
@@ -959,7 +960,7 @@ const JSON_ARRAY_FIELDS = new Set([
 const BOOL_FIELDS = new Set([
   'use_kaomoji', 'can_joke', 'avoid_cheesy', 'no_pressure', 'occasional_tantrum',
   'encouraging', 'proactive_enabled', 'voice_reply_enabled', 'sticker_reply_enabled',
-  'memory_enabled',
+  'memory_enabled', 'silent_mode',
 ]);
 const ALLOWED_FIELDS = new Set([
   'name', 'age', 'role_title', 'avatar_url',
@@ -972,6 +973,7 @@ const ALLOWED_FIELDS = new Set([
   'how_met', 'relationship_status', 'shared_memory',
   'memory_priorities',
   'proactive_enabled', 'proactive_frequency', 'proactive_time_window', 'proactive_daily_target',
+  'silent_mode',
   'voice_reply_enabled', 'voice_id',
   'voice_reply_enabled', 'sticker_reply_enabled',
   'call_user_as', 'user_call_her_as',
@@ -1017,6 +1019,7 @@ export function parseCompanionRow(row) {
     voice_reply_enabled:   !!row.voice_reply_enabled,
     sticker_reply_enabled: !!row.sticker_reply_enabled,
     memory_enabled:        !!row.memory_enabled,
+    silent_mode:           !!row.silent_mode,
   };
 }
 
@@ -2825,6 +2828,13 @@ function migrateReminderPush() {
 // 默认 10 与旧"适中"档中位数接近；老 companion 升级后立刻就有合理值。
 function migrateProactiveDailyTarget() {
   addColIfMissing('companions', 'proactive_daily_target', 'INTEGER DEFAULT 10');
+}
+
+// v1.5: 沉默陪伴模式
+// silent_mode=1 时她不再主动发消息（覆盖 proactive_enabled / proactive_daily_target）；
+// dashboard 角落显示一个呼吸光点表示"她还在"。用户主动发她依然会回复。
+function migrateSilentMode() {
+  addColIfMissing('companions', 'silent_mode', 'INTEGER DEFAULT 0');
 }
 
 // v1.4.0 Sprint 1: 主动发语音功能字段。
