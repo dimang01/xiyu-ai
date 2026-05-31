@@ -302,7 +302,7 @@
     });
 
     // ─── Local 模式感知 ─────────────────────────────────────────────────────
-    // 根据 /api/setup/status 中的 auth_mode / initialized 字段给出提示
+    // 根据 /api/setup/status 中的 auth_mode / initialized / single_user 字段
     (async function checkLocalMode() {
       try {
         const r = await fetch('/api/setup/status');
@@ -310,6 +310,33 @@
         if (!d.ok) return;
         const mode        = d.data?.auth_mode;
         const initialized = d.data?.initialized;
+        const singleUser  = d.data?.single_user;
+
+        // v1.5.1: SINGLE_USER 模式 — 全自动登录，跳过整个登录页
+        if (singleUser) {
+          try {
+            const resp = await fetch('/api/auth/single-user-login', { method: 'POST' });
+            const data = await resp.json();
+            if (data.success && data.token) {
+              localStorage.setItem('xiyu_user', JSON.stringify(data.user));
+              localStorage.setItem('xiyu_token', data.token);
+              // 没有 companion 就跳 create.html，否则跳 dashboard.html
+              try {
+                const meR = await fetch('/api/me/companion', {
+                  headers: { Authorization: 'Bearer ' + data.token },
+                });
+                const meD = await meR.json();
+                const hasCompanion = meD?.data?.companion_id;
+                location.replace(hasCompanion ? '/app/dashboard.html' : '/app/create.html');
+              } catch {
+                location.replace('/app/dashboard.html');
+              }
+              return;
+            }
+          } catch (e) {
+            console.warn('[single-user] auto-login failed, falling back to manual', e);
+          }
+        }
 
         if (mode === 'local' && !initialized) {
           // 首次本地初始化 → 直接跳 setup.html，避免让用户对着没用的登录/注册表单发呆

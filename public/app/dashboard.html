@@ -966,6 +966,13 @@
       localStorage.clear();
       location.href = '/app/auth.html';
     });
+    // v1.5.1: SINGLE_USER 模式下隐藏"登出"按钮（登出后自动又会被登回，按钮无意义）
+    fetch('/api/setup/status').then(r => r.json()).then(d => {
+      if (d?.data?.single_user) {
+        const btn = document.getElementById('btn-logout');
+        if (btn) btn.style.display = 'none';
+      }
+    }).catch(() => {});
 
     // 主动消息：用户拖动滑块直接定每天目标条数（与 proactive.mjs ±20% 抖动一致）
     function refreshProactiveQuota(target) {

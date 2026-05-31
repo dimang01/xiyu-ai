@@ -1187,6 +1187,30 @@ export function createUserAccount({ username, email, passwordHash, birthday = nu
 }
 
 /**
+ * 单用户模式 (v1.5.1) 用：找/创建一个"主人"账号，作为 SINGLE_USER=true 时自动登录的身份。
+ * - 已有任意账号 → 返回 ID 最小且未被封禁的（一般是最早注册的，等价于 admin）
+ * - 没有账号 → 创建一个 owner，密码用随机 hash 占位（用户从不用密码登）
+ * 注意：调用方应自行先判断 process.env.SINGLE_USER === 'true'，本函数不做环境变量检查。
+ */
+export function getOrCreateSingleUserOwner() {
+  const db = getDb();
+  const existing = db.prepare(`
+    SELECT * FROM user_accounts
+    WHERE COALESCE(is_banned, 0) = 0
+    ORDER BY id ASC LIMIT 1
+  `).get();
+  if (existing) return existing;
+  // 创建一个 owner 账号 — 密码 hash 是随机 32 字节 hex，用户永远不会用它登录
+  const randomHash = 'single-user-no-password-' + (Math.random().toString(36).slice(2) + Date.now().toString(36));
+  return createUserAccount({
+    username: 'owner',
+    email: 'owner@local',
+    passwordHash: randomHash,
+    termsVersion: 'single-user-mode',
+  });
+}
+
+/**
  * 年龄相关 helper：根据 user_accounts.birthday + age_at_registration 返回
  *   { age, isMinor, canNsfw }
  *   - 用户没填生日 → 当成年处理（用户协议已写明禁未成年；不强制 KYC）
