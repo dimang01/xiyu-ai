@@ -473,6 +473,49 @@
           </div>
         </div>
 
+        <!-- 时光胶囊（v1.5） -->
+        <div class="card p-7">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+              <i data-lucide="clock" class="w-5 h-5 text-sakura-deep"></i>
+            </div>
+            <h3 class="text-[15px] font-bold">时光胶囊</h3>
+          </div>
+          <p class="text-[12px] text-mute font-medium leading-relaxed">
+            给她写一段话，封存到未来某一天她替你打开。<br>
+            <span class="text-[11px] text-mute/80">解封时她会读一遍你当时写的，附上"现在的我"对此的感想。</span>
+          </p>
+          <div class="mt-3 space-y-2">
+            <input id="capsule-title" type="text" maxlength="60"
+                   placeholder="（可选）标题，如：写给一年后的你"
+                   class="w-full text-[12px] rounded-xl border border-line bg-white/60 px-3 py-2 focus:outline-none focus:border-sakura-deep transition-colors" />
+            <textarea id="capsule-body" rows="3" maxlength="2000"
+                      placeholder="想对未来的她（和未来的你）说点什么？"
+                      class="w-full text-[12px] rounded-xl border border-line bg-white/60 px-3 py-2 focus:outline-none focus:border-sakura-deep transition-colors resize-none"></textarea>
+            <div class="flex items-center gap-2 flex-wrap">
+              <select id="capsule-unlock" class="text-[12px] rounded-xl border border-line bg-white/60 px-3 py-2 focus:outline-none focus:border-sakura-deep">
+                <option value="86400">1 天后</option>
+                <option value="604800">7 天后</option>
+                <option value="2592000" selected>1 个月后</option>
+                <option value="7776000">3 个月后</option>
+                <option value="15552000">半年后</option>
+                <option value="31536000">1 年后</option>
+              </select>
+              <button id="btn-capsule-create" type="button" class="text-[12px] font-semibold text-white bg-gradient-to-r from-sakura to-sakura-deep rounded-full px-4 py-1.5 hover:shadow-sakura transition-all">
+                <i data-lucide="lock" class="inline w-3 h-3 align-[-1px]"></i> 封存
+              </button>
+              <span id="capsule-msg" class="text-[11px] text-mute"></span>
+            </div>
+          </div>
+          <div class="mt-4 border-t border-line pt-3">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[12px] font-semibold text-ink">我的胶囊</span>
+              <button id="btn-capsule-refresh" type="button" class="text-[11px] text-sakura-deep hover:underline">刷新</button>
+            </div>
+            <div id="capsule-list" class="space-y-2 text-[12px]"></div>
+          </div>
+        </div>
+
         <!-- 离线留言胶囊（v1.5） -->
         <div class="card p-7">
           <div class="flex items-center gap-3 mb-3">
@@ -1180,6 +1223,137 @@
           setTimeout(() => { btnVoicePreview.disabled = false; }, 800);
         }
       });
+
+      // ─── 时光胶囊（v1.5）─────────────────────────────────────────────────
+      const capsuleTitle = document.getElementById('capsule-title');
+      const capsuleBody = document.getElementById('capsule-body');
+      const capsuleUnlock = document.getElementById('capsule-unlock');
+      const btnCapsuleCreate = document.getElementById('btn-capsule-create');
+      const btnCapsuleRefresh = document.getElementById('btn-capsule-refresh');
+      const capsuleMsg = document.getElementById('capsule-msg');
+      const capsuleList = document.getElementById('capsule-list');
+      function escapeHtmlSafe(s) {
+        return String(s).replace(/[&<>"']/g, c => (
+          { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+      }
+      function formatCapsuleTime(sec) {
+        if (!sec) return '';
+        const d = new Date(sec * 1000);
+        return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+          + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      }
+      function formatCountdown(unlockSec) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const diff = unlockSec - nowSec;
+        if (diff <= 0) return '可解封';
+        const days = Math.floor(diff / 86400);
+        const hours = Math.floor((diff % 86400) / 3600);
+        if (days >= 1) return `${days} 天 ${hours} 小时后`;
+        const mins = Math.floor((diff % 3600) / 60);
+        return `${hours} 小时 ${mins} 分钟后`;
+      }
+      async function refreshCapsules() {
+        try {
+          const tk = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '';
+          const r = await fetch(`/api/companions/${companionId}/time-capsules?status=all`, {
+            headers: { Authorization: 'Bearer ' + tk },
+          });
+          const d = await r.json();
+          if (!d.ok) { capsuleList.innerHTML = `<div class="text-mute">加载失败：${escapeHtmlSafe(d.error || d.message || '')}</div>`; return; }
+          const items = d.data?.capsules || [];
+          if (!items.length) { capsuleList.innerHTML = '<div class="text-mute">还没有胶囊。封一个吧 ↑</div>'; return; }
+          capsuleList.innerHTML = items.map(cap => {
+            const opened = !!cap.opened_at;
+            const titleLine = cap.title ? `<div class="font-semibold mb-1">${escapeHtmlSafe(cap.title)}</div>` : '';
+            const bodySnippet = cap.body.length > 80 ? escapeHtmlSafe(cap.body.slice(0, 80)) + '…' : escapeHtmlSafe(cap.body);
+            if (opened) {
+              const reactionHtml = cap.her_reaction
+                ? `<div class="mt-2 p-2 rounded-lg bg-sakura-soft/60 text-ink/90 leading-relaxed">${escapeHtmlSafe(cap.her_reaction)}</div>`
+                : `<div class="mt-2 text-mute italic">她还在写感想…</div>`;
+              return `
+                <div class="p-3 rounded-xl border border-line bg-white/60">
+                  ${titleLine}
+                  <div class="text-mute leading-relaxed whitespace-pre-wrap">${escapeHtmlSafe(cap.body)}</div>
+                  ${reactionHtml}
+                  <div class="mt-2 text-[11px] text-mute/70">封存：${formatCapsuleTime(cap.created_at)} · 解封：${formatCapsuleTime(cap.opened_at)}</div>
+                </div>`;
+            }
+            const canOpenNow = cap.unlock_at <= Math.floor(Date.now() / 1000);
+            return `
+              <div class="p-3 rounded-xl border border-dashed border-line bg-white/40">
+                ${titleLine}
+                <div class="text-mute leading-relaxed">${bodySnippet}</div>
+                <div class="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                  <span class="text-sakura-deep font-semibold">${formatCountdown(cap.unlock_at)}（${formatCapsuleTime(cap.unlock_at)}）</span>
+                  <div class="flex gap-2">
+                    ${canOpenNow ? `<button data-cap-open="${cap.id}" class="text-sakura-deep hover:underline">让她现在打开</button>` : ''}
+                    <button data-cap-del="${cap.id}" class="text-mute hover:text-ink">删除</button>
+                  </div>
+                </div>
+              </div>`;
+          }).join('');
+          // bind delete
+          capsuleList.querySelectorAll('[data-cap-del]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              if (!confirm('删除这个胶囊？（仅未开封的可删）')) return;
+              const cid = btn.dataset.capDel;
+              const r = await fetch(`/api/companions/${companionId}/time-capsules/${cid}`, {
+                method: 'DELETE',
+                headers: { Authorization: 'Bearer ' + (localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '') },
+              });
+              if (r.ok) refreshCapsules();
+            });
+          });
+          // bind open-now
+          capsuleList.querySelectorAll('[data-cap-open]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const cid = btn.dataset.capOpen;
+              btn.textContent = '生成中…'; btn.disabled = true;
+              const r = await fetch(`/api/companions/${companionId}/time-capsules/${cid}/open-now`, {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + (localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '') },
+              });
+              if (r.ok) refreshCapsules(); else { btn.textContent = '让她现在打开'; btn.disabled = false; alert('解封失败'); }
+            });
+          });
+        } catch (e) {
+          capsuleList.innerHTML = `<div class="text-mute">加载失败：${escapeHtmlSafe(e.message)}</div>`;
+        }
+      }
+      if (btnCapsuleRefresh) btnCapsuleRefresh.addEventListener('click', refreshCapsules);
+      if (btnCapsuleCreate) {
+        btnCapsuleCreate.addEventListener('click', async () => {
+          const body = (capsuleBody?.value || '').trim();
+          const title = (capsuleTitle?.value || '').trim() || null;
+          const delta = Number(capsuleUnlock?.value);
+          if (body.length < 5) { capsuleMsg.textContent = '内容太短（至少 5 字）'; return; }
+          if (!Number.isFinite(delta) || delta < 60) { capsuleMsg.textContent = '解锁时间无效'; return; }
+          btnCapsuleCreate.disabled = true;
+          capsuleMsg.textContent = '封存中…';
+          try {
+            const unlockAt = Math.floor(Date.now() / 1000) + delta;
+            const tk = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '';
+            const r = await fetch(`/api/companions/${companionId}/time-capsules`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+              body: JSON.stringify({ body, title, unlock_at: unlockAt }),
+            });
+            const d = await r.json();
+            if (!d.ok) { capsuleMsg.textContent = '失败：' + (d.error || d.message || ''); return; }
+            capsuleMsg.textContent = '✓ 已封存';
+            if (capsuleTitle) capsuleTitle.value = '';
+            if (capsuleBody) capsuleBody.value = '';
+            refreshCapsules();
+          } catch (e) {
+            capsuleMsg.textContent = '失败：' + e.message;
+          } finally {
+            setTimeout(() => { btnCapsuleCreate.disabled = false; }, 800);
+          }
+        });
+      }
+      // 初次加载
+      if (capsuleList) refreshCapsules();
 
       // ─── 离线留言胶囊（v1.5）─────────────────────────────────────────────
       const btnLetter = document.getElementById('btn-letter-generate');
