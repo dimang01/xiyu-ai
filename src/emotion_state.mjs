@@ -10,6 +10,7 @@ import { log } from './logger.mjs';
 import {
   getEmotionState, upsertEmotionState,
   insertEmotionHistory, getEmotionHistoryTrend, getLastEmotionHistoryAt, cleanupOldEmotionHistory,
+  getDb,
 } from './db.mjs';
 
 // ─── State vocabulary ─────────────────────────────────────────────────────────
@@ -232,6 +233,53 @@ export function getMissingLevel(emotionState, lastUserReplyAt) {
 const MISSING_LABEL = ['没想', '有点想', '挺想的', '很想', '想死了'];
 export function getMissingLabel(level) {
   return MISSING_LABEL[Math.max(0, Math.min(4, level | 0))];
+}
+
+// ─── v1.5.2: 半小时定时重算 batch ────────────────────────────────────────
+// plan_tasks.mjs 每 30 分钟调用一次，让"她想你的程度"即使在用户不发消息时
+// 也会按现实时间推进（不再依赖下一条 user 消息触发 updateFromIdle）。
+//   - 纯规则，0 LLM 成本
+//   - 跑批后 ZH 时区写一条 emotion_history（dashboard 趋势曲线能反映）
+//   - 单次失败不影响其它 companion
+export async function runEmotionRecalcBatch() {
+  const db = getDb();
+  // 只跑活跃的（有微信绑定的，避免给从未对话过的孤儿 companion 跑）
+  const rows = db.prepare(`
+    SELECT c.id, c.last_user_reply_at
+    FROM companions c
+    JOIN users u ON u.id = c.user_id
+    JOIN wechat_accounts wa ON wa.wechat_user_id = u.wechat_user_id AND wa.bot_id = c.bot_id
+    WHERE wa.is_active = 1
+  `).all();
+  let updated = 0, skipped = 0, errors = 0;
+  for (const row of rows) {
+    try {
+      const current = getEmotionStateWithDefaults(row.id);
+      let idleMinutes = 0;
+      if (row.last_user_reply_at) {
+        const ts = new Date(String(row.last_user_reply_at).replace(' ', 'T')).getTime();
+        if (Number.isFinite(ts)) idleMinutes = Math.max(0, Math.floor((Date.now() - ts) / 60_000));
+      }
+      // < 30min 不动；updateEmotionFromIdle 内部还有阈值兜底
+      if (idleMinutes < 30) { skipped++; continue; }
+      const next = updateEmotionFromIdle(row.id, current, idleMinutes);
+      if (next === current) { skipped++; continue; }
+      updated++;
+      // 写历史（让 dashboard 趋势曲线能看到 idle 演化，而不是只在用户消息时跳变）
+      try {
+        insertEmotionHistory(row.id, {
+          affection: next.affection, trust: next.trust, dependency: next.dependency,
+          security: next.security, energy: next.energy, mood: next.mood,
+          trigger: 'tick',
+        });
+      } catch { /* 历史表写失败不致命 */ }
+    } catch (e) {
+      errors++;
+      log('warn', `[EmotionState] tick companion=${row.id} 异常: ${e.message}`);
+    }
+  }
+  log('info', `[EmotionState] tick done updated=${updated} skipped=${skipped} errors=${errors} total=${rows.length}`);
+  return { updated, skipped, errors, total: rows.length };
 }
 
 // ─── System prompt hint builder ───────────────────────────────────────────────

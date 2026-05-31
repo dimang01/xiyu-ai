@@ -30,6 +30,7 @@ import { generateDailyDiaryForCompanion, generateWeeklyDiaryForCompanion } from 
 import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 import { openMaturedCapsulesBatch } from './time_capsule.mjs';
 import { runRelationalDiariesBatch } from './relational_diary.mjs';
+import { runEmotionRecalcBatch } from './emotion_state.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -79,6 +80,11 @@ async function tick(now = new Date()) {
   await runOnce(parts, `time-capsules-${parts.hour}`, parts.minute === 10, () => openMaturedCapsulesBatch({ limit: 20 }));
   // v1.5: 02:25 — 反向日记（紧跟内省日记 02:20，复用昨日对话窗口）
   await runOnce(parts, 'relational-diary', parts.hour === 2 && parts.minute === 25, () => runRelationalDiariesBatch());
+  // v1.5.2: 每半小时（:00 和 :30）— 7 维情绪定时重算（pure rule，0 LLM 成本）
+  // 让"她想你的程度"即使在用户不发消息时也按现实时间推进。
+  await runOnce(parts, `emotion-tick-${parts.hour}-${parts.minute}`,
+    parts.minute === 0 || parts.minute === 30,
+    () => runEmotionRecalcBatch());
 }
 
 // ─── 日程归档为记忆 ─────────────────────────────────────────────────────────
