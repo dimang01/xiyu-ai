@@ -3,6 +3,18 @@
  * Multi-dimensional emotion state machine for AI companions.
  * Dimensions: affection, trust, dependency, possessiveness, security, energy, mood
  *
+ * ─── 增量演化原则 (v1.5.2 PR D audit) ───────────────────────────────────
+ * 所有 update* 函数都是 **incremental**，不是 overwrite：
+ *   1. 入参 currentState 是当前情绪基线
+ *   2. 算出 delta（基于 user msg / reply / idle）
+ *   3. next = clamp(current + delta, 0, 100) 写回 DB
+ *   4. upsertEmotionState 在 SQL 层也是 partial UPDATE，没传的维度不动
+ *
+ * v1.5.2 新增 saturation dampening：同 companion 同维度同方向加成
+ * 30 分钟内重复触发会衰减（_dampenIfRepeated），防止用户狂刷"谢谢"
+ * 把 affection 顶到 100。这才是真正"参考之前情绪"——前一次刚加过，
+ * 这次同向再加就乏力。
+ *
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
@@ -32,6 +44,45 @@ const DEFAULT_STATE = {
 
 // Clamp helpers
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.round(v)));
+
+// ─── v1.5.2 PR D: Saturation dampening 防刷 ──────────────────────────────
+// 内存级 LRU-ish map：key = "{companionId}:{dim}:{sign}"，value = { lastAt, count }
+// 30 分钟窗口内同向同维度的加成会随次数衰减：1st=full, 2nd=*.5, 3rd=*.25, 4th+=*.125
+// 衰减只对 +/- 加成，不对 mood（mood 是切换不是加成）
+const _dampenCache = new Map();
+const DAMPEN_WINDOW_MS = 30 * 60 * 1000;
+const DAMPEN_MAX_ENTRIES = 2000;   // 简单上限防内存爆
+
+function _dampenIfRepeated(companionId, dim, delta) {
+  if (!Number.isFinite(delta) || delta === 0) return delta;
+  const sign = delta > 0 ? '+' : '-';
+  const key = `${companionId}:${dim}:${sign}`;
+  const now = Date.now();
+  let entry = _dampenCache.get(key);
+  if (!entry || (now - entry.lastAt) > DAMPEN_WINDOW_MS) {
+    entry = { lastAt: now, count: 1 };
+    _dampenCache.set(key, entry);
+    if (_dampenCache.size > DAMPEN_MAX_ENTRIES) {
+      // 简单 LRU：删最老的 200 条
+      const sorted = [...(_dampenCache.entries())].sort((a, b) => a[1].lastAt - b[1].lastAt);
+      for (let i = 0; i < 200 && i < sorted.length; i++) _dampenCache.delete(sorted[i][0]);
+    }
+    return delta;
+  }
+  entry.lastAt = now;
+  entry.count += 1;
+  // 1st full, 2nd 50%, 3rd 25%, 4th+ 12.5%（最低保留 1 个单位避免完全归零失去手感）
+  const factor = entry.count === 1 ? 1 : (entry.count === 2 ? 0.5 : (entry.count === 3 ? 0.25 : 0.125));
+  const dampened = delta * factor;
+  // 最少保留 1 个绝对值（如 +3 衰减成 +0.375 → 取 sign(+) * max(round(0.375),1) = +1）
+  const result = Math.sign(dampened) * Math.max(1, Math.abs(Math.round(dampened)));
+  return result;
+}
+
+// 测试 / 调试用：清空 dampen 状态
+export function _resetDampenCacheForTests() {
+  _dampenCache.clear();
+}
 
 // ─── Getters ──────────────────────────────────────────────────────────────────
 
@@ -112,17 +163,19 @@ function computeDelta(userText = '', context = {}) {
 }
 
 export function updateEmotionFromUserMessage(companionId, currentState, userText, context = {}) {
-  const delta  = computeDelta(userText, context);
+  const rawDelta = computeDelta(userText, context);
   const update = {};
 
   const dims = ['affection', 'trust', 'dependency', 'possessiveness', 'security', 'energy'];
   for (const dim of dims) {
-    if (delta[dim] !== undefined) {
-      update[dim] = clamp((currentState[dim] ?? DEFAULT_STATE[dim]) + delta[dim], 0, 100);
+    if (rawDelta[dim] !== undefined) {
+      // v1.5.2 PR D: saturation dampening — 同向同维度 30min 内重复加成衰减
+      const dampened = _dampenIfRepeated(companionId, dim, rawDelta[dim]);
+      update[dim] = clamp((currentState[dim] ?? DEFAULT_STATE[dim]) + dampened, 0, 100);
     }
   }
-  if (delta.mood && MOOD_STATES.includes(delta.mood)) {
-    update.mood = delta.mood;
+  if (rawDelta.mood && MOOD_STATES.includes(rawDelta.mood)) {
+    update.mood = rawDelta.mood;
   }
 
   if (Object.keys(update).length === 0) return currentState;
