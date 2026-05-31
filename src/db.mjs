@@ -54,6 +54,7 @@ export function getDb() {
     migrateTimeCapsules();
     migrateSilentMode();
     migrateRelationalDiary();
+    migrateProactiveLastSent();
   }
   return db;
 }
@@ -2860,6 +2861,30 @@ function migrateProactiveDailyTarget() {
 // dashboard 角落显示一个呼吸光点表示"她还在"。用户主动发她依然会回复。
 function migrateSilentMode() {
   addColIfMissing('companions', 'silent_mode', 'INTEGER DEFAULT 0');
+}
+
+// v1.5.2: 主动消息发送时间持久化 — 防进程重启后重复发送
+// 每发一条主动消息记录到 companions.last_proactive_sent_at，
+// 下次发送前 hard 检查"30 分钟内不重复"，重启也生效。
+function migrateProactiveLastSent() {
+  addColIfMissing('companions', 'last_proactive_sent_at', 'INTEGER');
+  addColIfMissing('companions', 'last_proactive_kind', 'TEXT');
+}
+
+export function recordProactiveSentTimestamp(companionId, kind) {
+  const now = Math.floor(Date.now() / 1000);
+  getDb().prepare(`
+    UPDATE companions
+    SET last_proactive_sent_at = ?, last_proactive_kind = ?
+    WHERE id = ?
+  `).run(now, kind || null, companionId);
+}
+
+export function getProactiveLastSent(companionId) {
+  const row = getDb().prepare(`
+    SELECT last_proactive_sent_at, last_proactive_kind FROM companions WHERE id = ?
+  `).get(companionId);
+  return row ? { lastAt: row.last_proactive_sent_at || 0, lastKind: row.last_proactive_kind || null } : { lastAt: 0, lastKind: null };
 }
 
 // v1.4.0 Sprint 1: 主动发语音功能字段。

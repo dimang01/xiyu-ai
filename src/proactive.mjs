@@ -10,6 +10,7 @@ import {
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
   getLastPhotoAt, markPhotoSent,
+  recordProactiveSentTimestamp, getProactiveLastSent,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { generateScenePhoto } from './ai.mjs';
@@ -56,6 +57,13 @@ const TICK_MS = 60_000;
 
 const schedules = new Map();
 
+// v1.5.2 B3 修：进程内"正在处理中" companion 集合，防同 companion 并发 sendProactiveMessage
+// （比如 generateReply 跑 8s 期间又来一个 tick）
+const _proactiveInFlight = new Set();
+// v1.5.2 B1 修：全局发送间隔（秒）。重启后会读 companions.last_proactive_sent_at 兜底。
+// 比 schedule 内的 MIN_GAP_MINUTES 更硬性 — schedule 是规划，这个是闸门。
+const PROACTIVE_HARD_GAP_SECONDS = 25 * 60;  // 25 分钟（比 MIN_GAP_MINUTES=30 略松，避免误杀 reminder/confession）
+
 export function startProactiveScheduler() {
   log('info', '[Proactive] 主动消息调度启动');
   tick().catch(err => log('error', `[Proactive] tick 异常: ${err.message}`));
@@ -75,59 +83,93 @@ async function tick(now = new Date()) {
   for (const account of accounts) {
     const companions = listProactiveCompanionsForBot(account.bot_id);
     for (const companion of companions) {
-      // 用户自定义时间窗口（companion.proactive_time_window，格式 "07:30-24:00"），fallback 到默认
-      const window = parseTimeWindow(companion.proactive_time_window) || { start: defaultStart, end: LAST_MINUTE };
-      if (minuteNow < window.start) continue;
-      if (minuteNow > window.end) continue;
-
-      // 自愈：若 DB 里没有今天的日程（cron 失败或刚绑定），按需触发一次生成
-      // ensureScheduleForCompanion 内置 30 分钟级 debounce 防止持续失败时反复重试
-      if (!getDailySchedule(companion.id, dateKey)) {
-        ensureScheduleForCompanion(companion.id, dateKey).catch(err =>
-          log('warn', `[Proactive] ensureSchedule 异常 companion=${companion.id}: ${err.message}`)
-        );
-      }
-      // ── 纪念日 / 提醒主动推送 ──────────────────────────────────────────────
-      // 事件驱动，独立于随机日程，也绕过 v2 抑制：生日/纪念日这种特殊日子该发就发。
-      // 发完即标记 last_triggered_at，保证当天只发一次、且不再作为后续消息的上下文重复出现。
+      // v1.5.2 B2 修：把每个 companion 的本 tick 处理包在 try 里，一个失败不连累其它
       try {
-        ensureRelationshipReminders(companion); // 懒初始化关系里程碑（仅一次）
-        const dueReminders = getDueReminders(companion.id, dateKey);
-        if (dueReminders.length > 0) {
-          await sendProactiveMessage(companion, 'reminder', account, { reminders: dueReminders });
-          markRemindersTriggered(companion.id, dueReminders.map(r => r.id), dateKey);
+        // 用户自定义时间窗口（companion.proactive_time_window，格式 "07:30-24:00"），fallback 到默认
+        const window = parseTimeWindow(companion.proactive_time_window) || { start: defaultStart, end: LAST_MINUTE };
+        if (minuteNow < window.start) continue;
+        if (minuteNow > window.end) continue;
+
+        // 自愈：若 DB 里没有今天的日程（cron 失败或刚绑定），按需触发一次生成
+        // ensureScheduleForCompanion 内置 30 分钟级 debounce 防止持续失败时反复重试
+        if (!getDailySchedule(companion.id, dateKey)) {
+          ensureScheduleForCompanion(companion.id, dateKey).catch(err =>
+            log('warn', `[Proactive] ensureSchedule 异常 companion=${companion.id}: ${err.message}`)
+          );
+        }
+        // ── 纪念日 / 提醒主动推送 ──────────────────────────────────────────────
+        // 事件驱动，独立于随机日程，也绕过 v2 抑制：生日/纪念日这种特殊日子该发就发。
+        // 发完即标记 last_triggered_at，保证当天只发一次、且不再作为后续消息的上下文重复出现。
+        try {
+          ensureRelationshipReminders(companion); // 懒初始化关系里程碑（仅一次）
+          const dueReminders = getDueReminders(companion.id, dateKey);
+          if (dueReminders.length > 0) {
+            await sendProactiveMessageGuarded(companion, 'reminder', account, { reminders: dueReminders });
+            markRemindersTriggered(companion.id, dueReminders.map(r => r.id), dateKey);
+          }
+        } catch (e) {
+          log('warn', `[Proactive] reminder 推送异常 companion=${companion.id}: ${e.message}`);
+        }
+
+        const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, companion);
+        const dueItems = schedule.items.filter(item => !item.sent && item.minute <= minuteNow);
+        for (const item of dueItems) {
+          if (currentMinute(new Date()) > window.end) break;
+          item.sent = true;
+
+          // v2 mode: ask evaluateProactive() before sending
+          if (PROACTIVE_ENGINE_MODE === 'v2') {
+            let v2Error = false;
+            let decision = null;
+            try {
+              decision = evaluateProactive(companion, {});
+            } catch (e) {
+              log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
+              v2Error = true;
+            }
+            // If v2 deliberately returned null (no error), suppress the send
+            if (!v2Error && decision === null) {
+              log('info', `[Proactive] v2 拒绝发送 companion=${companion.id} kind=${item.kind}`);
+              continue;
+            }
+            // v2Error → fall through to legacy send path
+          }
+
+          await sendProactiveMessageGuarded(companion, item.kind, account);
         }
       } catch (e) {
-        log('warn', `[Proactive] reminder 推送异常 companion=${companion.id}: ${e.message}`);
-      }
-
-      const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, companion);
-      const dueItems = schedule.items.filter(item => !item.sent && item.minute <= minuteNow);
-      for (const item of dueItems) {
-        if (currentMinute(new Date()) > window.end) break;
-        item.sent = true;
-
-        // v2 mode: ask evaluateProactive() before sending
-        if (PROACTIVE_ENGINE_MODE === 'v2') {
-          let v2Error = false;
-          let decision = null;
-          try {
-            decision = evaluateProactive(companion, {});
-          } catch (e) {
-            log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
-            v2Error = true;
-          }
-          // If v2 deliberately returned null (no error), suppress the send
-          if (!v2Error && decision === null) {
-            log('info', `[Proactive] v2 拒绝发送 companion=${companion.id} kind=${item.kind}`);
-            continue;
-          }
-          // v2Error → fall through to legacy send path
-        }
-
-        await sendProactiveMessage(companion, item.kind, account);
+        // v1.5.2 B2 兜底：任何一个 companion 的本 tick 异常都不能中断后面的处理
+        log('error', `[Proactive] companion=${companion.id} 本 tick 异常，跳过: ${e.message}`);
       }
     }
+  }
+}
+
+// v1.5.2: 三道闸门的 sendProactiveMessage wrapper —
+//   1. 进程内 in-flight 锁（防同 companion 并发 race，B3）
+//   2. 持久化 last_proactive_sent_at 25 分钟硬间隔（防重启重发，B1）
+//   3. reminder/confession 等"特殊事件"放宽到 5 分钟（不能因 normal 节流而错过纪念日祝福）
+async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) {
+  if (_proactiveInFlight.has(companion.id)) {
+    log('info', `[Proactive] 跳过：companion=${companion.id} 已有发送在进行中（kind=${kind}）`);
+    return;
+  }
+  // 持久化间隔检查
+  const { lastAt } = getProactiveLastSent(companion.id);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const elapsed = nowSec - (lastAt || 0);
+  const hardGap = (kind === 'reminder' || kind === 'confession') ? 5 * 60 : PROACTIVE_HARD_GAP_SECONDS;
+  if (lastAt && elapsed < hardGap) {
+    log('info', `[Proactive] 跳过：companion=${companion.id} kind=${kind} 距上次 ${elapsed}s < ${hardGap}s 硬间隔`);
+    return;
+  }
+  _proactiveInFlight.add(companion.id);
+  try {
+    await sendProactiveMessage(companion, kind, account, opts);
+    // 成功后记录（sendProactiveMessage 内部失败/早退也无伤大雅，下次仍会按间隔判断）
+    recordProactiveSentTimestamp(companion.id, kind);
+  } finally {
+    _proactiveInFlight.delete(companion.id);
   }
 }
 
