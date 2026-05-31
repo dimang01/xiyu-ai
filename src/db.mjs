@@ -54,6 +54,8 @@ export function getDb() {
     migrateTimeCapsules();
     migrateSilentMode();
     migrateRelationalDiary();
+    migrateConversationTurnSynthetic();
+    migrateBackfillFlag();
   }
   return db;
 }
@@ -2607,6 +2609,7 @@ export function getConversationTurnsBetween(companionId, startSql, endSql, limit
     WHERE companion_id = ?
       AND created_at >= ?
       AND created_at < ?
+      AND COALESCE(synthetic, 0) = 0   -- v1.6 I: 排除 backfill 虚构历史，防 cron 反思"昨日"误抓 90 天前虚拟事件
     ORDER BY created_at ASC
     LIMIT ?
   `).all(companionId, startSql, endSql, safeLimit);
@@ -3524,4 +3527,51 @@ export function hardDeleteRelationalDiaryByKey(companionId, dateKey) {
   return getDb().prepare(`
     DELETE FROM companion_relational_diary WHERE companion_id = ? AND date_key = ?
   `).run(companionId, dateKey).changes;
+}
+
+// ─── v1.6 PR I: 3 个月模拟时间线 backfill ──────────────────────────────────
+// conversation_turns 加 synthetic 列，让 reflection / diary cron 跳过虚构历史
+function migrateConversationTurnSynthetic() {
+  addColIfMissing('companion_conversation_turns', 'synthetic', 'INTEGER DEFAULT 0');
+}
+
+// companions 表标记是否已 backfill 过（防重复运行）
+function migrateBackfillFlag() {
+  addColIfMissing('companions', 'history_backfilled_at', 'INTEGER');
+}
+
+/**
+ * 批量写入 backfill 出来的虚拟历史 turn。
+ * turns: [{ created_at(ISO), role, content, topic? }]
+ */
+export function bulkInsertSyntheticTurns(companionId, turns) {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO companion_conversation_turns (companion_id, role, content, topic, synthetic, created_at)
+    VALUES (?, ?, ?, ?, 1, ?)
+  `);
+  const tx = db.transaction((rows) => {
+    for (const t of rows) {
+      const safeRole = t.role === 'assistant' ? 'assistant' : 'user';
+      const safeContent = String(t.content || '').trim().slice(0, 2000);
+      if (!safeContent) continue;
+      stmt.run(companionId, safeRole, safeContent, t.topic || null, t.created_at);
+    }
+  });
+  tx(turns);
+  return turns.length;
+}
+
+export function markCompanionBackfilled(companionId) {
+  const now = Math.floor(Date.now() / 1000);
+  getDb().prepare(`UPDATE companions SET history_backfilled_at = ? WHERE id = ?`).run(now, companionId);
+}
+
+export function getCompanionBackfillStatus(companionId) {
+  const row = getDb().prepare(`
+    SELECT history_backfilled_at,
+           (SELECT COUNT(*) FROM companion_conversation_turns WHERE companion_id = ? AND synthetic = 1) AS synthetic_count
+    FROM companions WHERE id = ?
+  `).get(companionId, companionId);
+  return row ? { backfilledAt: row.history_backfilled_at || null, syntheticCount: row.synthetic_count || 0 } : null;
 }
