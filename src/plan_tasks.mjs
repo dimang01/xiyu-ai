@@ -29,6 +29,7 @@ import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from 
 import { generateDailyDiaryForCompanion, generateWeeklyDiaryForCompanion } from './diary.mjs';
 import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 import { openMaturedCapsulesBatch } from './time_capsule.mjs';
+import { runRelationalDiariesBatch } from './relational_diary.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -76,6 +77,8 @@ async function tick(now = new Date()) {
   await runOnce(parts, 'daily-thought', parts.hour === 2 && parts.minute === 35, () => runDailyThoughts(parts.dateKey));
   // v1.5: 每小时第 10 分钟 — 扫描所有到期未开封的时光胶囊，让"现在的她"写感想
   await runOnce(parts, `time-capsules-${parts.hour}`, parts.minute === 10, () => openMaturedCapsulesBatch({ limit: 20 }));
+  // v1.5: 02:25 — 反向日记（紧跟内省日记 02:20，复用昨日对话窗口）
+  await runOnce(parts, 'relational-diary', parts.hour === 2 && parts.minute === 25, () => runRelationalDiariesBatch());
 }
 
 // ─── 日程归档为记忆 ─────────────────────────────────────────────────────────

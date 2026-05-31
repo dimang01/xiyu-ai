@@ -167,8 +167,10 @@ import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 import { generateOfflineLetter, renderLetterToText, parseLetterText, verifyLetterSignature } from './letter.mjs';
 import {
   insertTimeCapsule, listTimeCapsulesForCompanion, getTimeCapsule, deleteTimeCapsule,
+  listRelationalDiariesForCompanion, getRelationalDiaryById, updateRelationalDiaryBody, softDeleteRelationalDiary,
 } from './db.mjs';
 import { openOneCapsule } from './time_capsule.mjs';
+import { generateRelationalDiaryForCompanion } from './relational_diary.mjs';
 
 // 由 index.mjs 注入：{ registerBotAccount, unregisterBotAccount, listBotPool }
 let botPoolHandle = null;
@@ -3398,6 +3400,72 @@ router.post('/companions/:id/time-capsules/:capsuleId/open-now',
     } catch (e) {
       log('error', `[API] time-capsule open-now failed id=${cid}: ${e.message}`);
       return err(res, e.message || '开封失败', 500);
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.5: 反向日记（relational diary）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/relational-diary?limit=30
+router.get('/companions/:id/relational-diary', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 200);
+  try {
+    const entries = listRelationalDiariesForCompanion(id, { limit });
+    return ok(res, { entries });
+  } catch (e) {
+    log('error', `[API] relational-diary list failed companion=${id}: ${e.message}`);
+    return err(res, '加载失败', 500);
+  }
+});
+
+// PUT /api/companions/:id/relational-diary/:diaryId
+// body: { body: string }
+router.put('/companions/:id/relational-diary/:diaryId', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const did = intId(req.params.diaryId); if (!did) return err(res, 'diaryId 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+  if (body.length < 10) return err(res, '内容太短（至少 10 字）');
+  if (body.length > 1500) return err(res, '内容过长（最多 1500 字）');
+  const ok2 = updateRelationalDiaryBody(did, id, body);
+  if (!ok2) return err(res, '未找到该日记或已被删除', 404);
+  return ok(res, { entry: getRelationalDiaryById(did) });
+});
+
+// DELETE /api/companions/:id/relational-diary/:diaryId  （软删）
+router.delete('/companions/:id/relational-diary/:diaryId', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const did = intId(req.params.diaryId); if (!did) return err(res, 'diaryId 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  const ok2 = softDeleteRelationalDiary(did, id);
+  if (!ok2) return err(res, '未找到该日记或已被删除', 404);
+  return ok(res, { deleted: true });
+});
+
+// POST /api/companions/:id/relational-diary/regenerate
+// body: { date_key?: 'YYYY-MM-DD' }   默认昨天；强制重生（绕过 exists 检查）
+router.post('/companions/:id/relational-diary/regenerate',
+  rateLimit({ scope: 'rel-diary-regen', maxPerWindow: 5, windowMs: 60 * 60 * 1000, message: '重新生成过于频繁' }),
+  requireAuth,
+  async (req, res) => {
+    const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+    const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+    const dateKey = typeof req.body?.date_key === 'string' ? req.body.date_key.trim() : null;
+    try {
+      const r = await generateRelationalDiaryForCompanion(id, {
+        dateKey, force: true,
+        accountId: req.authUser?.id || null,
+      });
+      if (r.error) return err(res, r.error, 500);
+      if (r.skipped) return err(res, '跳过：' + r.skipped, 409);
+      return ok(res, { entry: r.entry });
+    } catch (e) {
+      log('error', `[API] relational-diary regen failed companion=${id}: ${e.message}`);
+      return err(res, e.message || '生成失败', 500);
     }
   },
 );
