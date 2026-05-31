@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>验证离线留言 · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/glass.css" />
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+          ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA' },
+        fontFamily: { sans: ['-apple-system','BlinkMacSystemFont','"PingFang SC"','"Hiragino Sans GB"','"Microsoft YaHei"','sans-serif'] },
+        boxShadow: { sakura: '0 4px 24px rgba(255,182,217,.15)', card: '0 12px 48px rgba(0,0,0,.06)' },
+      } },
+    };
+  </script>
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    body {
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255,182,217,.28), transparent 60%),
+        #FAFAFA;
+      background-attachment: fixed;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      color: #1D1D1F;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%);
+      color: #fff; font-weight: 600; padding: 12px 24px;
+      border-radius: 24px; transition: all .25s;
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px); box-shadow: 0 12px 32px rgba(255,143,184,.32);
+    }
+    .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+    textarea {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px; line-height: 1.6;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-2xl mx-auto px-4 py-10">
+
+    <header class="text-center mb-8">
+      <h1 class="text-2xl font-bold tracking-tight">验证离线留言</h1>
+      <p class="text-[13px] text-mute mt-2">
+        粘贴 <code class="px-1.5 py-0.5 rounded bg-sakura-soft text-sakura-deep text-[12px]">xiyu-letter-*.txt</code>
+        全部内容，验证此留言确实由本服务器签发。
+      </p>
+    </header>
+
+    <div class="glass-card rounded-3xl p-6 shadow-card mb-6">
+      <label class="block text-[13px] font-semibold mb-2">信件内容</label>
+      <textarea id="letter-text" rows="14" class="w-full rounded-2xl border border-line p-4 bg-white/60 focus:outline-none focus:border-sakura-deep transition-colors"
+                placeholder="把 .txt 文件的全部内容粘贴到这里（包括上下分隔线和签名段）..."></textarea>
+
+      <div class="mt-4 flex items-center gap-3">
+        <button id="btn-verify" class="btn-primary">验证签名</button>
+        <button id="btn-clear" class="text-mute hover:text-ink text-[13px] font-semibold">清空</button>
+        <span id="status" class="text-[12px] text-mute ml-auto"></span>
+      </div>
+    </div>
+
+    <div id="result" class="hidden glass-card rounded-3xl p-6 shadow-card"></div>
+
+    <footer class="text-center text-[12px] text-mute mt-10">
+      <a href="/" class="hover:text-sakura-deep">← 回到首页</a>
+      <span class="mx-2">·</span>
+      <a href="/app/dashboard.html" class="hover:text-sakura-deep">Dashboard</a>
+    </footer>
+
+  </div>
+
+  <script>
+    const ta = document.getElementById('letter-text');
+    const btn = document.getElementById('btn-verify');
+    const btnClear = document.getElementById('btn-clear');
+    const result = document.getElementById('result');
+    const status = document.getElementById('status');
+
+    btnClear.addEventListener('click', () => {
+      ta.value = '';
+      result.classList.add('hidden');
+      result.innerHTML = '';
+      status.textContent = '';
+      ta.focus();
+    });
+
+    btn.addEventListener('click', async () => {
+      const text = ta.value.trim();
+      if (!text) {
+        status.textContent = '请先粘贴信件内容';
+        return;
+      }
+      btn.disabled = true;
+      status.textContent = '验证中…';
+      result.classList.add('hidden');
+      try {
+        const r = await fetch('/api/verify-letter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const d = await r.json();
+        status.textContent = '';
+        if (!d.ok) {
+          renderResult({ kind: 'error', msg: d.error || d.message || '验证失败' });
+          return;
+        }
+        renderResult(d.data);
+      } catch (e) {
+        status.textContent = '';
+        renderResult({ kind: 'error', msg: '网络错误：' + e.message });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    function renderResult(d) {
+      result.classList.remove('hidden');
+      if (d.kind === 'error') {
+        result.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="text-2xl">⚠️</div>
+            <div>
+              <div class="font-bold text-[15px]">无法验证</div>
+              <div class="text-[13px] text-mute mt-1">${escapeHtml(d.msg)}</div>
+            </div>
+          </div>`;
+        return;
+      }
+      if (d.valid) {
+        const name = d.companion?.name || '（未在本服务器找到对应 companion）';
+        result.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="text-2xl">✅</div>
+            <div class="flex-1">
+              <div class="font-bold text-[15px] text-sakura-deep">签名有效</div>
+              <div class="text-[13px] text-mute mt-2 leading-relaxed">
+                这封留言确实由本服务器签发，且正文内容未被篡改。
+              </div>
+              <div class="mt-4 text-[12px] space-y-1 bg-sakura-soft/40 rounded-xl p-3">
+                <div><span class="text-mute">来自：</span><span class="font-semibold">${escapeHtml(name)}</span></div>
+                <div><span class="text-mute">签发时间：</span>${escapeHtml(d.issued_human || '')}</div>
+                <div><span class="text-mute">Companion ID：</span>${d.companion?.id ?? ''}</div>
+              </div>
+            </div>
+          </div>`;
+      } else {
+        const reason = d.reason ? `<div class="text-[13px] text-mute mt-2">${escapeHtml(d.reason)}</div>` : '';
+        result.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="text-2xl">❌</div>
+            <div>
+              <div class="font-bold text-[15px]">签名无效</div>
+              <div class="text-[13px] text-mute mt-1">
+                可能原因：① 这封信不是由本服务器签发；② 正文被改过；③ 复制粘贴时缺了字符。
+              </div>
+              ${reason}
+            </div>
+          </div>`;
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+  </script>
+</body>
+</html>
