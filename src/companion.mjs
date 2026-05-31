@@ -250,15 +250,22 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
       childhood: '童年回忆',
       school: '学生时代',
       family: '家庭',
+      neighbors: '邻居与常去的店',     // v1.5.2 新类目
+      teachers: '记得的老师',           // v1.5.2 新类目
       friends: '朋友',
+      first_crush: '少年时的心动',     // v1.5.2 新类目
       pets: '宠物',
       important_events: '人生重要事件',
       values: '价值观与信念',
       love_view: '对感情的看法',
       fears: '怕的东西',
+      food_taste: '饮食偏好',           // v1.5.2 新类目
+      music_taste: '音乐偏好',          // v1.5.2 新类目
+      place_attachment: '对地方的情感', // v1.5.2 新类目
       habits: '小习惯',
       secrets: '心里藏着的小秘密',
       linguistic_quirks: '说话的口头禅',
+      worldview: '对世界的看法',        // v1.5.2 新类目（孤独/自由/死亡/金钱/成功）
     };
     const lines = Object.keys(labels)
       .filter(k => byCategory[k]?.length > 0)

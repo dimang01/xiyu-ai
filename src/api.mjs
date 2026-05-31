@@ -104,7 +104,14 @@ async function asyncGeneratePersonaFacts(companion) {
       return;
     }
     const facts = [];
-    for (const cat of ['childhood', 'school', 'family', 'friends', 'pets', 'important_events', 'values', 'love_view', 'fears', 'habits', 'secrets', 'linguistic_quirks']) {
+    // v1.5.2: 类目 12 → 19（加 neighbors/teachers/first_crush/food_taste/music_taste/place_attachment/worldview）
+    for (const cat of [
+      'childhood', 'school', 'family', 'neighbors', 'teachers',
+      'friends', 'first_crush', 'pets', 'important_events',
+      'values', 'love_view', 'fears',
+      'food_taste', 'music_taste', 'place_attachment',
+      'habits', 'secrets', 'linguistic_quirks', 'worldview',
+    ]) {
       const list = Array.isArray(data[cat]) ? data[cat] : [];
       for (const item of list) {
         const content = String(item || '').trim();
@@ -1796,7 +1803,14 @@ router.post('/companions/:id/persona/regenerate', requireAuth, async (req, res) 
     const data = await generatePersonaFacts(c);
     if (!data) return err(res, '生成失败，请稍后重试', 500);
     const facts = [];
-    for (const cat of ['childhood', 'school', 'family', 'friends', 'pets', 'important_events', 'values', 'love_view', 'fears', 'habits', 'secrets', 'linguistic_quirks']) {
+    // v1.5.2: 类目 12 → 19（加 neighbors/teachers/first_crush/food_taste/music_taste/place_attachment/worldview）
+    for (const cat of [
+      'childhood', 'school', 'family', 'neighbors', 'teachers',
+      'friends', 'first_crush', 'pets', 'important_events',
+      'values', 'love_view', 'fears',
+      'food_taste', 'music_taste', 'place_attachment',
+      'habits', 'secrets', 'linguistic_quirks', 'worldview',
+    ]) {
       const list = Array.isArray(data[cat]) ? data[cat] : [];
       for (const item of list) {
         const content = String(item || '').trim();
