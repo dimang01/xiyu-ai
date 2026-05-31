@@ -52,12 +52,13 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | **18 节人设 prompt** | 元认知 / 关系阶段 / 今日日程 / 最近上下文 / 长期摘要 / 反 AI 味规则一次拼好 |
 | **5 阶段关系** | 暧昧 → 恋人 → 深爱（可回退朋友/陌生人）。每阶段称呼、撒娇、话题深度差异化 |
 | **真人发微信** | ≤15 字一条、多条 \|\| 连发、剥离 AI 味；Persona Guard 回复后一致性校验 |
-| **主动消息** | 早安/晚安/日间/纪念日/告白/场景照；motivation score 动态触发；防骚扰冷却 |
+| **主动消息（三驱动 v1.6）** | 早安/晚安/日间/纪念日/告白/场景照；motivation = 情绪 × 日程 × 时间 × 随机；段内 + 历史双重 dedup；重启持久化防重发 |
 | **想念档 0-4** | 综合 dependency + idle 算"她想你的程度"，30m/3h/6h/12h/24h 五档，回复口吻自然带出来 |
+| **3 个月模拟时间线 (v1.6)** ⭐ | dashboard 按钮触发，LLM 一次性生成 35 个虚拟互动事件 + 关键事件入记忆 + 好感度演化 5→30；用户首次打开聊天她已经"认识 3 个月" |
 | **今天她想对你说** | 每天 02:35 cron 生成独立于聊天的一句话，dashboard 气泡卡 + 🔊 朗读 |
 | **她的日记** | 每晚第一人称日记 + 每周合并；翻日记本式阅读页，按句切段连续朗读 |
 | **Memory v2** | 7 层分类 × 权重 × 遗忘曲线；pin/lock/archive/do-not-mention；语义召回 + 关键词 fallback |
-| **情绪状态机** | 7 维（affection/trust/dependency/possessiveness/security/energy/mood）实时更新 + 7 天趋势曲线 |
+| **情绪状态机 (v1.6 升级 11 维)** | affection / trust / dependency / possessiveness / security / energy / mood + **patience（耐心）/ excitement（兴奋短期）/ annoyance（烦躁短期）/ gratitude（感激）**；每条消息增量演化 + 半小时定时重算 + saturation 防刷（连发"谢谢"涨幅衰减） |
 | **网页 Playground** | 不接微信也能在浏览器里跑同款人设管线；可录音 ASR 输入、每条回复 🔊 朗读 |
 | **Setup Wizard** | `/app/setup.html` 网页填 Provider Key + 测试连通，不用碰 `.env` |
 | **多 Provider 抽象** | chat/image/vision/asr/embedding/tts/search 七大能力独立切换 |
@@ -409,7 +410,8 @@ SINGLE_USER=true
 
 最近主线：
 
-- **v1.5.x「长期陪伴维度」** 离线留言胶囊（HMAC 签名 .txt 永久托管）· 时光胶囊（解封时她写"现在的我"感想）· 沉默陪伴模式（赛博距离，呼吸光点）· 反向日记「我们之间」（每晚她记录你们的互动，可编辑/导出）
+- **v1.6.x「拟人化深化」** ⭐ **3 个月模拟时间线**（一次性生成 35 个虚拟互动事件 + 关键事件入记忆 + 好感度演化曲线 5→30，从"刚认识"变"已经认识 3 个月"）· **11 维情绪**（原 7 维 + 耐心 / 兴奋 / 烦躁 / 感激；半小时定时重算；saturation 防刷）· **主动消息三驱动 motivation**（情绪 × 日程 × 时间 × 随机；重启持久化防重发；三道闸门防 race；段内 bigram+LCS dedup）· 人生记忆 prompt 12 → 19 类目（带名字 + 感官细节 + 世界观）· Playground 与 bot 情绪路径对齐
+- **v1.5.x「长期陪伴维度」** 离线留言胶囊（HMAC 签名 .txt 永久托管）· 时光胶囊（解封时她写"现在的我"感想）· 沉默陪伴模式（赛博距离，呼吸光点）· 反向日记「我们之间」（每晚她记录你们的互动，可编辑/导出）· SINGLE_USER 单用户模式（自托管跳过登录）
 - **v1.4.x** TTS 5 家（MiniMax/OpenAI/Azure/豆包/通义）+ ASR 7 实现（Gemini/OpenAI/Qwen/Groq/MiniMax/Azure/豆包）+ Vision 8 家（智谱/OpenAI/Qwen/豆包/Claude/Kimi/StepFun/MiniMax）；默认起步=暗恋；想念档 + 今天她想对你说；网页录音 + 朗读
 - **v1.3.x** 液态玻璃 UI · 她的日记 · 纪念日主动祝福 · 全面去 Pro/Free 分级
 - **v1.2.x** 联网搜索 · 主动告白 · Memory Reflection

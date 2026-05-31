@@ -50,12 +50,13 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 | **18-section persona prompt** | Meta-cognition / relationship stage / today's schedule / recent context / long-term summary / anti-AI-tone rules — stitched in one pass |
 | **5-stage relationship** | Flirting → Lover → Deep Love (can revert to Friend/Stranger). Distinct form of address, flirty tone, and topic depth per stage |
 | **Real-person texting cadence** | ≤15 chars per message, multi-burst sending with `\|\|`, strips AI tone; Persona Guard consistency check after each reply |
-| **Proactive messages** | Morning/night/random daytime/anniversary/confession/scene-photo; motivation-score driven; anti-spam cooldown |
+| **Proactive messages (3-driver v1.6)** | Morning/night/random daytime/anniversary/confession/scene-photo; motivation = emotion × schedule × time × jitter; dual-layer dedup (intra-batch + vs history); restart-resistant persistence prevents duplicates |
 | **Missing-level 0–4** | Combines dependency + idle time to compute "how much she misses you", with 30m/3h/6h/12h/24h thresholds; tone adapts naturally |
+| **3-month simulated timeline (v1.6)** ⭐ | Dashboard button triggers LLM to generate 35 virtual interaction events + key events enter memory + affection arc 5→30; new companions feel "already known you for 3 months" |
 | **Today's thought for you** | Daily 02:35 cron generates an independent line outside chat; dashboard bubble card + 🔊 narration |
 | **Her diary** | Nightly first-person diary + weekly summaries; flip-book reader, sentence-by-sentence playback |
 | **Memory v2** | 7-layer taxonomy × weight × forgetting curve; pin/lock/archive/do-not-mention; semantic recall + keyword fallback |
-| **Emotion state machine** | 7 dimensions (affection/trust/dependency/possessiveness/security/energy/mood) updated in real time + 7-day trend chart |
+| **Emotion state machine (v1.6 upgraded to 11 dims)** | affection / trust / dependency / possessiveness / security / energy / mood + **patience / excitement (short-term) / annoyance (short-term) / gratitude**; per-message incremental update + half-hourly recalc cron + saturation dampening (spamming "thanks" no longer boosts affection to max) |
 | **Browser Playground** | Run the same persona pipeline in browser without WeChat; voice recording (ASR) input, 🔊 narration per reply |
 | **Setup Wizard** | `/app/setup.html` — configure all Providers + connectivity test in browser, no `.env` editing |
 | **Multi-provider abstraction** | chat/image/vision/asr/embedding/tts/search — seven capabilities independently swappable |
@@ -407,7 +408,8 @@ Release cadence / full changelog at [GitHub Releases](https://github.com/dimang0
 
 Recent mainline:
 
-- **v1.5.x "Long-term Companionship"** — Offline letter capsule (HMAC-signed .txt the user keeps forever) · Time capsule (she writes "the me of now" reaction when it unlocks) · Silent companion mode (cyber-distance: breathing dot in the corner instead of messages) · Relational diary "between us" (nightly, editable, exportable)
+- **v1.6.x "Deeper Humanization"** ⭐ **3-month simulated timeline** (LLM generates 35 virtual interaction events + key events enter memory + affection arc 5→30; new companions feel "already known you for 3 months" instead of starting from zero) · **11-dim emotion** (original 7 + patience / excitement / annoyance / gratitude; half-hourly recalc cron; saturation anti-spam dampening) · **Proactive 3-driver motivation** (emotion × schedule × time × jitter; restart-resistant persistence; 3-gate race protection; intra-batch bigram+LCS dedup) · Persona facts prompt 12 → 19 categories (named people + sensory details + worldview) · Playground aligned with bot emotion path
+- **v1.5.x "Long-term Companionship"** — Offline letter capsule (HMAC-signed .txt the user keeps forever) · Time capsule (she writes "the me of now" reaction when it unlocks) · Silent companion mode (cyber-distance: breathing dot in the corner instead of messages) · Relational diary "between us" (nightly, editable, exportable) · SINGLE_USER mode (self-host without login page)
 - **v1.4.x** — TTS 5 (MiniMax / OpenAI / Azure / Doubao / Qwen) + ASR 7 implemented (Gemini / OpenAI / Qwen / Groq / MiniMax / Azure / Doubao) + Vision 8 (Zhipu / OpenAI / Qwen / Doubao / Claude / Kimi / StepFun / MiniMax); default starting stage = crushing; missing-level + "today's thought for you"; in-browser voice recording + narration
 - **v1.3.x** — Liquid Glass UI · Her diary · Anniversary proactive greetings · Removed all Pro/Free tiers
 - **v1.2.x** — Web search · Proactive confessions · Memory Reflection
