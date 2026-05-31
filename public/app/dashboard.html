@@ -473,6 +473,31 @@
           </div>
         </div>
 
+        <!-- 离线留言胶囊（v1.5） -->
+        <div class="card p-7">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+              <i data-lucide="mail" class="w-5 h-5 text-sakura-deep"></i>
+            </div>
+            <h3 class="text-[15px] font-bold">她写一封离线留言</h3>
+          </div>
+          <p class="text-[12px] text-mute font-medium leading-relaxed">
+            让她按当前的心情和关系阶段写一段话，下载成 .txt 保存本地。
+            <br><span class="text-[11px] text-mute/80">无论将来发生什么，用记事本就能打开看；带 HMAC 签名可来 <a href="/app/verify-letter.html" target="_blank" class="text-sakura-deep hover:underline">验真页面</a> 验证未被篡改。</span>
+          </p>
+          <div class="mt-3">
+            <input id="letter-hint" type="text" maxlength="100"
+                   placeholder="（可选）想让她提到的事，比如：我们的第一次见面"
+                   class="w-full text-[12px] rounded-xl border border-line bg-white/60 px-3 py-2 focus:outline-none focus:border-sakura-deep transition-colors" />
+          </div>
+          <div class="mt-3 flex items-center gap-2">
+            <button id="btn-letter-generate" type="button" class="text-[12px] font-semibold text-white bg-gradient-to-r from-sakura to-sakura-deep rounded-full px-4 py-1.5 hover:shadow-sakura transition-all">
+              <i data-lucide="feather" class="inline w-3 h-3 align-[-1px]"></i> 生成并下载
+            </button>
+            <span id="letter-msg" class="text-[11px] text-mute"></span>
+          </div>
+        </div>
+
         <!-- 长期记忆 -->
         <div class="card p-7">
           <div class="flex items-center justify-between">
@@ -1155,6 +1180,47 @@
           setTimeout(() => { btnVoicePreview.disabled = false; }, 800);
         }
       });
+
+      // ─── 离线留言胶囊（v1.5）─────────────────────────────────────────────
+      const btnLetter = document.getElementById('btn-letter-generate');
+      const letterMsg = document.getElementById('letter-msg');
+      const letterHintEl = document.getElementById('letter-hint');
+      if (btnLetter) {
+        btnLetter.addEventListener('click', async () => {
+          if (btnLetter.disabled) return;
+          btnLetter.disabled = true;
+          letterMsg.textContent = '她在写…大约 5-10 秒';
+          try {
+            const hint = (letterHintEl?.value || '').trim();
+            const tk = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '';
+            const r = await fetch(`/api/companions/${companionId}/offline-letter`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+              body: JSON.stringify({ hint }),
+            });
+            if (!r.ok) {
+              const j = await r.json().catch(() => ({}));
+              throw new Error(j.error || ('HTTP ' + r.status));
+            }
+            const blob = await r.blob();
+            // 文件名从响应头取，取不到就用默认
+            const cd = r.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="([^"]+)"/);
+            const filename = m ? m[1] : `xiyu-letter-${Date.now()}.txt`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+            letterMsg.textContent = '✓ 已下载 ' + filename;
+            if (letterHintEl) letterHintEl.value = '';
+          } catch (e) {
+            letterMsg.textContent = '失败：' + e.message;
+          } finally {
+            setTimeout(() => { btnLetter.disabled = false; }, 2000);
+          }
+        });
+      }
 
       // 主动消息：用户拖动滑块直接调每天目标条数 (proactive_daily_target, 0-30)
       const slider = document.getElementById('proactive-target-slider');

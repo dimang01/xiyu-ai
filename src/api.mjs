@@ -164,6 +164,7 @@ import {
 import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, normalizeMemoryWeight } from './memory_v2.mjs';
 import { getEmotionTrend, getEmotionStateWithDefaults, getMissingLevel, getMissingLabel } from './emotion_state.mjs';
 import { generateDailyThoughtForCompanion } from './thoughts.mjs';
+import { generateOfflineLetter, renderLetterToText, parseLetterText, verifyLetterSignature } from './letter.mjs';
 
 // 由 index.mjs 注入：{ registerBotAccount, unregisterBotAccount, listBotPool }
 let botPoolHandle = null;
@@ -3242,6 +3243,71 @@ router.get('/companions/:id/event-graph', requireAuth, (req, res) => {
     return err(res, '获取事件图谱失败', 500);
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.5: 离线留言胶囊（offline letter）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /api/companions/:id/offline-letter
+// body: { hint?: string }   ← 可选，用户想让她提到的事
+// 返回 .txt 文件流（Content-Type: text/plain; charset=utf-8 + Content-Disposition: attachment）
+router.post('/companions/:id/offline-letter',
+  rateLimit({ scope: 'offline-letter', maxPerWindow: 10, windowMs: 60 * 60 * 1000, message: '生成过于频繁，请稍后再试' }),
+  requireAuth,
+  async (req, res) => {
+    const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+    const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+    const hint = typeof req.body?.hint === 'string' ? req.body.hint.slice(0, 200) : '';
+    try {
+      const letter = await generateOfflineLetter(c, { hint, accountId: req.account?.id || null });
+      const hostHint = req.get('host') ? `${req.protocol}://${req.get('host')}` : '';
+      const text = renderLetterToText(letter, { hostHint });
+      const filename = `xiyu-letter-${c.id}-${letter.issued}.txt`;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      log('info', `[API] offline-letter ok companion=${id} len=${letter.body.length}`);
+      return res.send(text);
+    } catch (e) {
+      log('warn', `[API] offline-letter 失败 companion=${id}: ${e.message}`);
+      return err(res, e.message || '生成失败', 500);
+    }
+  },
+);
+
+// POST /api/verify-letter   （独立，无需登录 — 任何人拿信件都能来验真）
+// body: { text: string }   或   { companion_id, issued, body, signature }
+// 返回 { valid: boolean, companion?: { id, name }, issued?, issued_human? }
+router.post('/verify-letter',
+  rateLimit({ scope: 'verify-letter', maxPerWindow: 30, windowMs: 60 * 60 * 1000, message: '验证过于频繁，请稍后再试' }),
+  (req, res) => {
+    let { companion_id, issued, body, signature, text } = req.body || {};
+    if (text && typeof text === 'string') {
+      const parsed = parseLetterText(text);
+      if (!parsed) return ok(res, { valid: false, reason: '无法解析文本：缺少签名段或正文分隔符' });
+      companion_id = parsed.companionId;
+      issued = parsed.issued;
+      body = parsed.body;
+      signature = parsed.signature;
+    }
+    if (!companion_id || !issued || !body || !signature) {
+      return err(res, '缺少必填字段（text 或 companion_id+issued+body+signature）');
+    }
+    const valid = verifyLetterSignature({ companionId: Number(companion_id), issued: Number(issued), body, signature });
+    let companion = null;
+    if (valid) {
+      try {
+        const row = getDb().prepare('SELECT id, name FROM companions WHERE id = ?').get(Number(companion_id));
+        if (row) companion = { id: row.id, name: row.name };
+      } catch { /* ignore */ }
+    }
+    return ok(res, {
+      valid,
+      companion,
+      issued: Number(issued),
+      issued_human: new Date(Number(issued) * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
+    });
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 管理员后台
