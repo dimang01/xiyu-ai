@@ -143,6 +143,7 @@ import {
   getVerificationCode, deleteVerificationCode,
   createUserAccount, getUserAccountByUsername, getUserAccountByEmail,
   getUserAccountById, getUserAccountWithPassword, updateUserPassword,
+  getOrCreateSingleUserOwner,
   getCompanionTimeline, getStageMilestones,
   savePersonaFacts, getPersonaFacts, hasPersonaFacts,
   getDailySchedule, shanghaiDateKey,
@@ -694,6 +695,28 @@ router.post('/auth/register',
     return authErr(res, '注册失败，请稍后再试', 500);
   }
 });
+
+// POST /api/auth/single-user-login (v1.5.1)
+// 仅当 SINGLE_USER=true 时可用，无需密码，自动登录 owner 账号。
+// 用于自托管单用户场景：本地/内网/已用反代加保护时跳过登录页。
+router.post('/auth/single-user-login',
+  rateLimit({ scope: 'single-user-login', maxPerWindow: 30, windowMs: 10 * 60 * 1000, message: '请求过于频繁' }),
+  (req, res) => {
+    const singleUser = String(process.env.SINGLE_USER || '').toLowerCase() === 'true';
+    if (!singleUser) {
+      return res.status(403).json({ success: false, message: 'SINGLE_USER 模式未开启' });
+    }
+    try {
+      const owner = getOrCreateSingleUserOwner();
+      log('info', `[API] single-user 自动登录 user_id=${owner.id} username=${owner.username}`);
+      const token = signToken({ id: owner.id, username: owner.username });
+      return res.json({ success: true, message: '自动登录成功', user: publicAccount(owner), token });
+    } catch (e) {
+      log('error', `[API] single-user-login 失败: ${e.message}`);
+      return res.status(500).json({ success: false, message: e.message });
+    }
+  },
+);
 
 // POST /api/auth/login
 router.post('/auth/login',
@@ -1810,6 +1833,8 @@ router.get('/setup/status', (_req, res) => {
   try { initialized = countAllAccounts() > 0; } catch {}
   // auth 模式：只返回 'local' 或 'email'，不泄露其他配置
   const authMode = (process.env.AUTH_MODE || 'local').toLowerCase() === 'email' ? 'email' : 'local';
+  // v1.5.1: SINGLE_USER 单用户模式 — 跳过登录页，自动注册/复用 owner 账号
+  const singleUser = String(process.env.SINGLE_USER || '').toLowerCase() === 'true';
   return ok(res, {
     setup_required: !configured,
     chat_provider: chat.id,
@@ -1817,6 +1842,7 @@ router.get('/setup/status', (_req, res) => {
     configured,
     source: hasEnvKey ? 'env' : hasDbKey ? 'app_settings' : 'missing',
     auth_mode: authMode,
+    single_user: singleUser,
     initialized,
   });
 });

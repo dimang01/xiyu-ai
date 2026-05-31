@@ -661,6 +661,25 @@
   <script>
     lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
 
+    // v1.5.1: SINGLE_USER 模式 — 所有指向 /app/auth.html 的入口改为直接进 dashboard
+    // 已登录的用户也透明走 auth.html 自动跳转链路（auth.html 自己处理 single_user 自动登录）
+    (async function singleUserRewriteLinks() {
+      try {
+        const r = await fetch('/api/setup/status');
+        const d = await r.json();
+        if (d?.data?.single_user) {
+          // 把所有指向 auth.html 的链接改成 dashboard.html（auth.html 兜底也会跳，但这里少一跳）
+          document.querySelectorAll('a[href^="/app/auth.html"]').forEach(a => {
+            a.href = '/app/dashboard.html';
+          });
+          // 顶部"登录"按钮在单用户模式下没意义，隐藏
+          document.querySelectorAll('a[href="/app/dashboard.html"]').forEach(a => {
+            if (a.textContent.trim() === '登录') a.style.display = 'none';
+          });
+        }
+      } catch {}
+    })();
+
     const io = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
         if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }

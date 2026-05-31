@@ -244,6 +244,27 @@ bash scripts/opensource_check.sh   # 6-item open-source compliance
 
 `npm run doctor` does not print key contents — only character count and placeholder detection.
 
+### Single-User Mode (v1.5.1)
+
+If you self-host on your own machine / LAN / behind a reverse proxy with its own access control, you can **skip the login page entirely**:
+
+```bash
+# add to .env
+SINGLE_USER=true
+```
+
+Effects:
+- Any page visit lands directly in the dashboard — no login/signup form
+- First boot auto-creates an `owner` account (random placeholder password, never used)
+- If accounts already exist, the lowest-ID one (typically the admin) is used as the default identity
+- "Logout" button in dashboard is hidden (logging out would just auto-log back in)
+
+⚠️ **Do NOT enable this when**:
+- The service is directly exposed to the public internet without nginx Basic Auth / Cloudflare Access / IP allowlist
+- Multiple people share the deployment (each should have a separate account)
+
+When enabled, **all chat history, memories, and bound credentials are accessible to anyone who can reach the URL**. Defaults to OFF; multi-user mode is fully backward-compatible.
+
 ---
 
 ## Architecture
