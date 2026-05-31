@@ -17,7 +17,9 @@ function refill(b, maxTokens, refillPerMs) {
 }
 
 function clientKey(req, scope) {
-  const ip = (req.get('x-forwarded-for') || req.ip || '').split(',')[0].trim() || 'unknown';
+  // 不直接读取 X-Forwarded-For：该 header 可由客户端伪造。
+  // 反代场景应在 Express 层显式配置 TRUST_PROXY，让 req.ip 由可信代理链计算。
+  const ip = String(req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '') || 'unknown';
   return `${scope}|${ip}`;
 }
 
