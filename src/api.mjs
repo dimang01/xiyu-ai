@@ -83,6 +83,7 @@ import { getActiveImageProvider } from './providers/image.mjs';
 import { getActiveVisionProvider, REGISTRY as VISION_REGISTRY } from './providers/vision.mjs';
 import { getActiveAsrProvider, REGISTRY as ASR_REGISTRY } from './providers/asr.mjs';
 import { getActiveEmbeddingProvider } from './providers/embedding.mjs';
+import { downloadImageWithGuards } from './security/netguard.mjs';
 import { synthesizeMp3Only } from './voice_pipeline.mjs';
 import { recognizeVoice } from './ai.mjs';
 import { REGISTRY as TTS_REGISTRY, getTtsStatus } from './providers/tts.mjs';
@@ -257,6 +258,35 @@ function ilinkCommonHeaders() {
     'iLink-App-Id': 'bot',
     'iLink-App-ClientVersion': ILINK_CLIENT_VERSION,
   };
+}
+
+function requestIp(req) {
+  return String(req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+}
+
+function isLocalhostRequest(req) {
+  if (!process.env.TRUST_PROXY && req.get('x-forwarded-for')) return false;
+  const ip = requestIp(req);
+  return ip === '127.0.0.1' || ip === '::1';
+}
+
+function setupTokenMatches(req) {
+  // 可选远程初始化令牌：设置 XIYU_SETUP_TOKEN 后，远程请求必须通过 header/body 提供同值 token。
+  const expected = process.env.XIYU_SETUP_TOKEN || '';
+  if (!expected) return false;
+  const provided = req.get('xiyu-setup-token') || req.get('x-setup-token') || req.body?.setup_token || req.body?.token || '';
+  if (typeof provided !== 'string') return false;
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(expected);
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
+}
+
+function canAnonymousSetupTest(req) {
+  const isLocalMode = (process.env.AUTH_MODE || 'local').toLowerCase() !== 'email';
+  let userCount = 0;
+  try { userCount = countAllAccounts(); } catch {}
+  return isLocalhostRequest(req) && isLocalMode && userCount === 0;
 }
 
 async function postIlinkLogin(pathname, body) {
@@ -1581,8 +1611,32 @@ router.post('/auth/wechat-bind', requireAuth, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /api/admin/ilink-status
-router.get('/admin/ilink-status', (_req, res) => {
-  return ok(res, getIlinkStatusSnapshot());
+router.get('/admin/ilink-status', requireAdmin, (_req, res) => {
+  const snapshot = getIlinkStatusSnapshot();
+  const accounts = {};
+  for (const [botId, status] of Object.entries(snapshot.accounts || {})) {
+    const safeStatus = {};
+    for (const [name, item] of Object.entries(status || {})) {
+      safeStatus[name] = {
+        at: item?.at || null,
+        ok: Boolean(item?.ok),
+        httpStatus: item?.httpStatus ?? item?.err?.httpStatus ?? null,
+        ret: item?.ret ?? item?.err?.ret ?? null,
+        errcode: item?.errcode ?? item?.err?.errcode ?? null,
+        errmsg: typeof (item?.errmsg ?? item?.err?.errmsg) === 'string'
+          ? String(item.errmsg ?? item.err.errmsg).slice(0, 80)
+          : null,
+        count: typeof item?.count === 'number' ? item.count : undefined,
+        sessionExpired: Boolean(item?.err?.sessionExpired),
+      };
+    }
+    accounts[maskApiKey(botId)] = safeStatus;
+  }
+  return ok(res, {
+    accounts,
+    account_count: Object.keys(accounts).length,
+    legacyCredentials: Boolean(snapshot.legacyCredentials),
+  });
 });
 
 // POST /api/admin/companions/:id/send-photo — 手动触发一次场景照分享（不等 2 天）
@@ -1618,6 +1672,9 @@ router.get('/companions/user/:uid', requireAuth, (req, res) => {
   if (!botId) return err(res, '缺少 bot_id 参数');
   const c = getCompanion(uid, botId);
   if (!c) return err(res, 'companion 不存在', 404);
+  if (!isCompanionOwnedByAccount(c.id, req.authUser.id)) {
+    return err(res, '无权访问此 companion', 403);
+  }
   return ok(res, c);
 });
 
@@ -1705,12 +1762,11 @@ router.post('/companions/:id/avatar/from-url', requireAuth, async (req, res) => 
   const url = typeof req.body?.url === 'string' ? req.body.url : '';
   if (!/^https?:\/\//.test(url)) return err(res, 'url 无效');
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-    if (!r.ok) return err(res, `下载失败 HTTP ${r.status}`, 502);
-    const ct = r.headers.get('content-type') || 'image/jpeg';
-    if (!ct.startsWith('image/')) return err(res, '响应不是图片', 400);
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > 10 * 1024 * 1024) return err(res, '图片过大', 413);
+    const { buffer: buf } = await downloadImageWithGuards(url, {
+      timeoutMs: 15_000,
+      maxBytes: 5 * 1024 * 1024,
+      maxRedirects: 3,
+    });
 
     const AVATAR_DIR = process.env.AVATAR_DIR || path.resolve(process.cwd(), 'public/avatars');
     if (!existsSync(AVATAR_DIR)) mkdirSync(AVATAR_DIR, { recursive: true });
@@ -1738,7 +1794,7 @@ router.post('/companions/:id/avatar/from-url', requireAuth, async (req, res) => 
     return ok(res, { avatar_url: avatarUrl });
   } catch (e) {
     log('error', `[Avatar] from-url 失败: ${e.message}`);
-    return err(res, '保存失败', 500);
+    return err(res, e.expose ? e.message : '保存失败', e.statusCode || 500);
   }
 });
 
@@ -2179,13 +2235,8 @@ router.post('/setup/test-provider',
   async (req, res) => {
     // 权限检查
     if (!req.authUser) {
-      const ip = req.ip || req.socket?.remoteAddress || '';
-      const isLocalhost = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip);
-      const isLocalMode = (process.env.AUTH_MODE || 'local').toLowerCase() !== 'email';
-      let userCount = 0;
-      try { userCount = countAllAccounts(); } catch {}
       // 仅首次本地初始化阶段（user_count=0 + 本地请求 + local 模式）允许匿名
-      if (!isLocalhost || !isLocalMode || userCount > 0) {
+      if (!canAnonymousSetupTest(req)) {
         return res.status(401).json({ ok: false, success: false, message: '请先登录后再测试 Provider 配置' });
       }
     }
@@ -2224,8 +2275,9 @@ router.post('/setup/test-provider',
   },
 );
 
-// POST /api/setup/local-account — 首次本地部署时创建第一个账号（无需登录）
-// 仅允许：AUTH_MODE=local 且 user_count=0
+// POST /api/setup/local-account — 首次本地部署时创建第一个账号
+// 仅允许：AUTH_MODE=local 且 user_count=0，默认必须来自 localhost。
+// 如需远程初始化，可设置 XIYU_SETUP_TOKEN，并通过 xiyu-setup-token header 或 body.setup_token 传入。
 router.post('/setup/local-account',
   rateLimit({ scope: 'local-account', maxPerWindow: 5, windowMs: 60 * 60 * 1000, message: '操作过于频繁，请稍后再试' }),
   async (req, res) => {
@@ -2237,6 +2289,9 @@ router.post('/setup/local-account',
     try { userCount = countAllAccounts(); } catch {}
     if (userCount > 0) {
       return res.status(403).json({ ok: false, message: '系统已完成初始化，请登录现有账号' });
+    }
+    if (!isLocalhostRequest(req) && !setupTokenMatches(req)) {
+      return res.status(403).json({ ok: false, message: '首次初始化仅允许本机访问，或提供有效 setup token' });
     }
     const rawUsername = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     const password    = typeof req.body?.password === 'string' ? req.body.password        : '';
@@ -2281,11 +2336,15 @@ router.post('/setup/local-account',
 );
 
 // POST /api/setup/test-chat — 给 setup.html 用：用最低 token 数发一次 ping，验证
-// 当前 CHAT_PROVIDER + 对应的 API key 是否能跑通。不需要鉴权（首次启动时还没账号），
-// 但限速防滥用。
+// 当前 CHAT_PROVIDER + 对应的 API key 是否能跑通。
+// 匿名访问仅限首次本机初始化阶段，其他情况必须登录。
 router.post('/setup/test-chat',
   rateLimit({ scope: 'test-chat', maxPerWindow: 10, windowMs: 60_000, message: '测试过于频繁，请稍后再试' }),
-  async (_req, res) => {
+  softAuth,
+  async (req, res) => {
+    if (!req.authUser && !canAnonymousSetupTest(req)) {
+      return res.status(401).json({ ok: false, success: false, message: '请先登录后再测试 Chat Provider 配置' });
+    }
     try {
       const { chatComplete, getActiveChatProvider } = await import('./providers/chat.mjs');
       const t0 = Date.now();
@@ -3769,6 +3828,10 @@ router.post('/admin/regenerate-password', requireAdmin, (req, res) => {
 export function startApiServer() {
   const app  = express();
   const port = Number(process.env.API_PORT) || 3000;
+
+  if (process.env.TRUST_PROXY) {
+    app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 'loopback' : process.env.TRUST_PROXY);
+  }
 
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: false, limit: '2mb' }));   // 支付宝异步通知用 form 编码
