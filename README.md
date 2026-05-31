@@ -388,12 +388,11 @@ bash scripts/opensource_check.sh   # 6 项开源合规
 
 最近主线：
 
-- **v1.4.x（main HEAD）** TTS 5 家（MiniMax/OpenAI/Azure/豆包/通义）+ ASR 7 实现（新增 Groq/MiniMax/Azure/豆包）+ Vision 8 家（新增 Kimi/StepFun/MiniMax）；默认起步=暗恋；想念档 + 今天她想对你说；网页录音 + 朗读
-- **v1.3.x** 液态玻璃 UI · 她的日记 · 纪念日主动祝福 · 全面去 Pro/Free 分级（开源版所有功能对所有人开放）
+- **v1.5.x「长期陪伴维度」** 离线留言胶囊（HMAC 签名 .txt 永久托管）· 时光胶囊（解封时她写"现在的我"感想）· 沉默陪伴模式（赛博距离，呼吸光点）· 反向日记「我们之间」（每晚她记录你们的互动，可编辑/导出）
+- **v1.4.x** TTS 5 家（MiniMax/OpenAI/Azure/豆包/通义）+ ASR 7 实现（Gemini/OpenAI/Qwen/Groq/MiniMax/Azure/豆包）+ Vision 8 家（智谱/OpenAI/Qwen/豆包/Claude/Kimi/StepFun/MiniMax）；默认起步=暗恋；想念档 + 今天她想对你说；网页录音 + 朗读
+- **v1.3.x** 液态玻璃 UI · 她的日记 · 纪念日主动祝福 · 全面去 Pro/Free 分级
 - **v1.2.x** 联网搜索 · 主动告白 · Memory Reflection
 - **v1.1.x** Persona Guard · 情绪状态机 · 主动消息 v2
-
-> 当前 main HEAD 含 v1.4.3 改动，`package.json` 还停在 `1.3.4`，下次发版会统一升 tag。
 
 ---
 
