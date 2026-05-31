@@ -386,12 +386,11 @@ Release cadence / full changelog at [GitHub Releases](https://github.com/dimang0
 
 Recent mainline:
 
-- **v1.4.x (main HEAD)** — TTS 5 (MiniMax / OpenAI / Azure / Doubao / Qwen) + ASR 7 implemented (added Groq / MiniMax / Azure / Doubao) + Vision 8 (added Kimi / StepFun / MiniMax); default starting stage = crushing; missing-level + "today's thought for you"; in-browser voice recording + narration
-- **v1.3.x** — Liquid Glass UI · Her diary · Anniversary proactive greetings · Removed all Pro/Free tiers (all features for everyone in open-source edition)
+- **v1.5.x "Long-term Companionship"** — Offline letter capsule (HMAC-signed .txt the user keeps forever) · Time capsule (she writes "the me of now" reaction when it unlocks) · Silent companion mode (cyber-distance: breathing dot in the corner instead of messages) · Relational diary "between us" (nightly, editable, exportable)
+- **v1.4.x** — TTS 5 (MiniMax / OpenAI / Azure / Doubao / Qwen) + ASR 7 implemented (Gemini / OpenAI / Qwen / Groq / MiniMax / Azure / Doubao) + Vision 8 (Zhipu / OpenAI / Qwen / Doubao / Claude / Kimi / StepFun / MiniMax); default starting stage = crushing; missing-level + "today's thought for you"; in-browser voice recording + narration
+- **v1.3.x** — Liquid Glass UI · Her diary · Anniversary proactive greetings · Removed all Pro/Free tiers
 - **v1.2.x** — Web search · Proactive confessions · Memory Reflection
 - **v1.1.x** — Persona Guard · Emotion state machine · Proactive engine v2
-
-> Current main HEAD includes v1.4.3 changes; `package.json` still pinned at `1.3.4`, the next release will bump and tag together.
 
 ---
 
