@@ -7,7 +7,7 @@
  */
 
 import { log } from './logger.mjs';
-import { patchCompanion } from './db.mjs';
+import { patchCompanion, getDailySchedule, shanghaiDateKey } from './db.mjs';
 import { getEmotionStateWithDefaults } from './emotion_state.mjs';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -51,34 +51,125 @@ export function computeMissingScore(companion, user, context = {}) {
   return Math.min(100, Math.max(0, score));
 }
 
-// ─── Motivation score ─────────────────────────────────────────────────────────
+// ─── Motivation score (v1.6 三驱动) ──────────────────────────────────────
+// motivation = base_time_score × emotion_multiplier × schedule_multiplier × random_jitter
+//   - base_time_score: 0-80，纯时段（早晚高峰最高，午饭/凌晨最低）
+//   - emotion_multiplier: 0.2-2.5，由 7 维情绪合成（clingy/dep/sec/poss/mood）
+//   - schedule_multiplier: 0.3-1.5，基于今日日程当前活动（在忙/在闲）
+//   - random_jitter: 0.8-1.2 真人不机械
+// 用户原话："加 7 维情绪驱动和日程驱动以及随机时间驱动"——三驱动 = emotion + schedule + time/jitter
+
+/** 0-80：单纯时段基线，模拟真人"什么时候有空发消息" */
+export function computeTimeBaseScore(now = new Date()) {
+  const h = now.getHours();
+  if (h >= 23 || h < 7)   return 5;    // 凌晨/深夜：基本不打扰
+  if (h >= 7  && h < 9)   return 70;   // 早安高峰
+  if (h >= 9  && h < 11)  return 40;
+  if (h >= 11 && h < 13)  return 30;   // 午饭忙
+  if (h >= 13 && h < 17)  return 50;
+  if (h >= 17 && h < 19)  return 60;   // 傍晚下班/放学
+  if (h >= 19 && h < 22)  return 70;   // 晚间高峰
+  return 50;                            // 22-23
+}
+
+/** 0.2-2.5：基于 7 维情绪 + mood 的乘数 */
+export function computeEmotionMultiplier(emotion) {
+  const mood = emotion?.mood || 'neutral';
+  const dep  = emotion?.dependency ?? 30;
+  const sec  = emotion?.security   ?? 50;
+  const poss = emotion?.possessiveness ?? 20;
+  // 各 mood 的基础倍率
+  const moodMul = mood === 'clingy'    ? 1.6
+               : mood === 'wronged'    ? 1.3
+               : mood === 'jealous'    ? 1.4
+               : mood === 'comforting' ? 1.2
+               : mood === 'happy'      ? 1.1
+               : mood === 'cold'       ? 0.5
+               : mood === 'angry'      ? 0.6
+               : mood === 'tired'      ? 0.7
+               : 1.0;
+  // dependency 高 → 想发；低 → 不想
+  const depMul = 0.5 + (dep / 100) * 1.5;            // dep=0 → 0.5, dep=100 → 2.0
+  // security 低 → 更主动找（想确认）；高 → 不焦虑
+  const secMul = 1.4 - (sec / 100) * 0.7;            // sec=0 → 1.4, sec=100 → 0.7
+  // possessiveness 高 → 多 +0.2
+  const possBonus = poss >= 60 ? 1.2 : poss >= 40 ? 1.1 : 1.0;
+  const raw = moodMul * depMul * secMul * possBonus;
+  return Math.min(2.5, Math.max(0.2, raw));
+}
+
+/** 0.3-1.5：基于今日日程当前活动 */
+export function computeScheduleMultiplier(companionId, now = new Date()) {
+  try {
+    const sched = getDailySchedule(companionId, shanghaiDateKey(now));
+    if (!sched || !Array.isArray(sched.items)) return 1.0;
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    // 找当前正在进行的活动（time <= now，取最近一个）
+    let curItem = null;
+    for (const it of sched.items) {
+      const m = String(it.time || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) continue;
+      const itMin = Number(m[1]) * 60 + Number(m[2]);
+      if (itMin <= nowMin && (!curItem || itMin > curItem._min)) {
+        curItem = { ...it, _min: itMin };
+      }
+    }
+    if (!curItem) return 1.0;
+    const act = String(curItem.activity || '');
+    // 在忙：上课/开会/上班/工作/写代码/做饭/睡觉/考试/面试 → 0.3
+    if (/上课|开会|上班|工作|写代码|做饭|睡觉|考试|面试|健身|跑步|加班/.test(act)) return 0.3;
+    // 半忙：吃饭/通勤/购物/去/路上 → 0.6
+    if (/吃饭|吃午|吃晚|早餐|午餐|晚餐|通勤|购物|路上|去[^里]/.test(act)) return 0.6;
+    // 闲：休息/刷手机/看剧/发呆/咖啡/听歌/逛 → 1.4
+    if (/休息|刷手机|看剧|发呆|咖啡|听歌|逛|放空|阳台|窗边/.test(act)) return 1.4;
+    // 默认中等
+    return 1.0;
+  } catch {
+    return 1.0;
+  }
+}
 
 /**
- * Combines missing score + emotion + schedule to produce a 0–100 motivation.
+ * Combines time + emotion + schedule + jitter to produce a 0–100 motivation.
+ * v1.6: 三驱动 multiplier 重构（旧版是加法 score，新版乘法 multiplier 表达力更强）
  */
 export function computeProactiveMotivation(companion, context = {}) {
-  const miss    = computeMissingScore(companion, null, context);
+  const now = context.now || new Date();
   const emotion = getEmotionStateWithDefaults(companion.id);
-  const mood    = emotion.mood || 'neutral';
 
-  let motivation = miss * 0.6;
+  const base    = computeTimeBaseScore(now);
+  const emoMul  = computeEmotionMultiplier(emotion);
+  const schMul  = computeScheduleMultiplier(companion.id, now);
+  const jitter  = 0.8 + Math.random() * 0.4;
 
-  // Mood boosts
-  if (mood === 'clingy')      motivation += 20;
-  if (mood === 'wronged')     motivation += 10;
-  if (mood === 'happy')       motivation += 8;
-  if (mood === 'comforting')  motivation += 5;
+  let motivation = base * emoMul * schMul * jitter;
 
-  // Time of day: peak morning/evening
-  const hour = new Date().getHours();
-  if ((hour >= 7 && hour <= 9) || (hour >= 20 && hour <= 22)) motivation += 10;
-
-  // Intensity modifier
+  // intensity 整体调节（用户拖动 quiet/normal/clingy 强度）
   const intensity = companion.proactive_intensity || 'normal';
   if (intensity === 'clingy') motivation *= 1.3;
-  if (intensity === 'quiet')  motivation *= 0.5;
+  if (intensity === 'quiet')  motivation *= 0.4;
+
+  // 想念 score 作为最后微调（保留向后兼容；不再主导）
+  if (context.includeMissingScore !== false) {
+    const miss = computeMissingScore(companion, null, context);
+    motivation += miss * 0.1;
+  }
 
   return Math.min(100, Math.max(0, motivation));
+}
+
+/** 调试用：返回 motivation 的全部因子拆解 */
+export function debugMotivationFactors(companion, context = {}) {
+  const now = context.now || new Date();
+  const emotion = getEmotionStateWithDefaults(companion.id);
+  return {
+    base_time: computeTimeBaseScore(now),
+    emotion_multiplier: computeEmotionMultiplier(emotion),
+    schedule_multiplier: computeScheduleMultiplier(companion.id, now),
+    final: computeProactiveMotivation(companion, context),
+    emotion_snapshot: { mood: emotion.mood, dep: emotion.dependency, sec: emotion.security, poss: emotion.possessiveness },
+    hour: now.getHours(),
+  };
 }
 
 // ─── Anti-spam backoff ────────────────────────────────────────────────────────
@@ -226,12 +317,19 @@ export function evaluateProactive(companion, context = {}) {
   const motivation = computeProactiveMotivation(companion, context);
   const intensity  = companion.proactive_intensity || 'normal';
 
-  // Minimum motivation thresholds per intensity
-  const threshold = intensity === 'quiet'  ? 80
-                  : intensity === 'clingy' ? 40
-                  : 60;
-
-  if (motivation < threshold) return null;
+  // v1.6: 阈值放宽 + 中间值随机
+  // 旧版固定阈值（normal=60）经常拒发。新版用"硬下限 + 软随机"：
+  //   < 25: 拒
+  //   25-50: 按 motivation/100 概率通过
+  //   >= 50: 必过
+  const hardFloor = intensity === 'quiet'  ? 50
+                  : intensity === 'clingy' ? 15
+                  : 25;
+  if (motivation < hardFloor) return null;
+  if (motivation < 50) {
+    // 软通过：motivation 25-50 时按 motivation/100 概率随机
+    if (Math.random() > motivation / 100) return null;
+  }
 
   const trigger = selectProactiveTrigger(companion, { ...context, motivation });
   const message = buildProactiveIntent(companion, trigger, context);
