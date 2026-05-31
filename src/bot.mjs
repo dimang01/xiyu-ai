@@ -11,6 +11,7 @@
 
 import { parseMessage, sendTextMessage, sendTyping, sendMessageItem, rememberContextToken } from './ilink.mjs';
 import { generateReply, recognizeImage, recognizeVoice, embedText } from './ai.mjs';
+import { dedupSegments } from './text_similarity.mjs';
 import {
   saveMessage, getRecentHistory, getUserProfile, recallMemories, recallMemoriesSemantic,
   getConversationContext, saveConversationTurn,
@@ -432,7 +433,12 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
     // ── 像真人一样：把回复按 || 拆成多条短消息，逐条发送 ─────────────────
     // 每条之间：typing indicator + 短停顿，模拟"先发一条再打下一条"
-    const segments = splitReplySegments(reply);
+    // v1.5.2: 段内 dedup — 修 LLM 一次生成的多段 || 内部出现语义重复 bug
+    const rawSegments = splitReplySegments(reply);
+    const { kept: segments, dropped: droppedSegs } = dedupSegments(rawSegments, 0.55);
+    if (droppedSegs.length) {
+      log('info', `[Bot] 段内去重：剪掉 ${droppedSegs.length} 段重复内容 companion=${companion.id}; ${droppedSegs.map(d => `"${d.text.slice(0,20)}"~"${d.similar_to.slice(0,20)}"(sim=${d.sim.toFixed(2)})`).join('; ')}`);
+    }
     log('debug', `[Bot] reply 拆为 ${segments.length} 段：${segments.map(s => s.slice(0, 20)).join(' | ')}`);
 
     for (let i = 0; i < segments.length; i++) {
