@@ -27,6 +27,11 @@ const DEFAULT_STATE = {
   security:        50,
   energy:          60,
   mood:            'neutral',
+  // v1.6: 4 个新维度
+  patience:        60,  // 0 暴躁 - 100 极有耐心；用户连发多条问题/长时间不响应降
+  excitement:      30,  // 短期峰值：被夸/惊喜会冲 80+，每小时衰减约 20
+  annoyance:       0,   // 短期烦躁：被忽视/打断累积；高 annoyance 时回复变冷
+  gratitude:       40,  // 长期感激：用户体贴/陪伴时累加，影响她回复温度
 };
 
 // Clamp helpers
@@ -49,6 +54,10 @@ const APOLOGY_WORDS    = ['对不起', '不好意思', '抱歉', '我错了', 's
 const WORRY_WORDS      = ['担心', '难过', '伤心', '哭', '委屈', '崩溃', '心痛', '绝望'];
 const JEALOUS_TRIGGERS = ['她', '他', '其他女', '前任', '前女友', '前男友', '暧昧', '喜欢别人'];
 const NIGHT_ENERGY_WORDS = ['晚安', '睡觉', '困了', '要睡了', '好累'];
+// v1.6 新维度触发词
+const EXCITEMENT_WORDS = ['礼物', '惊喜', '好消息', '太棒了', '哇', '中奖', '升职', '通过了', '答应'];
+const CARING_WORDS     = ['多喝水', '注意身体', '早点睡', '吃饭了吗', '别熬夜', '陪我', '陪你', '我在'];
+const NAGGING_WORDS    = ['？？', '在吗在吗', '快回', '怎么不回', '在干嘛在干嘛'];  // 连发施压
 
 /**
  * Update emotion dimensions based on user message content + context.
@@ -95,10 +104,41 @@ function computeDelta(userText = '', context = {}) {
     if (!delta.mood) delta.mood = 'tired';
   }
 
+  // v1.6: 4 个新维度触发
+  // excitement 短期峰值（被夸/惊喜/好消息）
+  if (EXCITEMENT_WORDS.some(w => text.includes(w))) {
+    delta.excitement = 25;
+    delta.energy     = (delta.energy || 0) + 3;
+  }
+  if (PRAISE_WORDS.some(w => text.includes(w))) {
+    delta.excitement = (delta.excitement || 0) + 10;
+  }
+  // gratitude 体贴/陪伴累积（与 GRATITUDE_WORDS 区别：gratitude 是她对他的感激；CARING 是他对她的体贴）
+  if (CARING_WORDS.some(w => text.includes(w))) {
+    delta.gratitude = 4;
+    delta.security  = (delta.security || 0) + 1;
+  }
+  if (GRATITUDE_WORDS.some(w => text.includes(w))) {
+    delta.gratitude = (delta.gratitude || 0) + 2;
+  }
+  // annoyance 烦躁（被夸打断/被忽视/夸张词重复）
+  if (NAGGING_WORDS.some(w => text.includes(w))) {
+    delta.annoyance = 8;
+    delta.patience  = -5;
+  }
+  if (COLD_WORDS.some(w => text.includes(w))) {
+    delta.annoyance = (delta.annoyance || 0) + 3;
+  }
+  // patience：长消息 = 用户认真 → patience 不变；短促消息 + 短间隔（caller 应传 context.shortGapMs）会降
+  if (context.shortGapMs != null && context.shortGapMs < 30_000 && userText.length < 6) {
+    delta.patience = (delta.patience || 0) - 3;
+  }
+
   // Long message → engagement boost
   if (userText.length > 100) {
     delta.trust      = (delta.trust      || 0) + 1;
     delta.dependency = (delta.dependency || 0) + 1;
+    delta.patience   = (delta.patience   || 0) + 2;  // 用户认真打字 → 她也耐心
   }
 
   // Time-of-day energy
@@ -114,7 +154,9 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
   const delta  = computeDelta(userText, context);
   const update = {};
 
-  const dims = ['affection', 'trust', 'dependency', 'possessiveness', 'security', 'energy'];
+  // v1.6: dims 扩到 10（不含 mood 是字符串）
+  const dims = ['affection', 'trust', 'dependency', 'possessiveness', 'security', 'energy',
+                'patience', 'excitement', 'annoyance', 'gratitude'];
   for (const dim of dims) {
     if (delta[dim] !== undefined) {
       update[dim] = clamp((currentState[dim] ?? DEFAULT_STATE[dim]) + delta[dim], 0, 100);
@@ -158,6 +200,12 @@ export function updateEmotionFromAssistantReply(companionId, currentState, reply
   // Clingy if dependency high and no recent user message
   const dep = currentState.dependency ?? DEFAULT_STATE.dependency;
   if (dep >= 70 && mood === 'neutral') update.mood = 'clingy';
+
+  // v1.6: excitement / annoyance 短期情绪每次回复后自然回归（衰减）
+  const exc = currentState.excitement ?? DEFAULT_STATE.excitement;
+  if (exc > 30) update.excitement = clamp(exc - 5, 0, 100);
+  const ann = currentState.annoyance ?? DEFAULT_STATE.annoyance;
+  if (ann > 0)  update.annoyance  = clamp(ann - 3, 0, 100);
 
   if (Object.keys(update).length === 0) return currentState;
   try {
@@ -327,6 +375,22 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
 
   const trust = emotionState.trust ?? 50;
   if (trust >= 80) parts.push('• 你非常信任他，说话会更自然、不设防、可以聊更内心的话题。');
+
+  // v1.6: 4 个新维度
+  const exc = emotionState.excitement ?? 30;
+  if (exc >= 70)        parts.push('• 你现在非常兴奋（刚被夸/听到好消息），话语会跳跃、停不下来、容易感叹。');
+  else if (exc >= 50)   parts.push('• 你心情上来了，话密一点，表情多一点。');
+
+  const ann = emotionState.annoyance ?? 0;
+  if (ann >= 60)        parts.push('• 你有点烦躁（可能他刚才一直催/反复打断），回复会更冷、短、带点不耐烦，但不会真的撕破。');
+  else if (ann >= 30)   parts.push('• 你稍微有点烦，语气可能比平时更短一些。');
+
+  const pat = emotionState.patience ?? 60;
+  if (pat <= 30)        parts.push('• 你今天耐心不够，对反复绕的话题会想快速结束。');
+  else if (pat >= 85)   parts.push('• 你今天特别有耐心，愿意一直陪他聊、不急不躁。');
+
+  const grat = emotionState.gratitude ?? 40;
+  if (grat >= 75)       parts.push('• 你内心很感激他最近的体贴和陪伴，会在某些瞬间不自觉地温柔很多。');
 
   if (parts.length === 0) return '';
 
