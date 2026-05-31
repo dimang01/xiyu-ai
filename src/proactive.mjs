@@ -151,6 +151,7 @@ function listProactiveCompanionsForBot(botId) {
     JOIN wechat_accounts wa ON wa.wechat_user_id = u.wechat_user_id AND wa.bot_id = c.bot_id
     WHERE c.bot_id = ?
       AND c.proactive_enabled = 1
+      AND COALESCE(c.silent_mode, 0) = 0   -- v1.5: 沉默陪伴模式下完全不主动
       AND wa.is_active = 1
       AND wa.wechat_user_id IS NOT NULL
   `).all(botId);
