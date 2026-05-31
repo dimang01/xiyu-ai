@@ -53,6 +53,7 @@ export function getDb() {
     migrateAppSettings();
     migrateTimeCapsules();
     migrateSilentMode();
+    migrateRelationalDiary();
   }
   return db;
 }
@@ -3401,4 +3402,102 @@ export function markTimeCapsuleOpened(id, herReaction) {
     SET opened_at = ?, her_reaction = ?
     WHERE id = ? AND opened_at IS NULL
   `).run(now, String(herReaction || '').slice(0, 1500), id);
+}
+
+// ─── companion_relational_diary (v1.5) ────────────────────────────────────────
+// 反向日记：她每天写「今天和你之间发生了什么」(区别于 companion_diary 的内心独白)。
+// 用户可编辑/软删/导出。每天每个 companion 最多一条 (UNIQUE)。
+//   body          ← AI 生成的正文（用户可编辑覆盖）
+//   user_edited   ← 是否被用户改过（用于 UI 加个小标识）
+//   deleted_at    ← 软删时间（NOT NULL 时 cron 第二天不会重生覆盖）
+function migrateRelationalDiary() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_relational_diary (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id  INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      date_key      TEXT    NOT NULL,
+      body          TEXT    NOT NULL,
+      mood          TEXT,
+      generated_at  INTEGER NOT NULL,
+      updated_at    INTEGER,
+      user_edited   INTEGER DEFAULT 0,
+      deleted_at    INTEGER,
+      UNIQUE(companion_id, date_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_relational_diary_companion_date
+      ON companion_relational_diary(companion_id, date_key DESC);
+  `);
+}
+
+export function getRelationalDiaryEntry(companionId, dateKey) {
+  return getDb().prepare(`
+    SELECT * FROM companion_relational_diary
+    WHERE companion_id = ? AND date_key = ?
+  `).get(companionId, dateKey) || null;
+}
+
+export function getRelationalDiaryById(id) {
+  return getDb().prepare(`
+    SELECT * FROM companion_relational_diary WHERE id = ?
+  `).get(id) || null;
+}
+
+export function upsertRelationalDiary({ companionId, dateKey, body, mood = null }) {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  // 如果已存在（用户改过 or 已生成 or 已软删），跳过 — 由 cron 调用方判断
+  // 这个函数是"插入新的"，幂等冲突时不动现有的
+  const info = db.prepare(`
+    INSERT INTO companion_relational_diary (companion_id, date_key, body, mood, generated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(companion_id, date_key) DO NOTHING
+  `).run(companionId, dateKey, String(body).slice(0, 1500), mood ? String(mood).slice(0, 20) : null, now);
+  return info.changes > 0
+    ? getRelationalDiaryEntry(companionId, dateKey)
+    : null;
+}
+
+export function listRelationalDiariesForCompanion(companionId, { limit = 30, includeDeleted = false } = {}) {
+  const where = includeDeleted ? 'companion_id = ?' : 'companion_id = ? AND deleted_at IS NULL';
+  return getDb().prepare(`
+    SELECT id, companion_id, date_key, body, mood, generated_at, updated_at, user_edited, deleted_at
+    FROM companion_relational_diary WHERE ${where}
+    ORDER BY date_key DESC LIMIT ?
+  `).all(companionId, Math.min(Math.max(Number(limit) || 30, 1), 200));
+}
+
+export function updateRelationalDiaryBody(id, companionId, body) {
+  const now = Math.floor(Date.now() / 1000);
+  const info = getDb().prepare(`
+    UPDATE companion_relational_diary
+    SET body = ?, updated_at = ?, user_edited = 1
+    WHERE id = ? AND companion_id = ? AND deleted_at IS NULL
+  `).run(String(body).slice(0, 1500), now, id, companionId);
+  return info.changes > 0;
+}
+
+export function softDeleteRelationalDiary(id, companionId) {
+  const now = Math.floor(Date.now() / 1000);
+  const info = getDb().prepare(`
+    UPDATE companion_relational_diary
+    SET deleted_at = ?
+    WHERE id = ? AND companion_id = ? AND deleted_at IS NULL
+  `).run(now, id, companionId);
+  return info.changes > 0;
+}
+
+// cron 用：检查指定日期是否已存在条目（包含软删 — 软删后不应该再生成）
+export function hasRelationalDiaryForDay(companionId, dateKey) {
+  const row = getDb().prepare(`
+    SELECT id FROM companion_relational_diary
+    WHERE companion_id = ? AND date_key = ? LIMIT 1
+  `).get(companionId, dateKey);
+  return !!row;
+}
+
+// 用户主动 regenerate 用：硬删旧记录（含软删/编辑过的）让 upsert 能写入
+export function hardDeleteRelationalDiaryByKey(companionId, dateKey) {
+  return getDb().prepare(`
+    DELETE FROM companion_relational_diary WHERE companion_id = ? AND date_key = ?
+  `).run(companionId, dateKey).changes;
 }

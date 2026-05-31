@@ -59,10 +59,11 @@
   </p>
 
   <!-- Filter row -->
-  <div class="flex gap-1.5 mb-5" id="kindFilters">
+  <div class="flex gap-1.5 mb-5 flex-wrap" id="kindFilters">
     <button class="tag-btn active" data-kind="">全部</button>
     <button class="tag-btn" data-kind="daily">每日</button>
     <button class="tag-btn" data-kind="weekly">每周</button>
+    <button class="tag-btn" data-kind="relational">我们之间</button>
   </div>
 
   <!-- Diary list -->
@@ -171,6 +172,7 @@ function bindFilters() {
 function setLoading(v) { document.getElementById('loadingSpinner').classList.toggle('hidden', !v); }
 
 async function loadDiary(reset) {
+  if (currentKind === 'relational') { return loadRelationalDiary(reset); }
   if (reset) { offset = 0; document.getElementById('diaryList').innerHTML = ''; }
   setLoading(true);
   const params = new URLSearchParams({ limit: PAGE_SIZE, offset });
@@ -217,6 +219,148 @@ async function loadDiary(reset) {
 
   offset += entries.length;
   document.getElementById('loadMoreBtn').classList.toggle('hidden', offset >= total);
+}
+
+// v1.5: 反向日记（我们之间）
+async function loadRelationalDiary(reset) {
+  if (reset) { document.getElementById('diaryList').innerHTML = ''; }
+  setLoading(true);
+  const r = await apiFetch(`/api/companions/${companionId}/relational-diary?limit=60`);
+  setLoading(false);
+  if (!r?.ok) { showToast(r?.error || '加载失败'); return; }
+  const entries = r.data.entries || [];
+  const listEl = document.getElementById('diaryList');
+  const emptyEl = document.getElementById('emptyState');
+  const loadMoreBtn = document.getElementById('loadMoreBtn');
+  loadMoreBtn.classList.add('hidden');  // 反向日记一次性加载
+
+  // 顶部加一个"重新生成今天的"按钮
+  const todayKey = (() => {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  })();
+  const yesterdayKey = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  })();
+  const headerCard = document.createElement('div');
+  headerCard.className = 'bg-sakura-soft/40 rounded-2xl p-4 text-[13px] mb-3';
+  headerCard.innerHTML = `
+    <div class="font-semibold text-ink mb-1">她记录的「我们之间」</div>
+    <p class="text-mute text-[12px] leading-relaxed mb-2">
+      每天深夜她会把和你之间的小瞬间写进这里，与左边「她的日记」不同——这里聚焦的是<b>你们之间</b>。<br>
+      你可以编辑、删除、或让她重新写一篇。
+    </p>
+    <div class="flex gap-2 flex-wrap">
+      <button id="btn-rel-regen-yesterday" class="text-[12px] text-white bg-sakura-deep rounded-full px-3 py-1 hover:opacity-90">让她重写昨天的</button>
+      <button id="btn-rel-regen-today" class="text-[12px] text-sakura-deep border border-sakura-deep rounded-full px-3 py-1 hover:bg-sakura-soft">让她现在写今天的</button>
+    </div>`;
+  listEl.appendChild(headerCard);
+  headerCard.querySelector('#btn-rel-regen-yesterday').addEventListener('click', () => regenRelational(yesterdayKey));
+  headerCard.querySelector('#btn-rel-regen-today').addEventListener('click', () => regenRelational(todayKey));
+
+  if (!entries.length) {
+    emptyEl.classList.add('hidden');
+    const noEntries = document.createElement('div');
+    noEntries.className = 'text-center text-mute py-8 text-sm';
+    noEntries.innerHTML = '还没有"我们之间"的回忆。<br>每天深夜她会自动写一篇；也可以点上面的按钮让她现在就写。';
+    listEl.appendChild(noEntries);
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  for (const e of entries) {
+    const mood = e.mood
+      ? `<span class="mood-chip ${moodClass(e.mood)}">${escHtml(e.mood)}</span>` : '';
+    const editedBadge = e.user_edited
+      ? '<span class="text-[10px] text-mute bg-cloud rounded px-1.5 py-0.5 ml-2">已编辑</span>' : '';
+    const card = document.createElement('article');
+    card.className = 'diary-card bg-white rounded-2xl shadow-sakura border border-line p-5 relative';
+    card.dataset.id = e.id;
+    card.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-semibold text-ink">${fmtDate(e.date_key)}${editedBadge}</div>
+        <div class="flex items-center gap-2">
+          ${mood}
+          <button class="rel-edit text-[16px] text-mute hover:text-sakura-deep transition-all" title="编辑">✎</button>
+          <button class="rel-export text-[16px] text-mute hover:text-sakura-deep transition-all" title="导出 .txt">⬇</button>
+          <button class="rel-del text-[16px] text-mute hover:text-red-500 transition-all" title="删除">×</button>
+        </div>
+      </div>
+      <div class="rel-body text-[15px] text-ink/90 whitespace-pre-wrap">${escHtml(e.body)}</div>
+      <div class="rel-edit-area hidden mt-2">
+        <textarea class="w-full text-[14px] border border-line rounded-xl p-3 bg-white" rows="6">${escHtml(e.body)}</textarea>
+        <div class="mt-2 flex gap-2">
+          <button class="rel-save text-[12px] text-white bg-sakura-deep rounded-full px-3 py-1">保存</button>
+          <button class="rel-cancel text-[12px] text-mute">取消</button>
+        </div>
+      </div>`;
+    listEl.appendChild(card);
+    const bodyEl = card.querySelector('.rel-body');
+    const editArea = card.querySelector('.rel-edit-area');
+    const txt = card.querySelector('textarea');
+    card.querySelector('.rel-edit').addEventListener('click', () => {
+      bodyEl.classList.add('hidden'); editArea.classList.remove('hidden'); txt.focus();
+    });
+    card.querySelector('.rel-cancel').addEventListener('click', () => {
+      txt.value = e.body; bodyEl.classList.remove('hidden'); editArea.classList.add('hidden');
+    });
+    card.querySelector('.rel-save').addEventListener('click', async () => {
+      const v = txt.value.trim();
+      if (v.length < 10) { showToast('内容太短'); return; }
+      const r2 = await apiFetch(`/api/companions/${companionId}/relational-diary/${e.id}`, {
+        method: 'PUT', body: JSON.stringify({ body: v }),
+      });
+      if (r2?.ok) {
+        e.body = v; e.user_edited = 1;
+        bodyEl.textContent = v;
+        bodyEl.classList.remove('hidden'); editArea.classList.add('hidden');
+        showToast('已保存');
+        // 重新渲染 editedBadge
+        loadRelationalDiary(true);
+      } else {
+        showToast(r2?.error || '保存失败');
+      }
+    });
+    card.querySelector('.rel-del').addEventListener('click', async () => {
+      if (!confirm('删除这天的"我们之间"？删后她不会再自动重写这一天。')) return;
+      const r2 = await apiFetch(`/api/companions/${companionId}/relational-diary/${e.id}`, { method: 'DELETE' });
+      if (r2?.ok) { card.remove(); showToast('已删除'); }
+      else showToast(r2?.error || '删除失败');
+    });
+    card.querySelector('.rel-export').addEventListener('click', () => {
+      const txt2 = [
+        `${companionName}的「我们之间」`,
+        `日期：${fmtDate(e.date_key)} (${e.date_key})`,
+        `心情：${e.mood || ''}`,
+        e.user_edited ? '（已被你编辑过）' : '',
+        '────────────────────────────',
+        '',
+        e.body,
+        '',
+        '────────────────────────────',
+        `生成于 ${new Date((e.updated_at || e.generated_at) * 1000).toISOString().slice(0,19).replace('T', ' ')} UTC`,
+      ].filter(s => s !== '').join('\n');
+      const blob = new Blob([txt2], { type: 'text/plain; charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `relational-${e.date_key}.txt`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    });
+  }
+}
+
+async function regenRelational(dateKey) {
+  showToast('她在写…大约 5-10 秒');
+  const r = await apiFetch(`/api/companions/${companionId}/relational-diary/regenerate`, {
+    method: 'POST', body: JSON.stringify({ date_key: dateKey }),
+  });
+  if (r?.ok) {
+    showToast('已生成');
+    loadRelationalDiary(true);
+  } else {
+    showToast(r?.error || '生成失败');
+  }
 }
 
 // v1.4.0 Sprint 2.5: 听她念日记。后端 /tts-preview 限 100 字，长日记按句号切段播放。
