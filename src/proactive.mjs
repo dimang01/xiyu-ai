@@ -19,6 +19,7 @@ import path from 'node:path';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem } from './ilink.mjs';
+import { dedupSegments } from './text_similarity.mjs';
 // v1.4.0: 微信端 voice 路径已废弃（iLink 协议禁止 bot outbound voice，腾讯
 // 官方 SDK 没有 sendVoiceMessageWeixin，HTTP 200 但消息静默丢弃）。
 // 语音功能改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。
@@ -394,7 +395,12 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   // 语音体验改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。
 
   // 像真人：按 || 拆多条短消息
-  const segments = splitReplySegments(reply);
+  // v1.5.2: 段内 dedup — 修 LLM 一次生成的多段 || 内部出现语义重复 bug
+  const rawSegments = splitReplySegments(reply);
+  const { kept: segments, dropped: droppedSegs } = dedupSegments(rawSegments, 0.55);
+  if (droppedSegs.length) {
+    log('info', `[Proactive] 段内去重：剪掉 ${droppedSegs.length} 段重复 companion=${companion.id}; ${droppedSegs.map(d => `"${d.text.slice(0,20)}"~"${d.similar_to.slice(0,20)}"(sim=${d.sim.toFixed(2)})`).join('; ')}`);
+  }
   let totalStickers = 0;
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
