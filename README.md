@@ -15,7 +15,9 @@
 [![Docker](https://img.shields.io/badge/Docker-GHCR-2496ED.svg?logo=docker&logoColor=white)](https://github.com/dimang01/xiyu-ai/pkgs/container/xiyu-ai)
 [![Releases](https://img.shields.io/github/v/release/dimang01/xiyu-ai?color=FF8FB8)](https://github.com/dimang01/xiyu-ai/releases)
 
-[快速上手](#-30-秒上手) · [功能](#它能做什么) · [Provider 矩阵](#多-provider-支持) · [部署](#部署) · [English](#english)
+**简体中文** | [English](./README.en.md)
+
+[快速上手](#-30-秒上手) · [功能](#它能做什么) · [Provider 矩阵](#多-provider-支持) · [部署](#部署)
 
 </div>
 
@@ -410,49 +412,8 @@ bash scripts/opensource_check.sh   # 6 项开源合规
 
 仓库**不包含**任何第三方表情包图片。`assets/stickers/` 只有加载与 tag 匹配机制，启用表情包请自行准备有合法授权的素材。
 
----
-
-## English
-
-> One-line summary: **Open-source AI-girlfriend framework — she starts already crushing on you**, not as a stranger. Node.js backend, plain-HTML frontend, 11 chat / 8 vision / 9 ASR / 5 TTS / 5 image / 4 embedding / 4 search providers, all swappable from the in-browser Setup Wizard.
-
-### Quick Start
-
-```bash
-docker run -d -p 3000:3000 -v xiyu-data:/app/data \
-  --name xiyu-ai ghcr.io/dimang01/xiyu-ai:latest
-# Open http://localhost:3000/app/setup.html
-```
-
-### What it does
-
-- **Default crushing on you** (affection 35/100, stage 暧昧) — not stranger-to-lover grind
-- **18-section system prompt** stitched per reply: 46+ concrete life memories, today's schedule, recent context, long-term summary, anti-AI-tone rules
-- **5-stage relationship arc**, each with its own form of address
-- **Real-person texting cadence**: ≤15 chars per message, multi-burst sending, Persona Guard post-check
-- **Proactive messages**: motivation-score driven, anti-spam backoff, anniversary/holiday greetings
-- **Missing-level 0–4**: combines dependency + idle gap (30m / 3h / 6h / 12h / 24h), tone adapts naturally
-- **Her diary** + **"today's thought for you"**, both playable via TTS
-- **Memory v2**: 7-layer taxonomy × weight × forgetting curve, semantic recall + keyword fallback
-- **Browser Playground**: full pipeline without WeChat — voice in (ASR), voice out (TTS), full chat
-- **WeChat in-browser QR binding** — no `ILINK_*` env vars to pre-configure
-
-### Known limit
-
-iLink/ClawBot protocol **forbids outbound voice from bots in WeChat** (HTTP 200 returned, message silently dropped). Voice synthesis works in the web/PWA client only. SILK encoding pipeline kept for if Tencent opens it up later.
-
-### Disclaimer
-
-Research / hobbyist code, **not a turnkey product**. Read [Security](#安全) and [Legal / Compliance](#合规) (中文) before deploying anywhere serious. MIT only covers the code; you own the compliance of what you build with it.
-
-### Full docs
-
-Authoritative feature list in Chinese: [`docs/FEATURES.txt`](./docs/FEATURES.txt). The Chinese sections above are the primary documentation; this English block is a summary.
-
----
-
 <div align="center">
 
-[⬆ 回到顶部](#溪语-ai--xiyu-ai)
+[⬆ 回到顶部](#溪语-ai--xiyu-ai) · [English](./README.en.md)
 
 </div>
