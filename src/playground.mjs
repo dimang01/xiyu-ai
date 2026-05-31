@@ -29,6 +29,10 @@ import {
 } from './memory.mjs';
 import { safeOutboundReply } from './moderation.mjs';
 import { buildStickerPromptHint, hasStickers, parseStickerMarkers } from './stickers.mjs';
+import {
+  getEmotionStateWithDefaults, updateEmotionFromUserMessage,
+  updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel,
+} from './emotion_state.mjs';
 
 /**
  * @param {object} companion 由调用方查好的 companion 行
@@ -72,10 +76,20 @@ export async function playgroundChat(companion, userText) {
   const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();
   const stickerHint = buildStickerPromptHint(stickerEnabled);
 
+  // v1.5.2 PR E: 跟 bot.mjs 路径对齐 — 每条用户消息都重算 7 维情绪并喂回 prompt。
+  // 之前 playground 完全跳过 emotion_state，导致：
+  //   1. 浏览器对话时她情绪不演化
+  //   2. dashboard 看到的 7 维状态因 playground 对话停滞
+  //   3. playground 回复缺"她想念档"口吻
+  let emotionState = getEmotionStateWithDefaults(companion.id);
+  emotionState = updateEmotionFromUserMessage(companion.id, emotionState, text, { companion });
+  const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
+  const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel });
+
   let systemPrompt = buildSystemPrompt(companion, {
     memories, userProfile, recentTurns, longTermDigest,
     promptMode: 'reply', dailySchedule, recentSchedules, personaFacts,
-  }) + stickerHint;
+  }) + stickerHint + emotionHint;
 
   // 关系刚升级
   const celebration = consumePendingCelebration(companion.id);
@@ -125,6 +139,11 @@ export async function playgroundChat(companion, userText) {
     throw err;
   }
   reply = safeOutboundReply(reply);
+
+  // v1.5.2 PR E: assistant reply 后也走情绪更新（mood drift / energy 恢复等），跟 bot.mjs 对齐
+  try {
+    updateEmotionFromAssistantReply(companion.id, emotionState, reply, { companion });
+  } catch { /* 情绪更新失败不影响主链路 */ }
 
   // 拆段（与 bot.mjs 同款 || 拆分），并把 [STICKER:xxx] 标记原样保留在 segments 里
   const segments = String(reply).split(/\s*(?:\|\||｜｜)\s*/g).map(s => s.trim()).filter(Boolean);
