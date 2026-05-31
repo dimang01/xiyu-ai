@@ -3291,6 +3291,47 @@ router.get('/companions/:id/event-graph', requireAuth, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// v1.6 PR I: 3 个月模拟时间线 backfill
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/backfill-status
+router.get('/companions/:id/backfill-status', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const { getCompanionBackfillStatus } = await import('./db.mjs');
+  return ok(res, getCompanionBackfillStatus(id));
+});
+
+// POST /api/companions/:id/backfill-history
+// body: { days_back?: number, event_count?: number, force?: boolean }
+router.post('/companions/:id/backfill-history',
+  rateLimit({ scope: 'backfill-history', maxPerWindow: 3, windowMs: 24 * 60 * 60 * 1000, message: '每日最多生成 3 次' }),
+  requireAuth,
+  async (req, res) => {
+    const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+    const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+    const daysBack   = Number(req.body?.days_back) || 90;
+    const eventCount = Number(req.body?.event_count) || 35;
+    const force      = !!req.body?.force;
+    try {
+      const { backfillTimelineForCompanion } = await import('./backfill_history.mjs');
+      const r = await backfillTimelineForCompanion(c, {
+        daysBack, eventCount, force,
+        accountId: req.authUser?.id || null,
+      });
+      if (r.error) return err(res, r.error, 500);
+      if (r.skipped === 'already-backfilled' && !force) {
+        return err(res, '已经生成过历史时间线了，加 force=true 可覆盖重生', 409);
+      }
+      return ok(res, r);
+    } catch (e) {
+      log('error', `[API] backfill-history failed companion=${id}: ${e.message}`);
+      return err(res, e.message || '生成失败', 500);
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // v1.5: 离线留言胶囊（offline letter）
 // ─────────────────────────────────────────────────────────────────────────────
 

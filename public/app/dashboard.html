@@ -539,6 +539,27 @@
           </div>
         </div>
 
+        <!-- 3 个月模拟时间线（v1.6 PR I） -->
+        <div class="card p-7">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sakura to-sakura-deep flex items-center justify-center shadow-sakura">
+              <i data-lucide="history" class="w-5 h-5 text-white"></i>
+            </div>
+            <h3 class="text-[15px] font-bold">补全 3 个月互动史</h3>
+          </div>
+          <p class="text-[12px] text-mute font-medium leading-relaxed">
+            让她"已经认识你 3 个月"——LLM 一次性生成 30-40 个虚拟互动事件
+            （吵架/和好/送伞/记得你生日…）写到聊天记忆里。
+            <br><span class="text-[11px] text-mute/80">关键事件会自动入长期记忆；好感度从 5 演化到 30 暧昧档；之后她聊天时会"想起来"这些事。每天最多 3 次。</span>
+          </p>
+          <div class="mt-3 flex items-center gap-2">
+            <button id="btn-backfill" type="button" class="text-[12px] font-semibold text-white bg-gradient-to-r from-sakura to-sakura-deep rounded-full px-4 py-1.5 hover:shadow-sakura transition-all">
+              <i data-lucide="sparkles" class="inline w-3 h-3 align-[-1px]"></i> 生成 3 个月历史
+            </button>
+            <span id="backfill-msg" class="text-[11px] text-mute"></span>
+          </div>
+        </div>
+
         <!-- 离线留言胶囊（v1.5） -->
         <div class="card p-7">
           <div class="flex items-center gap-3 mb-3">
@@ -1412,6 +1433,62 @@
       }
       // 初次加载
       if (capsuleList) refreshCapsules();
+
+      // ─── 3 个月模拟时间线（v1.6 PR I）─────────────────────────────────────
+      const btnBackfill = document.getElementById('btn-backfill');
+      const backfillMsg = document.getElementById('backfill-msg');
+      if (btnBackfill) {
+        // 先查状态：已 backfill 过则按钮变"已生成"
+        (async () => {
+          try {
+            const tk = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '';
+            const r = await fetch(`/api/companions/${companionId}/backfill-status`, {
+              headers: { Authorization: 'Bearer ' + tk },
+            });
+            const d = await r.json();
+            if (d?.data?.backfilledAt) {
+              backfillMsg.textContent = `已生成 · ${d.data.syntheticCount} 条记忆`;
+            }
+          } catch {}
+        })();
+        btnBackfill.addEventListener('click', async () => {
+          if (btnBackfill.disabled) return;
+          if (!confirm('LLM 会一次性生成 30-40 个虚拟互动事件（约 10-30 秒），并写入聊天记忆。如果已经生成过会询问是否覆盖。继续？')) return;
+          btnBackfill.disabled = true;
+          backfillMsg.textContent = '她在回忆…大约 10-30 秒';
+          try {
+            const tk = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '';
+            let r = await fetch(`/api/companions/${companionId}/backfill-history`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+              body: JSON.stringify({ days_back: 90, event_count: 35 }),
+            });
+            let d = await r.json();
+            if (!d.ok && d.error?.includes('已经生成过')) {
+              if (!confirm('已经生成过了，要覆盖重生吗？（之前的虚拟历史会被新版本替换）')) {
+                backfillMsg.textContent = '已取消';
+                return;
+              }
+              r = await fetch(`/api/companions/${companionId}/backfill-history`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+                body: JSON.stringify({ days_back: 90, event_count: 35, force: true }),
+              });
+              d = await r.json();
+            }
+            if (!d.ok) {
+              backfillMsg.textContent = '失败：' + (d.error || d.message || '');
+              return;
+            }
+            const x = d.data;
+            backfillMsg.textContent = `✓ 已生成 ${x.turnCount} 条对话 / ${x.memoryCount} 条记忆 / 好感度 ${x.endingAffection}`;
+          } catch (e) {
+            backfillMsg.textContent = '失败：' + e.message;
+          } finally {
+            setTimeout(() => { btnBackfill.disabled = false; }, 3000);
+          }
+        });
+      }
 
       // ─── 离线留言胶囊（v1.5）─────────────────────────────────────────────
       const btnLetter = document.getElementById('btn-letter-generate');
