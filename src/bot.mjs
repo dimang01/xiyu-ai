@@ -30,9 +30,23 @@ import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel } from './emotion_state.mjs';
+import { detectPhotoIntent, hasUnsafePhotoContent } from './photo_intent.mjs';
+import { pickPhotoCaption, sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+const PHOTO_REQUEST_ENABLED = !['0', 'false', 'no', 'off'].includes(String(process.env.PHOTO_REQUEST_ENABLED ?? 'true').toLowerCase());
+const PHOTO_REQUEST_FALLBACKS = [
+  '刚才没拍好，等我一下',
+  '现在有点乱，等我拍好点',
+  '等等，我找个好看的角度',
+  '刚刚那张糊了，别急',
+];
+const UNSAFE_PHOTO_REPLY = '这个不行啦，换个正常点的给你看';
+
+function pickPhotoRequestFallback() {
+  return PHOTO_REQUEST_FALLBACKS[Math.floor(Math.random() * PHOTO_REQUEST_FALLBACKS.length)];
+}
 
 const BIND_CODE_RE = /(?:^绑定\s*)?(XYU-\d{6})$/i;
 // 模拟打字延迟：按文字长度自适应
@@ -275,6 +289,48 @@ export async function handleMessage(rawMsg, botContext = {}) {
     }
 
     if (!userText) return;
+
+    const photoIntent = detectPhotoIntent(userText);
+    if (photoIntent.type === 'weak_photo_context') {
+      log('debug', `[Bot] weak photo context companion=${companion.id} reason=${photoIntent.reason}`);
+    }
+    if (photoIntent.type === 'strong_photo_request') {
+      try { recordUserReplied(companion.id); } catch {}
+
+      let replyText = '';
+      if (hasUnsafePhotoContent(userText)) {
+        replyText = UNSAFE_PHOTO_REPLY;
+      } else if (!PHOTO_REQUEST_ENABLED) {
+        replyText = pickPhotoRequestFallback();
+      } else {
+        await sendTyping(ctx, msg.fromUser, msg.contextToken);
+        const activity = companion.current_scene || '在写东西';
+        const caption = pickPhotoCaption({ source: 'request', activity });
+        const result = await sendCompanionPhoto({
+          companion: { ...companion, wechat_user_id: msg.fromUser },
+          user: { ...binding, wechat_user_id: msg.fromUser },
+          context: ctx,
+          contextToken: msg.contextToken,
+          activity,
+          caption,
+          source: 'request',
+        });
+        if (result.ok) {
+          replyText = result.caption || caption;
+          await sleep(randInt(700, 1400));
+        } else if (result.code === 'cooldown') {
+          replyText = '刚才不是才给你看过嘛';
+        } else {
+          replyText = pickPhotoRequestFallback();
+          log('warn', `[Bot] photo request fallback companion=${companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
+        }
+      }
+
+      await sendAndRecord(ctx, msg.fromUser, replyText, msg.contextToken);
+      saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
+      saveConversationTurn(companion.id, 'assistant', replyText, companion.chat_mode_active);
+      return;
+    }
 
     // ── 召回长期记忆：优先语义检索，失败兜底关键词 ─────────────────────────
     let memories = [];
