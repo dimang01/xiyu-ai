@@ -54,6 +54,7 @@ export function getDb() {
     migrateTimeCapsules();
     migrateSilentMode();
     migrateRelationalDiary();
+    migrateProactiveLastSent();
     migrateConversationTurnSynthetic();
     migrateBackfillFlag();
   }
@@ -669,6 +670,11 @@ function migrateEmotionState() {
       updated_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  // v1.6: 扩 4 维 — patience（耐心）/ excitement（兴奋短期）/ annoyance（烦躁短期）/ gratitude（感激）
+  addColIfMissing('companion_emotion_state', 'patience',   'INTEGER DEFAULT 60');
+  addColIfMissing('companion_emotion_state', 'excitement', 'INTEGER DEFAULT 30');
+  addColIfMissing('companion_emotion_state', 'annoyance',  'INTEGER DEFAULT 0');
+  addColIfMissing('companion_emotion_state', 'gratitude',  'INTEGER DEFAULT 40');
 }
 
 // ─── Proactive Engine v2 ───────────────────────────────────────────────────────
@@ -698,14 +704,21 @@ function migrateEmotionHistory() {
     CREATE INDEX IF NOT EXISTS idx_emotion_history_companion_created
       ON companion_emotion_history(companion_id, created_at DESC);
   `);
+  // v1.6: 历史表也加 4 维（旧行保持 NULL）
+  addColIfMissing('companion_emotion_history', 'patience',   'INTEGER');
+  addColIfMissing('companion_emotion_history', 'excitement', 'INTEGER');
+  addColIfMissing('companion_emotion_history', 'annoyance',  'INTEGER');
+  addColIfMissing('companion_emotion_history', 'gratitude',  'INTEGER');
 }
 
 export function insertEmotionHistory(companionId, state, source = 'auto') {
   const db = getDb();
   db.prepare(`
     INSERT INTO companion_emotion_history
-      (companion_id, affection, trust, dependency, possessiveness, security, energy, mood, source, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (companion_id, affection, trust, dependency, possessiveness, security, energy, mood,
+       patience, excitement, annoyance, gratitude,
+       source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     companionId,
     state.affection   ?? null,
@@ -715,6 +728,10 @@ export function insertEmotionHistory(companionId, state, source = 'auto') {
     state.security    ?? null,
     state.energy      ?? null,
     state.mood        ?? null,
+    state.patience    ?? null,
+    state.excitement  ?? null,
+    state.annoyance   ?? null,
+    state.gratitude   ?? null,
     source,
     new Date().toISOString(),
   );
@@ -2863,6 +2880,30 @@ function migrateProactiveDailyTarget() {
 // dashboard 角落显示一个呼吸光点表示"她还在"。用户主动发她依然会回复。
 function migrateSilentMode() {
   addColIfMissing('companions', 'silent_mode', 'INTEGER DEFAULT 0');
+}
+
+// v1.5.2: 主动消息发送时间持久化 — 防进程重启后重复发送
+// 每发一条主动消息记录到 companions.last_proactive_sent_at，
+// 下次发送前 hard 检查"30 分钟内不重复"，重启也生效。
+function migrateProactiveLastSent() {
+  addColIfMissing('companions', 'last_proactive_sent_at', 'INTEGER');
+  addColIfMissing('companions', 'last_proactive_kind', 'TEXT');
+}
+
+export function recordProactiveSentTimestamp(companionId, kind) {
+  const now = Math.floor(Date.now() / 1000);
+  getDb().prepare(`
+    UPDATE companions
+    SET last_proactive_sent_at = ?, last_proactive_kind = ?
+    WHERE id = ?
+  `).run(now, kind || null, companionId);
+}
+
+export function getProactiveLastSent(companionId) {
+  const row = getDb().prepare(`
+    SELECT last_proactive_sent_at, last_proactive_kind FROM companions WHERE id = ?
+  `).get(companionId);
+  return row ? { lastAt: row.last_proactive_sent_at || 0, lastKind: row.last_proactive_kind || null } : { lastAt: 0, lastKind: null };
 }
 
 // v1.4.0 Sprint 1: 主动发语音功能字段。

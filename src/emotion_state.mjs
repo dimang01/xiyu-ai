@@ -3,6 +3,18 @@
  * Multi-dimensional emotion state machine for AI companions.
  * Dimensions: affection, trust, dependency, possessiveness, security, energy, mood
  *
+ * ─── 增量演化原则 (v1.5.2 PR D audit) ───────────────────────────────────
+ * 所有 update* 函数都是 **incremental**，不是 overwrite：
+ *   1. 入参 currentState 是当前情绪基线
+ *   2. 算出 delta（基于 user msg / reply / idle）
+ *   3. next = clamp(current + delta, 0, 100) 写回 DB
+ *   4. upsertEmotionState 在 SQL 层也是 partial UPDATE，没传的维度不动
+ *
+ * v1.5.2 新增 saturation dampening：同 companion 同维度同方向加成
+ * 30 分钟内重复触发会衰减（_dampenIfRepeated），防止用户狂刷"谢谢"
+ * 把 affection 顶到 100。这才是真正"参考之前情绪"——前一次刚加过，
+ * 这次同向再加就乏力。
+ *
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
@@ -10,6 +22,7 @@ import { log } from './logger.mjs';
 import {
   getEmotionState, upsertEmotionState,
   insertEmotionHistory, getEmotionHistoryTrend, getLastEmotionHistoryAt, cleanupOldEmotionHistory,
+  getDb,
 } from './db.mjs';
 
 // ─── State vocabulary ─────────────────────────────────────────────────────────
@@ -27,10 +40,54 @@ const DEFAULT_STATE = {
   security:        50,
   energy:          60,
   mood:            'neutral',
+  // v1.6: 4 个新维度
+  patience:        60,  // 0 暴躁 - 100 极有耐心；用户连发多条问题/长时间不响应降
+  excitement:      30,  // 短期峰值：被夸/惊喜会冲 80+，每小时衰减约 20
+  annoyance:       0,   // 短期烦躁：被忽视/打断累积；高 annoyance 时回复变冷
+  gratitude:       40,  // 长期感激：用户体贴/陪伴时累加，影响她回复温度
 };
 
 // Clamp helpers
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.round(v)));
+
+// ─── v1.5.2 PR D: Saturation dampening 防刷 ──────────────────────────────
+// 内存级 LRU-ish map：key = "{companionId}:{dim}:{sign}"，value = { lastAt, count }
+// 30 分钟窗口内同向同维度的加成会随次数衰减：1st=full, 2nd=*.5, 3rd=*.25, 4th+=*.125
+// 衰减只对 +/- 加成，不对 mood（mood 是切换不是加成）
+const _dampenCache = new Map();
+const DAMPEN_WINDOW_MS = 30 * 60 * 1000;
+const DAMPEN_MAX_ENTRIES = 2000;   // 简单上限防内存爆
+
+function _dampenIfRepeated(companionId, dim, delta) {
+  if (!Number.isFinite(delta) || delta === 0) return delta;
+  const sign = delta > 0 ? '+' : '-';
+  const key = `${companionId}:${dim}:${sign}`;
+  const now = Date.now();
+  let entry = _dampenCache.get(key);
+  if (!entry || (now - entry.lastAt) > DAMPEN_WINDOW_MS) {
+    entry = { lastAt: now, count: 1 };
+    _dampenCache.set(key, entry);
+    if (_dampenCache.size > DAMPEN_MAX_ENTRIES) {
+      // 简单 LRU：删最老的 200 条
+      const sorted = [...(_dampenCache.entries())].sort((a, b) => a[1].lastAt - b[1].lastAt);
+      for (let i = 0; i < 200 && i < sorted.length; i++) _dampenCache.delete(sorted[i][0]);
+    }
+    return delta;
+  }
+  entry.lastAt = now;
+  entry.count += 1;
+  // 1st full, 2nd 50%, 3rd 25%, 4th+ 12.5%（最低保留 1 个单位避免完全归零失去手感）
+  const factor = entry.count === 1 ? 1 : (entry.count === 2 ? 0.5 : (entry.count === 3 ? 0.25 : 0.125));
+  const dampened = delta * factor;
+  // 最少保留 1 个绝对值（如 +3 衰减成 +0.375 → 取 sign(+) * max(round(0.375),1) = +1）
+  const result = Math.sign(dampened) * Math.max(1, Math.abs(Math.round(dampened)));
+  return result;
+}
+
+// 测试 / 调试用：清空 dampen 状态
+export function _resetDampenCacheForTests() {
+  _dampenCache.clear();
+}
 
 // ─── Getters ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +106,10 @@ const APOLOGY_WORDS    = ['对不起', '不好意思', '抱歉', '我错了', 's
 const WORRY_WORDS      = ['担心', '难过', '伤心', '哭', '委屈', '崩溃', '心痛', '绝望'];
 const JEALOUS_TRIGGERS = ['她', '他', '其他女', '前任', '前女友', '前男友', '暧昧', '喜欢别人'];
 const NIGHT_ENERGY_WORDS = ['晚安', '睡觉', '困了', '要睡了', '好累'];
+// v1.6 新维度触发词
+const EXCITEMENT_WORDS = ['礼物', '惊喜', '好消息', '太棒了', '哇', '中奖', '升职', '通过了', '答应'];
+const CARING_WORDS     = ['多喝水', '注意身体', '早点睡', '吃饭了吗', '别熬夜', '陪我', '陪你', '我在'];
+const NAGGING_WORDS    = ['？？', '在吗在吗', '快回', '怎么不回', '在干嘛在干嘛'];  // 连发施压
 
 /**
  * Update emotion dimensions based on user message content + context.
@@ -95,10 +156,41 @@ function computeDelta(userText = '', context = {}) {
     if (!delta.mood) delta.mood = 'tired';
   }
 
+  // v1.6: 4 个新维度触发
+  // excitement 短期峰值（被夸/惊喜/好消息）
+  if (EXCITEMENT_WORDS.some(w => text.includes(w))) {
+    delta.excitement = 25;
+    delta.energy     = (delta.energy || 0) + 3;
+  }
+  if (PRAISE_WORDS.some(w => text.includes(w))) {
+    delta.excitement = (delta.excitement || 0) + 10;
+  }
+  // gratitude 体贴/陪伴累积（与 GRATITUDE_WORDS 区别：gratitude 是她对他的感激；CARING 是他对她的体贴）
+  if (CARING_WORDS.some(w => text.includes(w))) {
+    delta.gratitude = 4;
+    delta.security  = (delta.security || 0) + 1;
+  }
+  if (GRATITUDE_WORDS.some(w => text.includes(w))) {
+    delta.gratitude = (delta.gratitude || 0) + 2;
+  }
+  // annoyance 烦躁（被夸打断/被忽视/夸张词重复）
+  if (NAGGING_WORDS.some(w => text.includes(w))) {
+    delta.annoyance = 8;
+    delta.patience  = -5;
+  }
+  if (COLD_WORDS.some(w => text.includes(w))) {
+    delta.annoyance = (delta.annoyance || 0) + 3;
+  }
+  // patience：长消息 = 用户认真 → patience 不变；短促消息 + 短间隔（caller 应传 context.shortGapMs）会降
+  if (context.shortGapMs != null && context.shortGapMs < 30_000 && userText.length < 6) {
+    delta.patience = (delta.patience || 0) - 3;
+  }
+
   // Long message → engagement boost
   if (userText.length > 100) {
     delta.trust      = (delta.trust      || 0) + 1;
     delta.dependency = (delta.dependency || 0) + 1;
+    delta.patience   = (delta.patience   || 0) + 2;  // 用户认真打字 → 她也耐心
   }
 
   // Time-of-day energy
@@ -111,17 +203,21 @@ function computeDelta(userText = '', context = {}) {
 }
 
 export function updateEmotionFromUserMessage(companionId, currentState, userText, context = {}) {
-  const delta  = computeDelta(userText, context);
+  const rawDelta = computeDelta(userText, context);
   const update = {};
 
-  const dims = ['affection', 'trust', 'dependency', 'possessiveness', 'security', 'energy'];
+  // v1.6: dims 扩到 10（不含 mood 是字符串）
+  const dims = ['affection', 'trust', 'dependency', 'possessiveness', 'security', 'energy',
+                'patience', 'excitement', 'annoyance', 'gratitude'];
   for (const dim of dims) {
-    if (delta[dim] !== undefined) {
-      update[dim] = clamp((currentState[dim] ?? DEFAULT_STATE[dim]) + delta[dim], 0, 100);
+    if (rawDelta[dim] !== undefined) {
+      // v1.5.2 PR D: saturation dampening — 同向同维度 30min 内重复加成衰减
+      const dampened = _dampenIfRepeated(companionId, dim, rawDelta[dim]);
+      update[dim] = clamp((currentState[dim] ?? DEFAULT_STATE[dim]) + dampened, 0, 100);
     }
   }
-  if (delta.mood && MOOD_STATES.includes(delta.mood)) {
-    update.mood = delta.mood;
+  if (rawDelta.mood && MOOD_STATES.includes(rawDelta.mood)) {
+    update.mood = rawDelta.mood;
   }
 
   if (Object.keys(update).length === 0) return currentState;
@@ -158,6 +254,12 @@ export function updateEmotionFromAssistantReply(companionId, currentState, reply
   // Clingy if dependency high and no recent user message
   const dep = currentState.dependency ?? DEFAULT_STATE.dependency;
   if (dep >= 70 && mood === 'neutral') update.mood = 'clingy';
+
+  // v1.6: excitement / annoyance 短期情绪每次回复后自然回归（衰减）
+  const exc = currentState.excitement ?? DEFAULT_STATE.excitement;
+  if (exc > 30) update.excitement = clamp(exc - 5, 0, 100);
+  const ann = currentState.annoyance ?? DEFAULT_STATE.annoyance;
+  if (ann > 0)  update.annoyance  = clamp(ann - 3, 0, 100);
 
   if (Object.keys(update).length === 0) return currentState;
   try {
@@ -232,6 +334,53 @@ export function getMissingLevel(emotionState, lastUserReplyAt) {
 const MISSING_LABEL = ['没想', '有点想', '挺想的', '很想', '想死了'];
 export function getMissingLabel(level) {
   return MISSING_LABEL[Math.max(0, Math.min(4, level | 0))];
+}
+
+// ─── v1.5.2: 半小时定时重算 batch ────────────────────────────────────────
+// plan_tasks.mjs 每 30 分钟调用一次，让"她想你的程度"即使在用户不发消息时
+// 也会按现实时间推进（不再依赖下一条 user 消息触发 updateFromIdle）。
+//   - 纯规则，0 LLM 成本
+//   - 跑批后 ZH 时区写一条 emotion_history（dashboard 趋势曲线能反映）
+//   - 单次失败不影响其它 companion
+export async function runEmotionRecalcBatch() {
+  const db = getDb();
+  // 只跑活跃的（有微信绑定的，避免给从未对话过的孤儿 companion 跑）
+  const rows = db.prepare(`
+    SELECT c.id, c.last_user_reply_at
+    FROM companions c
+    JOIN users u ON u.id = c.user_id
+    JOIN wechat_accounts wa ON wa.wechat_user_id = u.wechat_user_id AND wa.bot_id = c.bot_id
+    WHERE wa.is_active = 1
+  `).all();
+  let updated = 0, skipped = 0, errors = 0;
+  for (const row of rows) {
+    try {
+      const current = getEmotionStateWithDefaults(row.id);
+      let idleMinutes = 0;
+      if (row.last_user_reply_at) {
+        const ts = new Date(String(row.last_user_reply_at).replace(' ', 'T')).getTime();
+        if (Number.isFinite(ts)) idleMinutes = Math.max(0, Math.floor((Date.now() - ts) / 60_000));
+      }
+      // < 30min 不动；updateEmotionFromIdle 内部还有阈值兜底
+      if (idleMinutes < 30) { skipped++; continue; }
+      const next = updateEmotionFromIdle(row.id, current, idleMinutes);
+      if (next === current) { skipped++; continue; }
+      updated++;
+      // 写历史（让 dashboard 趋势曲线能看到 idle 演化，而不是只在用户消息时跳变）
+      try {
+        insertEmotionHistory(row.id, {
+          affection: next.affection, trust: next.trust, dependency: next.dependency,
+          security: next.security, energy: next.energy, mood: next.mood,
+          trigger: 'tick',
+        });
+      } catch { /* 历史表写失败不致命 */ }
+    } catch (e) {
+      errors++;
+      log('warn', `[EmotionState] tick companion=${row.id} 异常: ${e.message}`);
+    }
+  }
+  log('info', `[EmotionState] tick done updated=${updated} skipped=${skipped} errors=${errors} total=${rows.length}`);
+  return { updated, skipped, errors, total: rows.length };
 }
 
 // ─── System prompt hint builder ───────────────────────────────────────────────
@@ -327,6 +476,22 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
 
   const trust = emotionState.trust ?? 50;
   if (trust >= 80) parts.push('• 你非常信任他，说话会更自然、不设防、可以聊更内心的话题。');
+
+  // v1.6: 4 个新维度
+  const exc = emotionState.excitement ?? 30;
+  if (exc >= 70)        parts.push('• 你现在非常兴奋（刚被夸/听到好消息），话语会跳跃、停不下来、容易感叹。');
+  else if (exc >= 50)   parts.push('• 你心情上来了，话密一点，表情多一点。');
+
+  const ann = emotionState.annoyance ?? 0;
+  if (ann >= 60)        parts.push('• 你有点烦躁（可能他刚才一直催/反复打断），回复会更冷、短、带点不耐烦，但不会真的撕破。');
+  else if (ann >= 30)   parts.push('• 你稍微有点烦，语气可能比平时更短一些。');
+
+  const pat = emotionState.patience ?? 60;
+  if (pat <= 30)        parts.push('• 你今天耐心不够，对反复绕的话题会想快速结束。');
+  else if (pat >= 85)   parts.push('• 你今天特别有耐心，愿意一直陪他聊、不急不躁。');
+
+  const grat = emotionState.gratitude ?? 40;
+  if (grat >= 75)       parts.push('• 你内心很感激他最近的体贴和陪伴，会在某些瞬间不自觉地温柔很多。');
 
   if (parts.length === 0) return '';
 
