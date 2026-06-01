@@ -97,35 +97,9 @@
   </script>
 
   <style>
-    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
-    .petal { position:absolute; top:-40px; pointer-events:none; will-change:transform; animation: petal-fall linear infinite; opacity:0; }
-    @keyframes petal-fall {
-      0% { transform: translate3d(0,-40px,0) rotate(0deg); opacity:0; }
-      10% { opacity:.55; } 90% { opacity:.55; }
-      100% { transform: translate3d(60px,110vh,0) rotate(420deg); opacity:0; }
-    }
-    @keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-14px);} }
-    .logo-float { animation: float 5s ease-in-out infinite; }
-    .reveal { opacity:0; transform:translateY(28px); transition: opacity .8s cubic-bezier(.16,1,.3,1), transform .8s cubic-bezier(.16,1,.3,1); }
-    .reveal.in { opacity:1; transform:translateY(0); }
-    .reveal[data-delay="1"] { transition-delay:.08s; }
-    .reveal[data-delay="2"] { transition-delay:.16s; }
-    .reveal[data-delay="3"] { transition-delay:.24s; }
-    .chat-msg { opacity:0; transform:translateY(12px); }
-    .chat.in .chat-msg:nth-child(2) { animation: msg-in .55s .15s forwards cubic-bezier(.16,1,.3,1); }
-    .chat.in .chat-msg:nth-child(3) { animation: msg-in .55s .85s forwards cubic-bezier(.16,1,.3,1); }
-    .chat.in .chat-msg:nth-child(4) { animation: msg-in .55s 1.55s forwards cubic-bezier(.16,1,.3,1); }
-    @keyframes msg-in { to { opacity:1; transform:translateY(0); } }
-    .typing-dot { width:6px; height:6px; border-radius:50%; background:#FFB6D9; display:inline-block; animation: typing 1.2s infinite ease-in-out; }
-    .typing-dot:nth-child(2) { animation-delay:.15s; }
-    .typing-dot:nth-child(3) { animation-delay:.3s; }
-    @keyframes typing { 0%,60%,100%{transform:translateY(0); opacity:.4;} 30%{transform:translateY(-4px); opacity:1;} }
-    .step-connector { background-image: radial-gradient(circle, #FFB6D9 1.2px, transparent 1.4px); background-size:10px 2px; background-repeat:repeat-x; }
-    .pricing-pro { background: linear-gradient(135deg, #FFB6D9 0%, #FF8FB8 100%); }
-    .mock-chat::-webkit-scrollbar { display:none; }
-    .nav-link { position:relative; }
-    .nav-link::after { content:''; position:absolute; left:0; right:0; bottom:-6px; height:2px; background:#FFB6D9; transform:scaleX(0); transform-origin:center; transition: transform .3s ease; }
-    .nav-link:hover::after { transform: scaleX(1); }
+  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  .reveal { opacity:0; transform:translateY(28px); transition: opacity .8s cubic-bezier(.16,1,.3,1), transform .8s cubic-bezier(.16,1,.3,1); }
+  .reveal.in { opacity:1; transform:translateY(0); }
   </style>
   <link rel="manifest" href="/manifest.webmanifest" />
   
@@ -175,58 +149,45 @@
 
   <!-- HERO -->
   <section id="hero" class="relative min-h-screen flex items-center justify-center overflow-hidden bg-white">
-    <div class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-      <svg width="0" height="0" style="position:absolute">
-        <defs>
-          <symbol id="petal" viewBox="0 0 100 100">
-            <path d="M50 8 C30 28, 28 58, 50 92 C72 58, 70 28, 50 8 Z" fill="#FFB6D9"/>
-          </symbol>
-        </defs>
-      </svg>
-      <svg class="petal" style="left:6%;  width:22px; animation-duration:14s; animation-delay:0s"><use href="#petal"/></svg>
-      <svg class="petal" style="left:24%; width:18px; animation-duration:17s; animation-delay:5s"><use href="#petal"/></svg>
-      <svg class="petal" style="left:48%; width:26px; animation-duration:13s; animation-delay:9s"><use href="#petal"/></svg>
-      <svg class="petal" style="left:71%; width:20px; animation-duration:16s; animation-delay:3s"><use href="#petal"/></svg>
-      <svg class="petal" style="left:88%; width:24px; animation-duration:15s; animation-delay:11s"><use href="#petal"/></svg>
-    </div>
-    <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(circle at 50% 30%, rgba(255,232,242,.7) 0%, rgba(255,255,255,0) 60%);"></div>
+    <!-- 极简渐变背景 -->
+    <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(255,232,242,.35) 0%, transparent 70%);"></div>
 
     <div class="relative z-10 text-center px-6 max-w-4xl mx-auto pt-24 pb-12">
-      <div class="logo-float inline-block mb-12">
-        <img src="/logo-512.webp" alt="溪语AI" width="240" height="240" class="w-44 md:w-56 lg:w-60 mx-auto rounded-[42px] shadow-sakura-lg" />
+      <div class="inline-block mb-10">
+        <img src="/logo-512.webp" alt="溪语AI" width="240" height="240" class="w-36 md:w-44 lg:w-52 mx-auto rounded-[36px] shadow-sakura-lg" />
       </div>
-      <div class="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-[12px] font-semibold rounded-full bg-sakura-soft text-sakura-deep">
-        <span class="w-1.5 h-1.5 rounded-full bg-sakura-deep animate-pulse"></span>
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-[12px] font-semibold rounded-full bg-sakura-soft/50 text-sakura-deep border border-sakura-soft">
+        <span class="w-1.5 h-1.5 rounded-full bg-sakura-deep"></span>
         内测期免费 · 0 元即用
       </div>
-      <h1 class="text-[56px] sm:text-[72px] lg:text-[96px] font-bold tracking-tightest leading-[0.98]">遇见溪语</h1>
-      <p class="mt-6 text-[18px] sm:text-[20px] lg:text-[24px] text-mute font-medium tracking-tight max-w-2xl mx-auto">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
-      <div class="mt-12 flex flex-col sm:flex-row gap-3 justify-center items-center">
-        <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-2 px-8 py-3.5 text-[15px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
+      <h1 class="text-[48px] sm:text-[64px] lg:text-[80px] font-bold tracking-tightest leading-[1.05]">遇见溪语</h1>
+      <p class="mt-5 text-[16px] sm:text-[18px] lg:text-[20px] text-mute font-medium tracking-tight max-w-xl mx-auto leading-relaxed">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
+      <div class="mt-10 flex flex-col sm:flex-row gap-3 justify-center items-center">
+        <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-2 px-8 py-3.5 text-[15px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.02] transition-all">
           立即开始
           <i data-lucide="arrow-right" class="w-4 h-4"></i>
         </a>
         <button onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})" class="px-8 py-3.5 text-[15px] font-semibold text-ink rounded-full border border-line hover:border-sakura hover:text-sakura-deep transition-all">了解更多</button>
       </div>
-      <p class="mt-8 text-[13px] text-mute font-medium">无需下载 · 在微信里与她相遇</p>
+      <p class="mt-6 text-[13px] text-mute/80 font-medium">无需下载 · 在微信里与她相遇</p>
 
-      <!-- 数据指标 -->
-      <div class="mt-14 grid grid-cols-3 gap-2 max-w-2xl mx-auto">
+      <!-- 数据指标 - 简化 -->
+      <div class="mt-12 flex justify-center gap-8 sm:gap-12 max-w-xl mx-auto">
         <div class="text-center">
-          <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">46+</div>
-          <div class="text-[11px] sm:text-[13px] text-mute font-medium">人生记忆条数</div>
+          <div class="text-[22px] sm:text-[28px] font-bold tracking-tight text-sakura-deep">46+</div>
+          <div class="text-[11px] sm:text-[12px] text-mute font-medium">人生记忆</div>
         </div>
         <div class="text-center">
-          <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">12 类</div>
-          <div class="text-[11px] sm:text-[13px] text-mute font-medium">过往维度档案</div>
+          <div class="text-[22px] sm:text-[28px] font-bold tracking-tight text-sakura-deep">12</div>
+          <div class="text-[11px] sm:text-[12px] text-mute font-medium">维度档案</div>
         </div>
         <div class="text-center">
-          <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">8-12</div>
-          <div class="text-[11px] sm:text-[13px] text-mute font-medium">每天的日程安排</div>
+          <div class="text-[22px] sm:text-[28px] font-bold tracking-tight text-sakura-deep">8-12</div>
+          <div class="text-[11px] sm:text-[12px] text-mute font-medium">日程安排</div>
         </div>
       </div>
     </div>
-    <div class="absolute bottom-8 left-1/2 -translate-x-1/2 text-mute/60 animate-bounce">
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 text-mute/40">
       <i data-lucide="chevron-down" class="w-5 h-5"></i>
     </div>
   </section>
@@ -266,7 +227,6 @@
 
   <!-- 她有完整的过去 -->
   <section id="metacognition" class="py-24 lg:py-40 px-6 bg-cloud relative overflow-hidden">
-    <div class="absolute top-0 right-0 w-96 h-96 rounded-full bg-gradient-to-br from-sakura-soft to-transparent opacity-60 pointer-events-none" aria-hidden="true"></div>
     <div class="max-w-content mx-auto relative">
       <div class="mb-16 lg:mb-20 grid lg:grid-cols-2 gap-12 items-center">
         <div>
@@ -302,7 +262,6 @@
 
   <!-- 她有自己的今天 -->
   <section id="daily-life" class="py-24 lg:py-40 px-6 bg-white relative overflow-hidden">
-    <div class="absolute -top-32 left-0 w-96 h-96 rounded-full bg-gradient-to-br from-sakura-soft to-transparent opacity-50 pointer-events-none" aria-hidden="true"></div>
     <div class="max-w-content mx-auto relative">
       <div class="mb-16 lg:mb-20 grid lg:grid-cols-2 gap-12 items-center">
         <div class="reveal lg:order-2">
@@ -402,7 +361,7 @@
     <div class="max-w-content mx-auto text-center">
       <p class="reveal text-[14px] font-semibold text-sakura-deep tracking-wider mb-4">主动陪伴</p>
       <h2 class="reveal text-[40px] sm:text-[56px] lg:text-[80px] font-bold tracking-tightest leading-[1.05]" data-delay="1">她会主动找你。</h2>
-      <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6 mb-16 lg:mb-20 max-w-xl mx-auto" data-delay="2">在你忙完的时候，在天气变化的时候，在她想你的时候。</p>
+      <p class="reveal text-[17px] lg:text-[20px] text-mute font-medium mt-6 mb-16 lg:mb-20 max-w-xl mx-auto" data-delay="2">在��忙完的时候，在天气变化的时候，在她想你的时候。</p>
       <div class="reveal flex justify-center" data-delay="3">
         <div class="relative w-[300px] sm:w-[340px] h-[640px] sm:h-[700px] bg-ink rounded-[52px] p-[10px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)]">
           <div class="absolute -left-[2px] top-32 w-[3px] h-12 bg-ink/80 rounded-l"></div>
@@ -588,7 +547,7 @@
       </div>
 
       <p class="reveal text-center text-[13px] text-mute font-medium mt-12 max-w-xl mx-auto leading-relaxed">
-        正式付费方案上线时我们会提前邮件通知。内测期间产生的人设、记忆和聊天数据将完整保留。
+        正式付��方案上线时我们会提前邮件通知。内测期间产生的人设、记忆和聊天数据将完整保留。
       </p>
     </div>
   </section>

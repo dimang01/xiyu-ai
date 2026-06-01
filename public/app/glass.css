@@ -300,13 +300,13 @@ main > *, section, .glass, .shadow-sakura, .shadow-card {
  * ══════════════════════════════════════════════════════════════════════════ */
 .theme-toggle {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 100px; /* 移动端避开底部导航 */
+  right: 20px;
   z-index: 9999;
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  border: none;
+  border: 1px solid var(--glass-border);
   cursor: pointer;
   background: var(--glass-bg);
   backdrop-filter: blur(16px);
@@ -317,6 +317,16 @@ main > *, section, .glass, .shadow-sakura, .shadow-card {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+/* 桌面端调整位置 */
+@media (min-width: 768px) {
+  .theme-toggle {
+    bottom: 32px;
+    right: 32px;
+    width: 52px;
+    height: 52px;
+  }
 }
 
 .theme-toggle:hover {
