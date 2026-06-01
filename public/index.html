@@ -7,11 +7,11 @@
         public/index.html public/robots.txt public/sitemap.xml
     自托管时用上面一行 sed 把三个文件里的 xiyuai.cc 都换成你自己的域名。
 -->
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
-  <meta name="color-scheme" content="light only" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#FFB6D9" />
   <title>溪语AI · 开源 AI 陪伴框架 (Xiyu AI · Open-source AI Companion Framework)</title>
   <meta name="description" content="溪语 AI 是一个开源的 AI 陪伴框架（MIT 协议）— 把大模型当作有完整人生背景的虚拟个体来调度，支持 9 家 chat / 5 家 image provider 切换，自带浏览器 playground，可选微信网页扫码绑定。Xiyu AI: an open-source AI companion framework on GitHub (MIT)." />
@@ -131,6 +131,9 @@
   
   <!-- Three.js for 3D background -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  
+  <!-- Theme Toggle (必须在 body 渲染前加载以避免闪烁) -->
+  <script src="/app/theme-toggle.js"></script>
 </head>
 
 <body class="bg-white text-ink font-sans antialiased selection:bg-sakura/30 selection:text-ink">
@@ -240,7 +243,7 @@
         <article class="reveal group p-8 lg:p-10 bg-white border border-line rounded-3xl hover:border-sakura-soft hover:-translate-y-1 hover:shadow-sakura-lg transition-all duration-300">
           <div class="w-14 h-14 rounded-2xl bg-sakura-soft flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><i data-lucide="sparkles" class="w-7 h-7 text-sakura-deep"></i></div>
           <h3 class="text-[22px] lg:text-[24px] font-bold mb-3 tracking-tight">外貌特征</h3>
-          <p class="text-[15px] lg:text-[16px] text-mute font-medium leading-relaxed">发色、瞳色、身高、身材、穿衣风格——从马尾到长卷发，从甜美学院到知性御姐，每个细节都由你描绘。</p>
+          <p class="text-[15px] lg:text-[16px] text-mute font-medium leading-relaxed">发色、瞳色、身高、身材、穿衣风格——从马尾到长卷发，从甜美学院到知性御姐，每个细节都由��描绘。</p>
         </article>
         <article class="reveal group p-8 lg:p-10 bg-white border border-line rounded-3xl hover:border-sakura-soft hover:-translate-y-1 hover:shadow-sakura-lg transition-all duration-300" data-delay="1">
           <div class="w-14 h-14 rounded-2xl bg-sakura-soft flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><i data-lucide="heart" class="w-7 h-7 text-sakura-deep"></i></div>

@@ -1,6 +1,7 @@
 /**
  * 溪语AI - 3D 樱花粒子场景
  * 使用 Three.js 创建沉浸式 Hero 背景
+ * 支持深色/浅色主题切换
  */
 
 (function() {
@@ -16,12 +17,36 @@
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   const isLowPerf = isMobile || (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 4);
 
+  // 主题检测
+  function isDarkMode() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ||
+           document.documentElement.classList.contains('dark');
+  }
+
+  // 颜色配置 - 支持主题切换
+  const COLORS = {
+    light: {
+      sakura: ['#FFB6D9', '#FF8FB8', '#FFD4E8', '#FFC4DC'],
+      glow: ['#FFE8F2', '#B8D4FF', '#FFD4E8', '#E8D4FF'],
+      star: '#ffffff'
+    },
+    dark: {
+      sakura: ['#FF6B9D', '#FF4081', '#FF85AB', '#FF5C8D'],
+      glow: ['#FF85AB', '#6B8CFF', '#A855F7', '#22D3EE'],
+      star: '#ffffff'
+    }
+  };
+
+  function getColors() {
+    return isDarkMode() ? COLORS.dark : COLORS.light;
+  }
+
   // 配置参数
   const CONFIG = {
-    sakuraCount: isLowPerf ? 30 : 60,      // 樱花粒子数量
-    glowCount: isLowPerf ? 60 : 120,       // 光点粒子数量
-    starCount: isLowPerf ? 80 : 200,       // 星尘数量
-    mouseInfluence: 0.0008,                // 鼠标影响强度
+    sakuraCount: isLowPerf ? 30 : 60,
+    glowCount: isLowPerf ? 60 : 120,
+    starCount: isLowPerf ? 80 : 200,
+    mouseInfluence: 0.0008,
     sakuraSize: isLowPerf ? 12 : 16,
     glowSize: isLowPerf ? 6 : 8,
     starSize: isLowPerf ? 2 : 3,
@@ -78,13 +103,9 @@
     const velocities = new Float32Array(count * 3);
     const rotations = new Float32Array(count);
     
-    // 樱花色系
-    const sakuraColors = [
-      new THREE.Color('#FFB6D9'),
-      new THREE.Color('#FF8FB8'),
-      new THREE.Color('#FFD4E8'),
-      new THREE.Color('#FFC4DC'),
-    ];
+    // 使用当前主题颜色
+    const currentColors = getColors();
+    const sakuraColors = currentColors.sakura.map(c => new THREE.Color(c));
 
     for (let i = 0; i < count; i++) {
       // 分布在屏幕上方和两侧
@@ -198,12 +219,9 @@
     const sizes = new Float32Array(count);
     const phases = new Float32Array(count);
     
-    const glowColors = [
-      new THREE.Color('#FFE8F2'),
-      new THREE.Color('#B8D4FF'),
-      new THREE.Color('#FFD4E8'),
-      new THREE.Color('#E8D4FF'),
-    ];
+    // 使用当前主题颜色
+    const currentColors = getColors();
+    const glowColors = currentColors.glow.map(c => new THREE.Color(c));
 
     for (let i = 0; i < count; i++) {
       positions[i * 3] = (Math.random() - 0.5) * 120;
@@ -458,7 +476,47 @@
       renderer.dispose();
       scene.clear();
       canvas.remove();
+    },
+    // 主题切换时更新颜色
+    updateColors: function() {
+      const currentColors = getColors();
+      
+      // 更新樱花颜色
+      const sakuraColorArr = sakuraParticles.geometry.attributes.color.array;
+      const sakuraColorPalette = currentColors.sakura.map(c => new THREE.Color(c));
+      for (let i = 0; i < CONFIG.sakuraCount; i++) {
+        const color = sakuraColorPalette[Math.floor(Math.random() * sakuraColorPalette.length)];
+        sakuraColorArr[i * 3] = color.r;
+        sakuraColorArr[i * 3 + 1] = color.g;
+        sakuraColorArr[i * 3 + 2] = color.b;
+      }
+      sakuraParticles.geometry.attributes.color.needsUpdate = true;
+      
+      // 更新光点颜色
+      const glowColorArr = glowParticles.geometry.attributes.color.array;
+      const glowColorPalette = currentColors.glow.map(c => new THREE.Color(c));
+      for (let i = 0; i < CONFIG.glowCount; i++) {
+        const color = glowColorPalette[Math.floor(Math.random() * glowColorPalette.length)];
+        glowColorArr[i * 3] = color.r;
+        glowColorArr[i * 3 + 1] = color.g;
+        glowColorArr[i * 3 + 2] = color.b;
+      }
+      glowParticles.geometry.attributes.color.needsUpdate = true;
     }
   };
+
+  // 监听主题变化
+  const themeObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.attributeName === 'data-theme' || mutation.attributeName === 'class') {
+        window.xiyu3DScene.updateColors();
+      }
+    });
+  });
+  
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme', 'class']
+  });
 
 })();

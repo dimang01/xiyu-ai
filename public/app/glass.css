@@ -15,6 +15,16 @@
  * ========================================================================== */
 
 :root {
+  /* 颜色模式：light / dark */
+  --color-mode: light;
+  
+  /* 基础背景色 */
+  --body-bg: #FAF7FB;
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a4a6a;
+  --text-muted: #6a6a8a;
+  
+  /* 玻璃效果 */
   --glass-bg:        rgba(255, 255, 255, 0.55);
   --glass-bg-strong: rgba(255, 255, 255, 0.72);
   --glass-bg-soft:   rgba(255, 255, 255, 0.42);
@@ -29,15 +39,115 @@
     0 18px 50px rgba(31, 38, 135, 0.16),
     0 4px 14px rgba(255, 143, 184, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  
+  /* 光斑背景 */
+  --glow-primary: rgba(255, 182, 217, 0.85);
+  --glow-secondary: rgba(178, 201, 255, 0.7);
+  
+  /* 输入框 */
+  --input-bg: rgba(255, 255, 255, 0.55);
+  --input-bg-focus: rgba(255, 255, 255, 0.78);
+  --input-ring: rgba(255, 182, 217, 0.28);
+  
+  /* 滚动条 */
+  --scrollbar-thumb: rgba(255, 143, 184, 0.35);
+  --scrollbar-thumb-hover: rgba(255, 143, 184, 0.6);
+  
   --ease-silk: cubic-bezier(0.22, 1, 0.36, 1);
   --sakura:      #FFB6D9;
   --sakura-deep: #FF8FB8;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * 深色模式
+ * ══════════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"],
+.dark {
+  --color-mode: dark;
+  
+  /* 深色背景 - 深邃的蓝紫色调 */
+  --body-bg: #0a0a12;
+  --text-primary: #f0f0f8;
+  --text-secondary: #b0b0c8;
+  --text-muted: #8080a0;
+  
+  /* 深色玻璃效果 - 更暗的半透明 */
+  --glass-bg:        rgba(20, 20, 35, 0.65);
+  --glass-bg-strong: rgba(25, 25, 45, 0.78);
+  --glass-bg-soft:   rgba(15, 15, 28, 0.55);
+  --glass-border:    rgba(255, 255, 255, 0.08);
+  --glass-shadow:
+    0 10px 36px rgba(0, 0, 0, 0.4),
+    0 2px 8px rgba(255, 100, 160, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  --glass-shadow-hover:
+    0 18px 50px rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(255, 100, 160, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  
+  /* 深色光斑 - 更饱和的霓虹感 */
+  --glow-primary: rgba(255, 100, 180, 0.4);
+  --glow-secondary: rgba(100, 140, 255, 0.35);
+  
+  /* 输入框 */
+  --input-bg: rgba(20, 20, 35, 0.6);
+  --input-bg-focus: rgba(30, 30, 50, 0.8);
+  --input-ring: rgba(255, 100, 180, 0.35);
+  
+  /* 滚动条 */
+  --scrollbar-thumb: rgba(255, 100, 180, 0.4);
+  --scrollbar-thumb-hover: rgba(255, 100, 180, 0.6);
+}
+
+/* 深色模式文字颜色覆盖 */
+[data-theme="dark"] body,
+.dark body {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6,
+.dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] p,
+[data-theme="dark"] span,
+[data-theme="dark"] li,
+.dark p, .dark span, .dark li {
+  color: var(--text-secondary);
+}
+
+/* 深色模式链接 */
+[data-theme="dark"] a:not(.btn-primary):not(.bg-sakura),
+.dark a:not(.btn-primary):not(.bg-sakura) {
+  color: var(--sakura);
+}
+
+/* 深色模式图标 */
+[data-theme="dark"] [class*="lucide"],
+.dark [class*="lucide"] {
+  color: var(--text-secondary);
+}
+
+/* 强调文字保持樱花色 */
+[data-theme="dark"] .text-sakura,
+[data-theme="dark"] .text-sakura-deep,
+.dark .text-sakura, .dark .text-sakura-deep {
+  color: #FF8FB8 !important;
+}
+
 /* ── 液态背景：固定的漂浮光斑层，透过玻璃卡片显出通透感 ───────────────────── */
 body {
   position: relative;
-  background-color: #FAF7FB;
+  background-color: var(--body-bg);
+  color: var(--text-primary);
+  transition: background-color 0.5s var(--ease-silk), color 0.5s var(--ease-silk);
 }
 body::before,
 body::after {
@@ -49,19 +159,20 @@ body::after {
   opacity: 0.55;
   pointer-events: none;
   will-change: transform;
+  transition: background 0.5s var(--ease-silk);
 }
 body::before {
   width: 52vw; height: 52vw;
   max-width: 720px; max-height: 720px;
   top: -14vw; left: -10vw;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 182, 217, 0.85), rgba(255, 182, 217, 0) 70%);
+  background: radial-gradient(circle at 30% 30%, var(--glow-primary), transparent 70%);
   animation: glass-drift-a 26s var(--ease-silk) infinite alternate;
 }
 body::after {
   width: 46vw; height: 46vw;
   max-width: 640px; max-height: 640px;
   bottom: -16vw; right: -12vw;
-  background: radial-gradient(circle at 60% 60%, rgba(178, 201, 255, 0.7), rgba(178, 201, 255, 0) 70%);
+  background: radial-gradient(circle at 60% 60%, var(--glow-secondary), transparent 70%);
   animation: glass-drift-b 32s var(--ease-silk) infinite alternate;
 }
 @keyframes glass-drift-a {
@@ -120,7 +231,7 @@ nav.sticky,
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 textarea,
 select {
-  background: rgba(255, 255, 255, 0.55) !important;
+  background: var(--input-bg) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   transition: box-shadow 0.3s var(--ease-silk), border-color 0.3s var(--ease-silk), background 0.3s var(--ease-silk);
@@ -128,8 +239,8 @@ select {
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
 textarea:focus,
 select:focus {
-  background: rgba(255, 255, 255, 0.78) !important;
-  box-shadow: 0 0 0 4px rgba(255, 182, 217, 0.28);
+  background: var(--input-bg-focus) !important;
+  box-shadow: 0 0 0 4px var(--input-ring);
   outline: none !important;
 }
 
@@ -159,12 +270,12 @@ button.bg-sakura:active,
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 143, 184, 0.35);
+  background: var(--scrollbar-thumb);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 143, 184, 0.6); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: content-box; }
 
 /* ── 进场淡入：让首屏更"丝滑"地浮现 ─────────────────────────────────────── */
 @keyframes glass-fade-in {
@@ -182,4 +293,293 @@ main > *, section, .glass, .shadow-sakura, .shadow-card {
     animation: none !important;
   }
   *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 深色模式主题切换按钮
+ * ══════════════════════════════════════════════════════════════════════════ */
+.theme-toggle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--glass-shadow);
+  transition: transform 0.3s var(--ease-silk), box-shadow 0.3s var(--ease-silk), background 0.3s var(--ease-silk);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.theme-toggle:hover {
+  transform: scale(1.08);
+  box-shadow: var(--glass-shadow-hover);
+}
+
+.theme-toggle:active {
+  transform: scale(0.95);
+}
+
+.theme-toggle .icon-sun,
+.theme-toggle .icon-moon {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  transition: transform 0.4s var(--ease-silk), opacity 0.4s var(--ease-silk);
+}
+
+/* 浅色模式：显示月亮（点击切换到深色） */
+.theme-toggle .icon-sun {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.5);
+}
+.theme-toggle .icon-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+  color: #4a4a6a;
+}
+
+/* 深色模式：显示太阳（点击切换到浅色） */
+[data-theme="dark"] .theme-toggle .icon-sun,
+.dark .theme-toggle .icon-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+  color: #FFD700;
+}
+[data-theme="dark"] .theme-toggle .icon-moon,
+.dark .theme-toggle .icon-moon {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.5);
+}
+
+/* 深色模式下的导航栏 */
+[data-theme="dark"] header.sticky,
+[data-theme="dark"] nav.sticky,
+[data-theme="dark"] .glass-nav,
+.dark header.sticky, .dark nav.sticky, .dark .glass-nav {
+  background: rgba(15, 15, 30, 0.75) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* 深色模式下的 FAQ 折叠面板 */
+[data-theme="dark"] details,
+.dark details {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+}
+
+[data-theme="dark"] details summary,
+.dark details summary {
+  color: var(--text-primary);
+}
+
+/* 深色模式下的表格边框 */
+[data-theme="dark"] table,
+[data-theme="dark"] th,
+[data-theme="dark"] td,
+.dark table, .dark th, .dark td {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 深色模式下的分隔线 */
+[data-theme="dark"] hr,
+.dark hr {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 深色模式 - 3D Canvas 滤镜增强 */
+[data-theme="dark"] #hero-3d-canvas,
+.dark #hero-3d-canvas {
+  filter: saturate(1.3) brightness(1.1);
+}
+
+/* 深色模式 - 渐变背景区域 */
+[data-theme="dark"] .bg-gradient-to-b.from-white,
+[data-theme="dark"] .bg-gradient-to-t.from-white,
+.dark .bg-gradient-to-b.from-white,
+.dark .bg-gradient-to-t.from-white {
+  --tw-gradient-from: #0a0a12 !important;
+  --tw-gradient-to: transparent !important;
+  background-image: linear-gradient(to bottom, var(--tw-gradient-from), var(--tw-gradient-to)) !important;
+}
+
+[data-theme="dark"] .from-sakura-light\/30,
+.dark .from-sakura-light\/30 {
+  --tw-gradient-from: rgba(255, 80, 160, 0.15) !important;
+}
+
+[data-theme="dark"] .to-white,
+.dark .to-white {
+  --tw-gradient-to: #0a0a12 !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 深色模式 - Tailwind 硬编码颜色覆盖
+ * 覆盖 HTML 中的 bg-white, text-ink 等固定颜色类
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* 背景颜色覆盖 */
+[data-theme="dark"] .bg-white,
+.dark .bg-white {
+  background-color: rgba(15, 15, 25, 0.95) !important;
+}
+
+[data-theme="dark"] .bg-white\/70,
+.dark .bg-white\/70 {
+  background-color: rgba(15, 15, 25, 0.7) !important;
+}
+
+[data-theme="dark"] .bg-white\/90,
+.dark .bg-white\/90 {
+  background-color: rgba(15, 15, 25, 0.9) !important;
+}
+
+[data-theme="dark"] .bg-white\/95,
+.dark .bg-white\/95 {
+  background-color: rgba(15, 15, 25, 0.95) !important;
+}
+
+/* 深色模式 body 背景 */
+[data-theme="dark"] body,
+.dark body {
+  background-color: #0a0a12 !important;
+}
+
+/* 文字颜色覆盖 */
+[data-theme="dark"] .text-ink,
+.dark .text-ink {
+  color: #f0f0f8 !important;
+}
+
+[data-theme="dark"] .text-ink-light,
+.dark .text-ink-light {
+  color: #b0b0c8 !important;
+}
+
+[data-theme="dark"] .text-muted,
+.dark .text-muted {
+  color: #8080a0 !important;
+}
+
+/* 深色模式 - 边框颜色 */
+[data-theme="dark"] .border-line,
+.dark .border-line {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .border-sakura-soft,
+.dark .border-sakura-soft {
+  border-color: rgba(255, 100, 180, 0.3) !important;
+}
+
+/* 深色模式 - 聊天气泡 */
+[data-theme="dark"] .bg-sakura-soft,
+.dark .bg-sakura-soft {
+  background-color: rgba(255, 100, 180, 0.2) !important;
+}
+
+/* 深色模式 - 渐变背景保持原色但增强 */
+[data-theme="dark"] .bg-gradient-to-br.from-sakura-soft,
+.dark .bg-gradient-to-br.from-sakura-soft {
+  background: linear-gradient(to bottom right, rgba(255, 80, 160, 0.25), rgba(180, 120, 255, 0.15)) !important;
+}
+
+/* 深色模式 - 价格卡片渐变 */
+[data-theme="dark"] .bg-gradient-to-br.from-sakura,
+.dark .bg-gradient-to-br.from-sakura {
+  background: linear-gradient(135deg, #FF4081 0%, #A855F7 100%) !important;
+}
+
+/* 深色模式 - 阴影增强 */
+[data-theme="dark"] .shadow-sakura,
+.dark .shadow-sakura {
+  box-shadow: 0 8px 30px rgba(255, 80, 160, 0.25) !important;
+}
+
+[data-theme="dark"] .shadow-sakura-lg,
+.dark .shadow-sakura-lg {
+  box-shadow: 0 12px 40px rgba(255, 80, 160, 0.3) !important;
+}
+
+/* 深色模式 - 选择高亮 */
+[data-theme="dark"] ::selection,
+.dark ::selection {
+  background-color: rgba(255, 100, 180, 0.4) !important;
+  color: #ffffff !important;
+}
+
+/* 深色模式 - 导航阴影 */
+[data-theme="dark"] .shadow-nav,
+.dark .shadow-nav {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* 深色模式 - 底部边框 */
+[data-theme="dark"] .border-t,
+.dark .border-t {
+  border-top-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .border-b,
+.dark .border-b {
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* 深色模式 - 输入框占位符 */
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder,
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6a6a8a !important;
+}
+
+/* 深色模式 - 图标颜色 */
+[data-theme="dark"] [data-lucide],
+.dark [data-lucide] {
+  color: #b0b0c8;
+}
+
+[data-theme="dark"] .text-sakura [data-lucide],
+[data-theme="dark"] .text-sakura-deep [data-lucide],
+.dark .text-sakura [data-lucide],
+.dark .text-sakura-deep [data-lucide] {
+  color: #FF6B9D;
+}
+
+/* 深色模式 - 毛玻璃效果增强 */
+[data-theme="dark"] .backdrop-blur-xl,
+.dark .backdrop-blur-xl {
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+/* 深色模式 - 手机模拟器 */
+[data-theme="dark"] .rounded-\[44px\],
+.dark .rounded-\[44px\] {
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+
+/* 深色模式 - FAQ 展开箭头 */
+[data-theme="dark"] details summary::marker,
+.dark details summary::marker {
+  color: #FF6B9D;
+}
+
+/* 深色模式 - Footer 链接 */
+[data-theme="dark"] footer a,
+.dark footer a {
+  color: #b0b0c8;
+}
+
+[data-theme="dark"] footer a:hover,
+.dark footer a:hover {
+  color: #FF85AB;
 }

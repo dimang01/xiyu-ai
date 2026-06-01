@@ -1,6 +1,7 @@
 /**
  * 溪语AI - 鼠标跟随视差效果
  * 全局视差系统 + 卡片 3D 倾斜效果
+ * 支持深色/浅色主题
  */
 
 (function() {
@@ -8,6 +9,12 @@
 
   // 移动端检测
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  
+  // 主题检测
+  function isDarkMode() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ||
+           document.documentElement.classList.contains('dark');
+  }
   
   // 鼠标位置（归一化到 -1 ~ 1）
   const mouse = {
@@ -133,7 +140,7 @@
         transition: opacity 0.3s ease;
         background: linear-gradient(
           135deg,
-          rgba(255, 255, 255, 0.4) 0%,
+          rgba(255, 255, 255, ${isDarkMode() ? '0.15' : '0.4'}) 0%,
           rgba(255, 255, 255, 0) 60%
         );
         z-index: 10;
@@ -172,10 +179,11 @@
       // 更新光泽位置
       const glareX = x * 100;
       const glareY = y * 100;
+      const glareIntensity = isDarkMode() ? 0.25 : 0.5;
       this.glare.style.background = `
         radial-gradient(
           circle at ${glareX}% ${glareY}%,
-          rgba(255, 255, 255, 0.5) 0%,
+          rgba(255, 255, 255, ${glareIntensity}) 0%,
           rgba(255, 255, 255, 0) 60%
         )
       `;
