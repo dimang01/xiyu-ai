@@ -156,3 +156,13 @@ export async function imageGenerate(prompt, { size = '1024x1024' } = {}) {
 export function getActiveImageProvider() {
   return { id: ACTIVE, model: process.env.IMAGE_MODEL || '(默认)' };
 }
+
+export function getImageProviderCapabilities(providerName = ACTIVE) {
+  const id = String(providerName || ACTIVE || '').toLowerCase();
+  return {
+    provider: id,
+    textToImage: Boolean(REGISTRY[id]),
+    imageToImage: false,
+    referenceImage: false,
+  };
+}

@@ -31,7 +31,8 @@ import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel } from './emotion_state.mjs';
 import { detectPhotoIntent, hasUnsafePhotoContent } from './photo_intent.mjs';
-import { pickPhotoCaption, sendCompanionPhoto } from './photo_sender.mjs';
+import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
+import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
@@ -300,36 +301,73 @@ export async function handleMessage(rawMsg, botContext = {}) {
       let replyText = '';
       if (hasUnsafePhotoContent(userText)) {
         replyText = UNSAFE_PHOTO_REPLY;
-      } else if (!PHOTO_REQUEST_ENABLED) {
-        replyText = pickPhotoRequestFallback();
       } else {
-        await sendTyping(ctx, msg.fromUser, msg.contextToken);
-        const activity = companion.current_scene || '在写东西';
-        const caption = pickPhotoCaption({ source: 'request', activity });
-        const result = await sendCompanionPhoto({
-          companion: { ...companion, wechat_user_id: msg.fromUser },
-          user: { ...binding, wechat_user_id: msg.fromUser },
-          context: ctx,
-          contextToken: msg.contextToken,
-          activity,
-          caption,
+        const photoCompanion = { ...companion, wechat_user_id: msg.fromUser };
+        const gate = getPhotoGateState({
+          companion: photoCompanion,
+          trigger: 'user_request',
           source: 'request',
         });
-        if (result.ok) {
-          replyText = result.caption || caption;
-          await sleep(randInt(700, 1400));
-        } else if (result.code === 'cooldown') {
-          replyText = '刚才不是才给你看过嘛';
+        if (gate.allowed) {
+          const recentForPlanner = getRecentHistory(msg.fromUser, botId, 10);
+          let photoEmotionState = null;
+          try {
+            photoEmotionState = getEmotionStateWithDefaults(companion.id);
+          } catch (e) {
+            log('warn', `[Bot] photo emotion state unavailable companion=${companion.id} error=${e.message}`);
+          }
+          const plan = await planPhotoMessage({
+            companion: photoCompanion,
+            user: { ...binding, wechat_user_id: msg.fromUser },
+            userText,
+            recentMessages: recentForPlanner,
+            trigger: 'user_request',
+            context: { accountId: binding.account_id || null },
+            cooldownState: gate,
+            imageProviderAvailable: gate.imageProviderAvailable,
+            emotionState: photoEmotionState,
+          });
+          if (plan.shouldSendPhoto) {
+            await sendTyping(ctx, msg.fromUser, msg.contextToken);
+            await sleep(plan.delayImageMs || randInt(700, 1400));
+            const result = await sendCompanionPhoto({
+              companion: photoCompanion,
+              user: { ...binding, wechat_user_id: msg.fromUser },
+              context: ctx,
+              contextToken: msg.contextToken,
+              activity: companion.current_scene || '',
+              imagePrompt: plan.imagePrompt,
+              caption: plan.caption,
+              trigger: 'user_request',
+              source: 'request',
+              emotionState: photoEmotionState,
+              maintainIdentity: plan.maintainIdentity !== false,
+            });
+            if (result.ok) {
+              replyText = result.caption || plan.caption;
+              if (replyText) {
+                await sleep(plan.delayCaptionMs || randInt(700, 1400));
+                await sendAndRecord(ctx, msg.fromUser, replyText, msg.contextToken);
+              }
+              saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
+              saveConversationTurn(companion.id, 'assistant', replyText || '发了一张生活照片', companion.chat_mode_active);
+              return;
+            }
+            log('warn', `[Bot] photo request send failed companion=${companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
+          } else {
+            log('debug', `[Bot] photo planner declined companion=${companion.id} reason=${plan.reason}`);
+          }
         } else {
-          replyText = pickPhotoRequestFallback();
-          log('warn', `[Bot] photo request fallback companion=${companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
+          log('debug', `[Bot] photo gate blocked companion=${companion.id} reason=${gate.reasons.join(',')}`);
         }
       }
 
-      await sendAndRecord(ctx, msg.fromUser, replyText, msg.contextToken);
-      saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
-      saveConversationTurn(companion.id, 'assistant', replyText, companion.chat_mode_active);
-      return;
+      if (replyText) {
+        await sendAndRecord(ctx, msg.fromUser, replyText, msg.contextToken);
+        saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
+        saveConversationTurn(companion.id, 'assistant', replyText, companion.chat_mode_active);
+        return;
+      }
     }
 
     // ── 召回长期记忆：优先语义检索，失败兜底关键词 ─────────────────────────

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { generateReply, generateScenePhoto } from './ai.mjs';
+import { generateImage, generateReply } from './ai.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
   getDailySchedule,
@@ -18,6 +18,12 @@ import {
 import { sendMessageItem } from './ilink.mjs';
 import { log } from './logger.mjs';
 import { uploadFile } from './media.mjs';
+import { sanitizePhotoPrompt } from './photo_planner.mjs';
+import {
+  buildIdentityPrompt,
+  ensureVisualIdentity,
+  saveGeneratedPhoto,
+} from './visual_identity.mjs';
 
 const PHOTO_DIR = path.resolve(process.cwd(), 'public/avatars/scenes');
 const REQUEST_CAPTIONS = [
@@ -167,6 +173,42 @@ function cooldownState(companion) {
   return { cooling: remainingMs > 0, remainingMs: Math.max(0, remainingMs) };
 }
 
+function buildScenePrompt({ activity, timeSlot, mood }) {
+  const activityText = String(activity || 'quiet daily moment').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  const moodText = String(mood || '').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  return [
+    `realistic casual phone snapshot of an adult woman during ${activityText || 'an ordinary daily moment'}`,
+    `${timeSlot || 'afternoon'} natural lighting`,
+    moodText ? `subtle ${moodText} atmosphere` : 'ordinary-life atmosphere',
+    'everyday environment',
+    'slightly imperfect framing',
+    'not overly polished',
+    'not a studio portrait',
+    'safe adult everyday content',
+    'modest everyday content',
+  ].join(', ');
+}
+
+function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
+  const referenceNote = referenceImagePath && providerCapabilities?.referenceImage
+    ? 'use the provided reference image only to keep the same adult person identity'
+    : 'keep the same adult person identity using the stable description';
+  const prompt = [
+    identityPrompt,
+    scenePrompt,
+    referenceNote,
+    'realistic casual phone snapshot',
+    'natural lighting',
+    'everyday environment',
+    'slightly imperfect framing',
+    'not overly polished',
+    'not a studio portrait',
+    'safe adult everyday content',
+    'modest everyday content',
+  ].filter(Boolean).join(', ');
+  return sanitizePhotoPrompt(prompt);
+}
+
 export async function sendCompanionPhoto({
   companion,
   user = null,
@@ -174,7 +216,13 @@ export async function sendCompanionPhoto({
   contextToken = null,
   activity = '',
   caption = '',
+  imagePrompt = '',
+  trigger = '',
   source = 'request',
+  emotionState = null,
+  visualIdentity = null,
+  referenceImagePath = null,
+  maintainIdentity = envFlag('PHOTO_MAINTAIN_IDENTITY', true),
   force = false,
   generateCaption = false,
   recordTurn = false,
@@ -200,13 +248,42 @@ export async function sendCompanionPhoto({
     ? await generateNaturalCaption(companion, { activity: finalActivity, source })
     : sanitizeCaption(caption || pickPhotoCaption({ source, activity: finalActivity }), source, finalActivity);
 
+  let visual = {
+    identity: visualIdentity,
+    referenceImagePath,
+    capabilities: null,
+  };
+  if (maintainIdentity && envFlag('PHOTO_VISUAL_IDENTITY_ENABLED', true)) {
+    try {
+      visual = await ensureVisualIdentity({
+        companion,
+        emotionState,
+        context: { scene: finalActivity, source, trigger },
+      });
+    } catch (e) {
+      log('warn', `[Photo] visual identity unavailable companion=${companion.id}: ${e.message}`);
+    }
+  }
+
   let generated;
   try {
-    generated = await generateScenePhoto({
-      activity: finalActivity,
-      timeSlot: derived.timeSlot,
-      mood: derived.mood,
+    const scenePrompt = imagePrompt
+      ? sanitizePhotoPrompt(imagePrompt)
+      : sanitizePhotoPrompt(buildScenePrompt({ activity: finalActivity, timeSlot: derived.timeSlot, mood: derived.mood }));
+    if (!scenePrompt) {
+      return { ok: false, code: 'invalid_prompt', error: '照片 prompt 不合规', caption: finalCaption, activity: finalActivity };
+    }
+    const identityPrompt = maintainIdentity ? buildIdentityPrompt(visual?.identity) : '';
+    const finalPrompt = buildFinalImagePrompt({
+      identityPrompt,
+      scenePrompt,
+      providerCapabilities: visual?.capabilities,
+      referenceImagePath: visual?.referenceImagePath,
     });
+    if (!finalPrompt) {
+      return { ok: false, code: 'invalid_prompt', error: '照片 prompt 不合规', caption: finalCaption, activity: finalActivity };
+    }
+    generated = { url: await generateImage(finalPrompt, { size: '1024x1024' }), prompt: finalPrompt };
   } catch (e) {
     log('warn', `[Photo] 生成照片失败 companion=${companion.id}: ${e.message}`);
     return { ok: false, code: 'generate_failed', error: e.message, caption: finalCaption, activity: finalActivity };
@@ -215,6 +292,9 @@ export async function sendCompanionPhoto({
   let converted;
   try {
     converted = await writeConvertedPhoto(generated.url, companion.id);
+    try { saveGeneratedPhoto(companion.id, converted.outPath); } catch (e) {
+      log('warn', `[Photo] save generated photo skipped companion=${companion.id}: ${e.message}`);
+    }
   } catch (e) {
     log('warn', `[Photo] 下载/转码失败 companion=${companion.id}: ${e.message}`);
     return { ok: false, code: 'convert_failed', error: e.message, caption: finalCaption, activity: finalActivity };
@@ -253,6 +333,8 @@ export async function sendCompanionPhoto({
       ok: true,
       caption: finalCaption,
       activity: finalActivity,
+      prompt: generated.prompt || '',
+      trigger,
       fileName: converted.outName,
       source,
     };
