@@ -128,6 +128,9 @@
     .nav-link:hover::after { transform: scaleX(1); }
   </style>
   <link rel="manifest" href="/manifest.webmanifest" />
+  
+  <!-- Three.js for 3D background -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 </head>
 
 <body class="bg-white text-ink font-sans antialiased selection:bg-sakura/30 selection:text-ink">
@@ -658,6 +661,11 @@
   </footer>
 
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  
+  <!-- 3D Scene & Parallax Effects -->
+  <script src="/app/3d-scene.js"></script>
+  <script src="/app/parallax.js"></script>
+  
   <script>
     lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
 
