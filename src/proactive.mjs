@@ -23,6 +23,7 @@ import { dedupSegments } from './text_similarity.mjs';
 import { buildLongTermDigest, ensureScheduleForCompanion } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
+import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { safeOutboundReply } from './moderation.mjs';
 import { log } from './logger.mjs';
@@ -199,16 +200,16 @@ function listProactiveCompanionsForBot(botId) {
     .filter(Boolean);
 }
 
-// 检查是否应该今天发场景照片：距上次发照 ≥ 2 天则触发
+// 检查是否应该安排一次候选照片：默认至少 36 小时，真正是否发送交给 AI planner 再判断。
 function shouldSendPhotoToday(companion) {
   if (!companion) return false;
   const last = companion.last_photo_at;
   if (!last) return true;  // 从未发过
   const lastTs = new Date(String(last).replace(' ', 'T') + (String(last).includes('Z') ? '' : 'Z')).getTime();
-  const days = (Date.now() - lastTs) / 86400_000;
-  // 加点随机：1.5-3 天波动，平均 2 天
-  const threshold = 1.5 + Math.random() * 1.5;
-  return days >= threshold;
+  const hours = (Date.now() - lastTs) / 3_600_000;
+  const minHours = Math.max(36, Number(process.env.PHOTO_PROACTIVE_MIN_HOURS || 36));
+  const threshold = minHours + Math.random() * 12;
+  return hours >= threshold;
 }
 
 // v1.3.4: 移除 isPro 参数；开源版所有 companion 享受相同调度（晚安 + 场景照机会）
@@ -521,11 +522,50 @@ export async function sendScenePhotoManually(companion) {
 }
 
 async function sendScenePhoto(companion, ctx) {
+  const gate = getPhotoGateState({
+    companion,
+    source: 'proactive',
+    trigger: 'proactive',
+  });
+  if (!gate.allowed) {
+    log('debug', `[Proactive] 照片门闩未通过 companion=${companion.id} reason=${gate.reasons.join(',')}`);
+    return;
+  }
+  const recentMessages = getRecentHistory(companion.wechat_user_id, ctx.botId, 10);
+  let photoEmotionState = null;
+  try {
+    photoEmotionState = getEmotionStateWithDefaults(companion.id);
+  } catch (e) {
+    log('warn', `[Proactive] photo emotion state unavailable companion=${companion.id} error=${e.message}`);
+  }
+  const plan = await planPhotoMessage({
+    companion,
+    user: { wechat_user_id: companion.wechat_user_id },
+    userText: '',
+    recentMessages,
+    trigger: 'proactive',
+    context: { accountId: companion.user_id || null },
+    cooldownState: gate,
+    imageProviderAvailable: gate.imageProviderAvailable,
+    proactiveContext: { scene: companion.current_scene || '', schedule: 'daily_candidate' },
+    emotionState: photoEmotionState,
+  });
+  if (!plan.shouldSendPhoto) {
+    log('debug', `[Proactive] AI 决策不发照片 companion=${companion.id} reason=${plan.reason}`);
+    return;
+  }
+  if (plan.delayImageMs) {
+    await new Promise(r => setTimeout(r, plan.delayImageMs));
+  }
   const result = await sendCompanionPhoto({
     companion,
     context: ctx,
+    imagePrompt: plan.imagePrompt,
+    caption: plan.caption,
+    trigger: 'proactive',
     source: 'proactive',
-    generateCaption: true,
+    emotionState: photoEmotionState,
+    maintainIdentity: plan.maintainIdentity !== false,
     recordTurn: true,
   });
   if (!result.ok) {
@@ -533,7 +573,7 @@ async function sendScenePhoto(companion, ctx) {
     return;
   }
   if (result.caption) {
-    await new Promise(r => setTimeout(r, 800 + Math.random() * 1000));
+    await new Promise(r => setTimeout(r, plan.delayCaptionMs || 900));
     await sendTextMessage(ctx, companion.wechat_user_id, result.caption, null);
     saveMessage({
       msgId: `proactive_photo_text_${companion.id}_${Date.now()}`,
