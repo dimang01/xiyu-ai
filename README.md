@@ -52,6 +52,13 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | **18 节人设 prompt** | 元认知 / 关系阶段 / 今日日程 / 最近上下文 / 长期摘要 / 反 AI 味规则一次拼好 |
 | **5 阶段关系** | 暧昧 → 恋人 → 深爱（可回退朋友/陌生人）。每阶段称呼、撒娇、话题深度差异化 |
 | **真人发微信** | ≤15 字一条、多条 \|\| 连发、剥离 AI 味；Persona Guard 回复后一致性校验 |
+| **她记得未完成的事 (v1.8.0)** ⭐⭐ | 用户说"明天去面试" → LLM 抽取存 `companion_open_loops` 表 → 第二天主动问"欸 \|\| 你今天面试完没"。`due_at` + `emotional_weight` + `expected_followup`。用户说"黄了"自动 resolve，7+ 天没下文自动 stale。这是真人陪伴最强信任来源之一 |
+| **Inner OS 内心独白 (v1.8.0)** ⭐⭐ | Double-pass reply：每次先生成"内心 OS"（不发送）→ 注入到 outer prompt → 基于内心写对外回复。内心想"他又来了"嘴上说"嗯"，内心想"挺心动"嘴上端着——内心和嘴上之间的**落差**是真人感的核心。`INNER_OS_ENABLED=false` 可关，短消息 < 8 字自动跳过 |
+| **因果驱动的主动消息 (v1.8.0)** | proactive 不再只是"今天怎么样"。当 `companion_open_loops` 有到期事 → kind 升级为 `recall`，注入 `hidden_reason`（"用户昨天说要面试"），prompt 让她"对了 \|\| 你今天 XX 咋样"；`followed_up_at` 防 6h 内重复打扰 |
+| **结构化偏好账本 (v1.8.0)** | `companion_preferences` 表：`type` (like/dislike/taboo/neutral) × `intensity` 1-5 × `reason` × `source` (system/user_observed/generated/legacy/user)。prompt 按强度修饰"极猫""很爹味""有点狗血剧"。3 个 REST 端点。启动自动 backfill 老 `hobbies/dislikes` 到本表 |
+| **Presence: 在线但不一定服务你 (v1.8.0)** | `availability` (free/busy/half) + `attention` (0-100) 字段，从今天 dailySchedule 当前活动派生：睡/开会=busy / 吃/逛=half / 其它=free。prompt 注入"能回但分心，边做别的事边回"——用户问"在干嘛"不再是完整回答 |
+| **不完整回答 (v1.7~v1.8)** | 7 种允许：只共情不给建议 / 只吐槽一句 / 先敷衍后补充 / 不知道就不知道 / 不想聊就转移 / 忙时只回很短 / 可以"没意见"。彻底拒绝"反应+夸+问+建议"四件套 AI 味 |
+| **不讨好 + 暧昧端着 + 逗他 + 不想聊 (v1.7.0)** | 反 sycophancy 五连：每 5-8 条 ≥1 条带不同意 / 暧昧期不催不全收装平静 / 关系够熟主动逗你 / 烦躁阈值触发"低能量模式"覆盖讨好指令 / `dislikes` 字段让"我不行"有据可依 |
 | **真实发图 (v1.6.1)** ⭐ | 用户说"发个自拍""让我看看你"——程序侧识别意图、AI 规划器决策、真的发生成的照片到微信，不是文字编"我现在在拍"。每日上限、冷却、敏感词拦截、Provider 缺失自动兜底"刚拍糊了" |
 | **稳定的"她长什么样"(v1.6.1)** ⭐ | 每个 companion 生成一份 visual identity（发色/发型/穿搭/气质 → 永久 spec），每次发图都按这份 spec 生成，避免每次发图都换脸。可上传参考图；provider 支持 image-to-image 时优先用 ref 图 |
 | **主动场景照** | 白天 36h 候选窗口 + AI 规划器决策，像"刚坐下来想给你看"那样低频自然发图，附自然配文 |
@@ -324,8 +331,10 @@ SINGLE_USER=true
 │   ├── playground.mjs       浏览器聊天
 │   ├── companion.mjs        18 节 system prompt 合成
 │   ├── memory_v2.mjs        7 层记忆 + 语义召回 + 遗忘曲线
-│   ├── emotion_state.mjs    7 维情绪状态机（v1.4.1 升级）
-│   ├── proactive.mjs        主动消息 + 场景照调度
+│   ├── emotion_state.mjs    11 维情绪状态机 + presence (v1.8.0 加 availability/attention)
+│   ├── inner_os.mjs         Inner OS 内心独白 double-pass reply (v1.8.0)
+│   ├── open_loops.mjs       她记得未完成的事 — LLM 抽取 + auto-resolve (v1.8.0)
+│   ├── proactive.mjs        主动消息 + 场景照调度 (v1.8.0 加 recall + hidden_reason)
 │   ├── photo_intent.mjs     用户照片请求意图识别（v1.6.1）
 │   ├── photo_planner.mjs    照片 AI 决策器 + 安全清洗（v1.6.1）
 │   ├── photo_sender.mjs     生图 → 转码 → 上传 → 发送 helper（v1.6.1）
