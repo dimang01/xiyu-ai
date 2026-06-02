@@ -25,10 +25,10 @@ const STYLE   = 'minimal modern flat illustration, clean vector look, dreamy edi
 const FRAME   = '1:1 square composition, plenty of white space, slight off-center balance, mobile-friendly.';
 
 const TARGETS = [
-  {
-    name: 'hero-girl',
-    prompt: `A serene window-side vignette suggesting a quiet companion: a soft curved silhouette of a young woman from behind, hair in a loose low ponytail, sitting by a sunny window with a steaming cup, a small notebook and a sprig of sakura petals drifting in. Warm afternoon light, ${PALETTE} ${STYLE} ${FRAME}`,
-  },
+  // 注：v1.6.2 试过 hero-girl 作为首页 hero 衬底 / auth 左栏主视觉，gpt-5-image-mini
+  // 生成出来是粉发二次元少女正脸，与产品"她像真实的人"调性冲突，作为衬底也太抢戏。
+  // v1.6.3 撤掉这张图，首页保持干净 logo + 文案，auth 左栏改用 feature-persona。
+  // 如果以后想加人物视觉，prompt 要重写到强制不露脸 + 写实摄影感（无 anime）。
   {
     name: 'feature-persona',
     prompt: `An open journal with hand-drawn life mementos floating around it: a small pressed flower, a tiny polaroid of a cat, a folded paper crane, a coffee ring, a tiny ribbon. Symbolizing a complete inner life and memories. ${PALETTE} ${STYLE} ${FRAME}`,
