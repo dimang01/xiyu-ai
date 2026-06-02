@@ -36,6 +36,7 @@ import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
 import { extractOpenLoops, detectAndResolveOpenLoops } from './open_loops.mjs';
+import { generateInnerMonologue, buildInnerOsHint } from './inner_os.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 const PHOTO_REQUEST_ENABLED = !['0', 'false', 'no', 'off'].includes(String(process.env.PHOTO_REQUEST_ENABLED ?? 'true').toLowerCase());
@@ -497,6 +498,19 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
     // ── 历史记录 ─────────────────────────────────────────────────────────────
     const history = getRecentHistory(msg.fromUser, botId, 20);
+
+    // ── v1.8.0 #6: Inner OS 内心独白 ─────────────────────────────────────────
+    // 先生成她的"内心想法"（不发送），再基于此生成对外回复
+    // 短消息（<8字）/ 关闭时 skip，省 token
+    const innerThought = await generateInnerMonologue({
+      companion,
+      userText,
+      history,
+      context: { accountId: binding.account_id || null },
+    }).catch(() => null);
+    if (innerThought) {
+      systemPrompt += buildInnerOsHint(innerThought);
+    }
 
     // ── 生成 AI 回复 ─────────────────────────────────────────────────────────
     let reply;
