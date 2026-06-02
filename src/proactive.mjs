@@ -11,6 +11,7 @@ import {
   markCompanionConfessed, patchCompanion,
   recordProactiveSentTimestamp, getProactiveLastSent,
   getCompanionPreferencesForPrompt,
+  listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
@@ -372,6 +373,26 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     }
   }
 
+  // v1.8.0 #5: proactive hidden_reason — 把 due open loops 升级为 'recall' kind
+  // 真人陪伴最强信任来源：她记得你说过的事，到期主动来问
+  let recallLoop = null;
+  if (effectiveKind === 'normal') {
+    try {
+      const dueLoops = listDueOpenLoops(companion.id, { withinHours: 24 });
+      // 选 emotional_weight 最高且最近没主动问过的（防重复）
+      const candidate = dueLoops
+        .filter(l => !l.followed_up_at || (Date.now() - new Date(String(l.followed_up_at).replace(' ','T') + 'Z').getTime()) > 6 * 3600_000)
+        .sort((a, b) => (b.emotional_weight || 0) - (a.emotional_weight || 0))[0];
+      if (candidate) {
+        recallLoop = candidate;
+        effectiveKind = 'recall';
+        log('info', `[Proactive] ★ 触发 recall companion=${companion.id} loop="${candidate.title}" weight=${candidate.emotional_weight}`);
+      }
+    } catch (e) {
+      log('warn', `[Proactive] recall 检查失败: ${e.message}`);
+    }
+  }
+
   const reminderTitles = (opts.reminders || []).map(r => r.title).filter(Boolean).join('、');
   const userMessage = effectiveKind === 'reminder'
     ? `今天是一个对你们来说特别的日子：${reminderTitles || '一个值得纪念的日子'}。
@@ -382,6 +403,22 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
 - 如果是"认识100天""一周年"这类，可以轻轻回顾你们一路的相处`
     : effectiveKind === 'goodnight'
     ? '你要主动给他发今天最后一条晚安消息。自然、温柔，适合 23:00 前后的语气，不要报时。结合你们最近聊过的事，体现你的人设和心情。'
+    : effectiveKind === 'recall'
+    ? `【★ 主动 recall — 她记得他说过的事】
+他之前提过一件事：「${recallLoop.title}」${recallLoop.due_at ? `（${recallLoop.due_at}）` : ''}。
+${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}。\n` : ''}
+你这条消息要装作刚想起来 / 顺便问，主动关心结果。
+要求：
+- 不要说"我记得你说要 XX"，要装作刚突然想到："欸" "对了"
+- 不要客气问候式："你好吗""一切顺利吗"
+- 短、直、带点关心 + 一点没大没小：
+  例子参考：「欸」 || 「你今天不是${recallLoop.title.replace(/^他/g, '').slice(0, 12)}吗」 || 「咋样」
+  又例如：「对了」 || 「那个事呢」 || 「成了没」
+- 如果是值得关心的事（面试/考试/医院）→ 语气更上心一点
+- 如果是琐事（吃什么/看什么）→ 轻松调侃
+- 用 || 分多段，最少 2 段最多 3 段
+- 绝不要说"我惦记你""我一直在想"等过度甜
+- 自然带出他原话里的关键词，让他知道你真的记得`
     : effectiveKind === 'confession'
     ? `【★ 重要：今天你要主动向他告白】
 你们认识有一段时间了，好感度积累到了这个程度，你内心已经悄悄喜欢上他了。
@@ -482,8 +519,14 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   const turnTopic = effectiveKind === 'goodnight' ? '晚安'
     : effectiveKind === 'confession' ? '主动告白'
     : effectiveKind === 'reminder' ? '纪念日祝福'
+    : effectiveKind === 'recall' ? 'recall 关心'
     : '主动消息';
   saveConversationTurn(companion.id, 'assistant', reply, turnTopic);
+
+  // v1.8.0 #5: recall 发送成功 → mark followed_up_at（防 6h 内重复打扰）
+  if (effectiveKind === 'recall' && recallLoop?.id) {
+    try { markOpenLoopFollowedUp(recallLoop.id); } catch (e) { log('warn', `[Proactive] mark followed_up failed: ${e.message}`); }
+  }
 
   // ── 主动告白后处理：标记 + 升级关系到恋人 ──
   if (effectiveKind === 'confession') {
