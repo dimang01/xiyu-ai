@@ -346,7 +346,7 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   // v1.4.1: 主动消息也按"想念档"给出 prompt 指令，让她主动找你时的语气有想念感
   const _es = getEmotionStateWithDefaults(companion.id);
   const _ml = getMissingLevel(_es, companion.last_user_reply_at);
-  const emotionHint = buildEmotionPromptHint(_es, { missingLevel: _ml });
+  const emotionHint = buildEmotionPromptHint(_es, { missingLevel: _ml, dailySchedule: proactiveDailySchedule });
   const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts })}${stickerHint}${emotionHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;

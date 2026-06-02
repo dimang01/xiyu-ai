@@ -423,7 +423,7 @@ export async function handleMessage(rawMsg, botContext = {}) {
     const stickerHint = buildStickerPromptHint(stickerEnabled);
     // v1.4.1: 算出 missingLevel 让 prompt 按"想念档"给出指令
     const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
-    const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel });
+    const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel, dailySchedule });
     let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts }) + stickerHint + emotionHint;
     // 关系阶段刚升级 → 这条回复要自然体现这种变化
     const celebration = consumePendingCelebration(companion.id);
