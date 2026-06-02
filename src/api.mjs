@@ -164,6 +164,7 @@ import {
   deleteCompanionForAccount,
   getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, touchMemory,
   isCompanionOwnedByAccount,
+  listPreferences, upsertPreference, deletePreference,  // v1.8.0 #3
   getEmotionState, upsertEmotionState,
   getEmotionHistoryTrend,
   getDiaryEntries, countDiaryEntries,
@@ -2615,6 +2616,42 @@ router.delete('/companions/:id', requireAuth, (req, res) => {
     log('error', `[API] deleteCompanion: ${e.message}`);
     return res.status(500).json({ ok: false, message: '服务器内部错误' });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.8.0 #3: companion preferences CRUD（结构化偏好账本）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/companions/:id/preferences[?type=like|dislike|taboo|neutral]
+router.get('/companions/:id/preferences', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  if (!requireOwnedCompanion(req, res, id)) return;
+  const type = req.query.type ? String(req.query.type) : null;
+  const list = listPreferences(id, { type });
+  return ok(res, { items: list });
+});
+
+// POST /api/companions/:id/preferences  body: { type, target, intensity?, reason?, source? }
+router.post('/companions/:id/preferences', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  if (!requireOwnedCompanion(req, res, id)) return;
+  const { type, target, intensity = 3, reason = null, source = 'user' } = req.body || {};
+  try {
+    upsertPreference({ companionId: id, type, target, intensity: Number(intensity), reason, source: String(source).slice(0,20) });
+    return ok(res, { ok: true });
+  } catch (e) {
+    return err(res, e.message, 400);
+  }
+});
+
+// DELETE /api/companions/:id/preferences  body: { type, target }
+router.delete('/companions/:id/preferences', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  if (!requireOwnedCompanion(req, res, id)) return;
+  const { type, target } = req.body || {};
+  if (!type || !target) return err(res, 'type & target 必填', 400);
+  const changes = deletePreference(id, type, target);
+  return ok(res, { deleted: changes });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
