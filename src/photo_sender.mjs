@@ -135,6 +135,8 @@ async function generateNaturalCaption(companion, { activity, source }) {
   }
 }
 
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
 async function writeConvertedPhoto(url, companionId) {
   if (!existsSync(PHOTO_DIR)) mkdirSync(PHOTO_DIR, { recursive: true });
   const ts = Date.now();
@@ -145,7 +147,10 @@ async function writeConvertedPhoto(url, companionId) {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!r.ok) throw new Error('download HTTP ' + r.status);
+    const contentLength = Number(r.headers.get('content-length') || 0);
+    if (contentLength > MAX_PHOTO_BYTES) throw new Error(`图片过大 ${contentLength}B`);
     const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > MAX_PHOTO_BYTES) throw new Error(`图片过大 ${buf.length}B`);
     writeFileSync(tmpPath, buf);
     await new Promise((resolve, reject) => {
       const proc = spawn('convert', [

@@ -78,7 +78,7 @@ function normalizeIdentity(companionId, raw) {
   return {
     version: 1,
     companionId: String(raw.companionId || companionId),
-    status: raw.status === 'ready' ? 'ready' : 'ready',
+    status: 'ready',
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     identitySpec: raw.identitySpec && typeof raw.identitySpec === 'object'
