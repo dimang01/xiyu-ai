@@ -429,6 +429,7 @@ SINGLE_USER=true
 
 最近主线：
 
+- **v1.6.3「撤掉不合调的人物插图」** v1.6.2 的 hero-girl 插图（OpenRouter gpt-5-image-mini 生成）实际效果是粉发二次元少女正脸，与产品"她像真实的人"的调性冲突；首页把它做成 logo 背后衬底太抢戏。本版撤掉 hero-girl 引用、删 .webp 文件、从重生脚本里移除，首页回到干净的 logo + 文案，auth 左栏换成 feature-persona（日记本）
 - **v1.6.2「打磨与刷新」** v1.6.1 一波收尾修复：visual_identity 死代码三元、photo_planner `numberEnv` 空字符串被吞为 0、netguard 重定向未排空响应、photo_sender 下载图片缺大小防御、强请求识别扩展（`想看看你 / 再来一张 / 看下你 / 秀一下你/自己` 等）、gate 拦截/planner 拒绝时给固定兜底而不退到普通 AI 文本 · **前端美化**：glass.css 升级（3 层背景光晕、多层阴影、三色 focus ring、新工具类 `.hero-blob / .floating-card / .glass-chip / .glass-stagger` + 暗色骨架）· 5 张 landing 插图全量重生（OpenRouter `openai/gpt-5-image-mini`，统一 soft pastel + flat vector）· 4 个入口页结构升级（首页 hero 衬底、auth 桌面两栏 split、create / setup 接入插图）
 - **v1.6.1「会拍照的她」** ⭐ **真实发图链路**（用户说"自拍/发张照片/想看你"——程序侧识别意图、AI 规划器决策、image provider 真的生图、转码 1024×1024 webp、iLink 上传发送，不是文字假装拍；冷却 10min / 每日 3 张 / 敏感词拦截 / Provider 缺失自然兜底）· **视觉人设规划器**（每个 companion 一份 identity spec：外貌/气质/风格，所有照片按 spec 生成，避免次次换脸；可上传参考图，provider 支持 image-to-image 时优先用 ref）· **安全加固**（SSRF 防护 netguard.mjs · X-Forwarded-For 信任策略 · setup token · admin 鉴权 · companions IDOR 修复，详见 [安全](#安全)）
 - **v1.6.x「拟人化深化」** ⭐ **3 个月模拟时间线**（一次性生成 35 个虚拟互动事件 + 关键事件入记忆 + 好感度演化曲线 5→30，从"刚认识"变"已经认识 3 个月"）· **11 维情绪**（原 7 维 + 耐心 / 兴奋 / 烦躁 / 感激；半小时定时重算；saturation 防刷）· **主动消息三驱动 motivation**（情绪 × 日程 × 时间 × 随机；重启持久化防重发；三道闸门防 race；段内 bigram+LCS dedup）· 人生记忆 prompt 12 → 19 类目（带名字 + 感官细节 + 世界观）· Playground 与 bot 情绪路径对齐
