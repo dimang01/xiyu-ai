@@ -82,9 +82,15 @@
     </div>
   </header>
 
-  <main class="max-w-3xl mx-auto px-6 py-10 lg:py-16">
+  <main class="max-w-3xl mx-auto px-6 py-10 lg:py-16 relative">
 
-    <div class="text-center mb-10">
+    <!-- 顶部装饰光斑 + 浮动插图 -->
+    <div class="hero-blob is-pink"   style="width:320px;height:320px;top:-60px;left:-40px;"></div>
+    <div class="hero-blob is-violet" style="width:260px;height:260px;top:80px;right:-60px;"></div>
+
+    <div class="text-center mb-10 relative">
+      <img src="/assets/landing/feature-persona.webp" alt=""
+           class="hidden sm:block w-24 h-24 mx-auto mb-5 rounded-2xl shadow-sakura object-cover" loading="lazy" />
       <p class="text-[14px] font-semibold text-sakura-deep tracking-wider mb-3">第 <span id="step-num">1</span> 步，共 4 步</p>
       <h1 id="page-title" class="text-[32px] sm:text-[42px] font-bold tracking-tightest leading-tight">定义你的她</h1>
       <p class="mt-3 text-[15px] text-mute font-medium">每一个细节，都让她更像你想象中的样子。</p>
@@ -97,7 +103,7 @@
       </div>
     </div>
 
-    <div class="bg-white rounded-3xl shadow-card p-7 sm:p-10">
+    <div class="glass rounded-3xl p-7 sm:p-10">
 
       <!-- STEP 1: 基础身份 -->
       <section data-step="1" class="step-content">

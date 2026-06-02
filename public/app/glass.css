@@ -1,87 +1,143 @@
 /* ============================================================================
- * 溪语 AI · Liquid Glass 主题层 (v1.3.0)
+ * 溪语 AI · Liquid Glass 主题层 (v1.6.1)
  *
- * 一个纯视觉的"苹果液态玻璃"增强层：升级背景光晕、把白底卡片 / 导航 / 按钮 /
- * 输入框统一玻璃化、加丝滑微动效。只需在页面 <head> 引入这一个文件即可，
+ * 一个纯视觉的"苹果液态玻璃"增强层：升级背景光晕、把卡片 / 导航 / 按钮 /
+ * 输入框统一玻璃化、加丝滑微动效。只需在 <head> 引入这一个文件即可，
  * 不依赖任何 HTML 结构或 JS 改动。
+ *
+ * v1.6.1 改进：
+ *   - 多层背景光晕（樱粉 + 雾紫 + 暖白）+ 噪声纹理，质感更近真玻璃
+ *   - 主按钮高光、悬浮态更细腻；按下回弹更克制
+ *   - 输入框 focus ring 用 3 色渐变，去掉廉价的单色光晕
+ *   - 卡片悬浮态：浮起 1.5px + 高光描边渐显（之前是 2px，太跳）
+ *   - .hero-blob / .floating-card / .chip / .pill 等可选工具类
+ *   - prefers-color-scheme: dark 骨架（非默认开启，避免破坏现有页面）
  *
  * 设计原则：
  *   - 半透明 + backdrop-blur + 高光描边 + 柔和多层投影 = 玻璃质感
  *   - 背景漂浮的彩色光斑透过玻璃，才有"液态"通透感
- *   - 所有交互走统一的丝滑缓动，hover 轻浮起、active 回弹
+ *   - 所有交互走统一的丝滑缓动
  *   - 覆盖 Tailwind utility 时才用 !important，尽量克制
  *
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  * ========================================================================== */
 
 :root {
-  --glass-bg:        rgba(255, 255, 255, 0.55);
-  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  /* ─ 玻璃基色 ─ */
+  --glass-bg:        rgba(255, 255, 255, 0.58);
+  --glass-bg-strong: rgba(255, 255, 255, 0.78);
   --glass-bg-soft:   rgba(255, 255, 255, 0.42);
-  --glass-border:    rgba(255, 255, 255, 0.65);
-  --glass-blur:      22px;
+  --glass-border:    rgba(255, 255, 255, 0.7);
+  --glass-border-soft: rgba(255, 255, 255, 0.45);
+  --glass-blur:      24px;
+  --glass-blur-strong: 36px;
+
+  /* ─ 阴影 ─ 多层叠加才有"飘起来"的感觉 */
   --glass-shadow:
-    0 10px 36px rgba(31, 38, 135, 0.10),
-    0 2px 8px rgba(255, 143, 184, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.25);
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 -1px 0 rgba(255, 192, 215, 0.18) inset,
+    0 10px 30px -8px rgba(31, 38, 135, 0.10),
+    0 4px 10px -4px rgba(255, 143, 184, 0.10);
   --glass-shadow-hover:
-    0 18px 50px rgba(31, 38, 135, 0.16),
-    0 4px 14px rgba(255, 143, 184, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --ease-silk: cubic-bezier(0.22, 1, 0.36, 1);
-  --sakura:      #FFB6D9;
-  --sakura-deep: #FF8FB8;
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 -1px 0 rgba(255, 192, 215, 0.22) inset,
+    0 22px 56px -10px rgba(31, 38, 135, 0.18),
+    0 8px 18px -8px rgba(255, 143, 184, 0.20);
+  --glass-shadow-press:
+    0 1px 0 rgba(255, 255, 255, 0.85) inset,
+    0 4px 14px -4px rgba(255, 143, 184, 0.16);
+
+  /* ─ 缓动 ─ */
+  --ease-silk:  cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ─ 主色 ─ 樱粉系 + 中性 */
+  --sakura:       #FFB6D9;
+  --sakura-deep:  #FF8FB8;
+  --sakura-soft:  #FFE8F2;
+  --mist-violet:  #C9B8FF;
+  --mist-blue:    #B2C9FF;
+  --ink:          #1D1D1F;
+  --ink-mute:     #6C6C72;
+
+  /* ─ ring (focus 用渐变) ─ */
+  --ring-grad: linear-gradient(135deg, #FFB6D9 0%, #C9B8FF 50%, #B2C9FF 100%);
 }
 
-/* ── 液态背景：固定的漂浮光斑层，透过玻璃卡片显出通透感 ───────────────────── */
+/* ============================================================================
+ * 背景层：3 层光晕 + 极淡噪点，给整页一个"奶油玻璃"底
+ * ========================================================================== */
 body {
   position: relative;
   background-color: #FAF7FB;
+  /* 极淡的纸纹噪声，让纯色背景不死板 */
+  background-image:
+    radial-gradient(rgba(31, 38, 135, 0.012) 1px, transparent 1px),
+    radial-gradient(rgba(255, 143, 184, 0.012) 1px, transparent 1px);
+  background-size: 4px 4px, 8px 8px;
+  background-position: 0 0, 2px 2px;
 }
+
 body::before,
-body::after {
+body::after,
+body > .glass-aurora {
   content: "";
   position: fixed;
   z-index: -2;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.55;
+  filter: blur(90px);
   pointer-events: none;
-  will-change: transform;
+  will-change: transform, opacity;
 }
+
 body::before {
-  width: 52vw; height: 52vw;
-  max-width: 720px; max-height: 720px;
-  top: -14vw; left: -10vw;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 182, 217, 0.85), rgba(255, 182, 217, 0) 70%);
-  animation: glass-drift-a 26s var(--ease-silk) infinite alternate;
+  /* 樱粉 — 左上 */
+  width: 56vw; height: 56vw;
+  max-width: 760px; max-height: 760px;
+  top: -16vw; left: -12vw;
+  opacity: 0.6;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 182, 217, 0.95), rgba(255, 182, 217, 0) 70%);
+  animation: glass-drift-a 28s var(--ease-silk) infinite alternate;
 }
 body::after {
-  width: 46vw; height: 46vw;
-  max-width: 640px; max-height: 640px;
-  bottom: -16vw; right: -12vw;
-  background: radial-gradient(circle at 60% 60%, rgba(178, 201, 255, 0.7), rgba(178, 201, 255, 0) 70%);
-  animation: glass-drift-b 32s var(--ease-silk) infinite alternate;
+  /* 雾蓝紫 — 右下 */
+  width: 48vw; height: 48vw;
+  max-width: 660px; max-height: 660px;
+  bottom: -18vw; right: -14vw;
+  opacity: 0.55;
+  background: radial-gradient(circle at 60% 60%, rgba(178, 201, 255, 0.85), rgba(201, 184, 255, 0.6) 40%, rgba(178, 201, 255, 0) 75%);
+  animation: glass-drift-b 34s var(--ease-silk) infinite alternate;
 }
+
+/* 可选第三层光晕：页面里加 <div class="glass-aurora"></div> 就显出 */
+body > .glass-aurora {
+  width: 40vw; height: 40vw;
+  max-width: 520px; max-height: 520px;
+  top: 30vh; left: 50vw;
+  transform: translateX(-50%);
+  opacity: 0.35;
+  background: radial-gradient(circle, rgba(255, 232, 242, 0.9), rgba(255, 232, 242, 0) 70%);
+  animation: glass-drift-c 24s var(--ease-silk) infinite alternate;
+}
+
 @keyframes glass-drift-a {
   0%   { transform: translate3d(0, 0, 0) scale(1); }
-  100% { transform: translate3d(8vw, 10vh, 0) scale(1.18); }
+  100% { transform: translate3d(6vw, 8vh, 0) scale(1.15); }
 }
 @keyframes glass-drift-b {
   0%   { transform: translate3d(0, 0, 0) scale(1.05); }
-  100% { transform: translate3d(-7vw, -8vh, 0) scale(1); }
+  100% { transform: translate3d(-5vw, -6vh, 0) scale(1); }
+}
+@keyframes glass-drift-c {
+  0%   { transform: translate(-50%, 0) scale(0.95); }
+  100% { transform: translate(-50%, -6vh) scale(1.1); }
 }
 
-/* ── 玻璃卡片：命中现有的 shadow-sakura / shadow-card 容器 + .glass 工具类 ──
- * 重要：用 :not() 排除"已经有自己背景渐变 / 粉色实色"的元素（小按钮、图标方框、
- * 头像等），否则会把它们的彩色背景覆盖成半透明白，导致彩色文字/图标贴白底
- * 看不见（修 v1.3.0 初版 dashboard "打开微信"按钮和"聊天模式"图标空白问题）。
- *
- * v1.4.0 hotfix: 再加 .btn-primary（auth.html 的登录/注册按钮用的是这个 class，
- * 它的粉色渐变背景由下方 .bg-sakura/.btn-primary 规则提供，本玻璃规则若不排除
- * 会盖掉它）。
- */
+/* ============================================================================
+ * 玻璃卡片
+ *   - 命中现有的 shadow-sakura / shadow-card 容器 + .glass 工具类
+ *   - 排除已有彩色背景（按钮/标签/头像方框等）的元素，避免吃掉它们的颜色
+ * ========================================================================== */
 .shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.bg-pink-500):not(.btn-primary),
 .shadow-card:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.bg-pink-500):not(.btn-primary),
 .glass {
@@ -90,96 +146,244 @@ body::after {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
   border: 1px solid var(--glass-border) !important;
   box-shadow: var(--glass-shadow) !important;
-  transition: box-shadow 0.45s var(--ease-silk), transform 0.45s var(--ease-silk);
+  transition:
+    box-shadow 0.5s var(--ease-silk),
+    transform 0.5s var(--ease-silk),
+    border-color 0.5s var(--ease-silk);
 }
-.glass-strong { background: var(--glass-bg-strong) !important; }
+.glass-strong { background: var(--glass-bg-strong) !important; backdrop-filter: blur(var(--glass-blur-strong)) saturate(180%); -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(180%); }
 .glass-soft   { background: var(--glass-bg-soft) !important; }
 
-/* 卡片 hover 时轻轻浮起（仅给明确可交互/链接卡片，避免大面板乱动；
-   同样排除已有彩色背景的元素，让它们保留各自的 hover 样式） */
+/* hover 浮起：1.5px 微浮 + 描边渐亮 */
 a.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.btn-primary):hover,
 a.shadow-card:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.btn-primary):hover,
 button.shadow-sakura:not([class*="bg-gradient"]):not([class*="bg-sakura"]):not(.btn-primary):hover,
 .glass-hover:hover {
   box-shadow: var(--glass-shadow-hover) !important;
-  transform: translateY(-2px);
+  border-color: rgba(255, 215, 232, 0.9) !important;
+  transform: translateY(-1.5px);
 }
 
-/* ── 玻璃导航栏 ─────────────────────────────────────────────────────────── */
+/* ============================================================================
+ * 玻璃导航栏（自动命中 header.sticky / nav.sticky / .glass-nav / .fixed top-0）
+ * ========================================================================== */
 header.sticky,
 nav.sticky,
+nav.fixed.top-0,
 .glass-nav {
-  background: rgba(255, 255, 255, 0.6) !important;
-  backdrop-filter: blur(26px) saturate(180%);
-  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  background: rgba(255, 255, 255, 0.62) !important;
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.55) !important;
-  box-shadow: 0 4px 20px rgba(31, 38, 135, 0.05);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 4px 24px rgba(31, 38, 135, 0.06);
 }
 
-/* ── 玻璃输入 / 文本域 / 选择框 ─────────────────────────────────────────── */
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+/* ============================================================================
+ * 玻璃输入 / 文本域 / 选择框
+ * focus ring 用三色渐变描边，比单色光晕高级
+ * ========================================================================== */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
 textarea,
 select {
-  background: rgba(255, 255, 255, 0.55) !important;
+  background: rgba(255, 255, 255, 0.6) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  transition: box-shadow 0.3s var(--ease-silk), border-color 0.3s var(--ease-silk), background 0.3s var(--ease-silk);
+  transition:
+    box-shadow 0.35s var(--ease-silk),
+    border-color 0.35s var(--ease-silk),
+    background 0.35s var(--ease-silk);
 }
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
 textarea:focus,
 select:focus {
-  background: rgba(255, 255, 255, 0.78) !important;
-  box-shadow: 0 0 0 4px rgba(255, 182, 217, 0.28);
+  background: rgba(255, 255, 255, 0.82) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 143, 184, 0.45),
+    0 0 0 5px rgba(255, 143, 184, 0.16),
+    0 8px 20px -10px rgba(255, 143, 184, 0.30);
   outline: none !important;
 }
 
-/* ── 玻璃按钮：粉色主按钮加渐变高光 + 丝滑浮动；其余按钮统一缓动 ─────────── */
-button, a, .btn { transition: transform 0.3s var(--ease-silk), box-shadow 0.3s var(--ease-silk), filter 0.3s var(--ease-silk); }
+/* ============================================================================
+ * 玻璃按钮
+ * ========================================================================== */
+button, a, .btn {
+  transition:
+    transform 0.35s var(--ease-silk),
+    box-shadow 0.35s var(--ease-silk),
+    filter 0.35s var(--ease-silk),
+    background 0.35s var(--ease-silk);
+}
 
 .bg-sakura,
 .bg-sakura-deep,
 button.bg-sakura,
-.btn-primary {
-  background-image: linear-gradient(135deg, #FFC2E0 0%, #FF8FB8 100%) !important;
-  box-shadow: 0 8px 22px rgba(255, 143, 184, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
+.btn-primary,
+[class*="from-sakura"][class*="to-sakura"] {
+  background-image: linear-gradient(135deg, #FFC2E0 0%, #FFA0C7 45%, #FF8FB8 100%) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 -1px 0 rgba(180, 100, 140, 0.18) inset,
+    0 10px 24px -8px rgba(255, 143, 184, 0.50) !important;
 }
 .bg-sakura:hover,
 .bg-sakura-deep:hover,
 button.bg-sakura:hover,
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 32px rgba(255, 143, 184, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
-  filter: saturate(1.05);
+.btn-primary:hover,
+[class*="from-sakura"][class*="to-sakura"]:hover {
+  transform: translateY(-1.5px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 -1px 0 rgba(180, 100, 140, 0.20) inset,
+    0 18px 38px -10px rgba(255, 143, 184, 0.60) !important;
+  filter: saturate(1.06) brightness(1.02);
 }
 .bg-sakura:active,
 button.bg-sakura:active,
-.btn-primary:active { transform: translateY(0) scale(0.985); }
+.btn-primary:active,
+[class*="from-sakura"][class*="to-sakura"]:active {
+  transform: translateY(0) scale(0.985);
+  box-shadow: var(--glass-shadow-press) !important;
+}
 
-/* ── 玻璃滚动条 ─────────────────────────────────────────────────────────── */
+/* ============================================================================
+ * 玻璃滚动条
+ * ========================================================================== */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 143, 184, 0.35);
+  background: linear-gradient(180deg, rgba(255, 143, 184, 0.35), rgba(201, 184, 255, 0.35));
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 143, 184, 0.6); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(255, 143, 184, 0.6), rgba(201, 184, 255, 0.55));
+  background-clip: content-box;
+}
 
-/* ── 进场淡入：让首屏更"丝滑"地浮现 ─────────────────────────────────────── */
+/* ============================================================================
+ * 可选工具类（hero 区 / featured / chips 等场景）
+ * 都是新增的：现有页面不会改变，要用时主动加 class
+ * ========================================================================== */
+
+/* hero 区背后大色块光晕（任意 element 加 .hero-blob 都行） */
+.hero-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: -1;
+}
+.hero-blob.is-pink   { background: radial-gradient(circle, rgba(255, 182, 217, 0.85), rgba(255, 182, 217, 0) 70%); }
+.hero-blob.is-violet { background: radial-gradient(circle, rgba(201, 184, 255, 0.75), rgba(201, 184, 255, 0) 70%); }
+.hero-blob.is-blue   { background: radial-gradient(circle, rgba(178, 201, 255, 0.75), rgba(178, 201, 255, 0) 70%); }
+.hero-blob.is-cream  { background: radial-gradient(circle, rgba(255, 232, 242, 0.95), rgba(255, 232, 242, 0) 70%); }
+
+/* "悬浮卡片"：插图周围常用 */
+.floating-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 22px;
+  box-shadow: var(--glass-shadow);
+  animation: floating-card 6s var(--ease-silk) infinite alternate;
+}
+@keyframes floating-card {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-6px); }
+}
+
+/* glass-chip：小标签，比 px-3 py-1 更稳定。
+   注意：不叫 .chip，因为 create.html 已经有同名 class 作为性格选择标签 */
+.glass-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px; font-weight: 600;
+  color: var(--sakura-deep);
+  background: rgba(255, 232, 242, 0.7);
+  border: 1px solid rgba(255, 192, 215, 0.5);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* pill：标签胶囊，多色 */
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  font-size: 11px; font-weight: 600;
+  color: var(--ink-mute);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+/* "ghost link"：主导航/底部链接用得到 */
+.glass-link {
+  color: var(--ink-mute);
+  transition: color 0.3s var(--ease-silk);
+}
+.glass-link:hover { color: var(--sakura-deep); }
+
+/* ============================================================================
+ * 进场动画：让首屏更"丝滑"地浮现
+ * ========================================================================== */
 @keyframes glass-fade-in {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 main > *, section, .glass, .shadow-sakura, .shadow-card {
-  animation: glass-fade-in 0.6s var(--ease-silk) both;
+  animation: glass-fade-in 0.7s var(--ease-silk) both;
 }
 
-/* ── 无障碍：尊重"减少动态效果"系统设置 ───────────────────────────────── */
+/* 顺序错峰（任意元素加 .glass-stagger 让其子级依次浮现） */
+.glass-stagger > *:nth-child(1) { animation-delay: 0.00s; }
+.glass-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.glass-stagger > *:nth-child(3) { animation-delay: 0.12s; }
+.glass-stagger > *:nth-child(4) { animation-delay: 0.18s; }
+.glass-stagger > *:nth-child(5) { animation-delay: 0.24s; }
+.glass-stagger > *:nth-child(6) { animation-delay: 0.30s; }
+.glass-stagger > *:nth-child(7) { animation-delay: 0.36s; }
+.glass-stagger > *:nth-child(8) { animation-delay: 0.42s; }
+
+/* ============================================================================
+ * 无障碍：尊重 prefers-reduced-motion
+ * ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
-  body::before, body::after,
-  main > *, section, .glass, .shadow-sakura, .shadow-card {
+  body::before, body::after, body > .glass-aurora,
+  main > *, section, .glass, .shadow-sakura, .shadow-card,
+  .floating-card {
     animation: none !important;
   }
   *, *::before, *::after { transition-duration: 0.01ms !important; }
 }
+
+/* ============================================================================
+ * 暗色模式骨架（默认不启用 — 页面 <html data-theme="dark"> 才生效）
+ * 大部分页面声明了 color-scheme: light only，所以这套规则只对显式 opt-in 的页面生效
+ * ========================================================================== */
+html[data-theme="dark"] {
+  --glass-bg:        rgba(28, 28, 32, 0.55);
+  --glass-bg-strong: rgba(28, 28, 32, 0.75);
+  --glass-bg-soft:   rgba(28, 28, 32, 0.40);
+  --glass-border:    rgba(255, 255, 255, 0.10);
+  --glass-border-soft: rgba(255, 255, 255, 0.06);
+  --glass-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 10px 30px -8px rgba(0, 0, 0, 0.5),
+    0 4px 10px -4px rgba(255, 143, 184, 0.10);
+  --ink:      #F4F4F6;
+  --ink-mute: #A0A0A8;
+}
+html[data-theme="dark"] body {
+  background-color: #0F0F12;
+}
+html[data-theme="dark"] body::before  { opacity: 0.35; }
+html[data-theme="dark"] body::after   { opacity: 0.30; }
