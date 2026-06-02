@@ -50,6 +50,13 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 | **18-section persona prompt** | Meta-cognition / relationship stage / today's schedule / recent context / long-term summary / anti-AI-tone rules — stitched in one pass |
 | **5-stage relationship** | Flirting → Lover → Deep Love (can revert to Friend/Stranger). Distinct form of address, flirty tone, and topic depth per stage |
 | **Real-person texting cadence** | ≤15 chars per message, multi-burst sending with `\|\|`, strips AI tone; Persona Guard consistency check after each reply |
+| **She remembers unfinished things (v1.8.0)** ⭐⭐ | User says "I have an interview tomorrow" → LLM extracts to `companion_open_loops` table → next day she initiates "oh by the way \|\| did you nail the interview". Has `due_at` + `emotional_weight` + `expected_followup`. "Bombed it" auto-resolves; nothing-for-7-days auto-stales. One of the strongest signals of real companionship |
+| **Inner OS internal monologue (v1.8.0)** ⭐⭐ | Double-pass reply: each turn first generates an inner monologue (not sent) → injected into outer prompt → outer reply written *based on* the inner thought. She thinks "ugh, again" but says "mm", thinks "kinda heart-fluttery" but plays it cool — the **gap** between thought and speech is what makes it feel like a real person. Toggleable (`INNER_OS_ENABLED=false`), short messages < 8 chars auto-skip |
+| **Causal proactive messages (v1.8.0)** | proactive is no longer just "how was your day". When `companion_open_loops` has something due → kind upgrades to `recall` with injected `hidden_reason` (user said "interview tomorrow"), prompt drives "oh by the way \|\| how did XX go"; `followed_up_at` blocks 6h re-disturbance |
+| **Structured preference ledger (v1.8.0)** | `companion_preferences` table: `type` (like/dislike/taboo/neutral) × `intensity` 1-5 × `reason` × `source` (system/user_observed/generated/legacy/user). Prompt modifies "extremely-cats" / "very dad-energy" / "kinda soap-opera". 3 REST endpoints. Auto-backfills existing `hobbies/dislikes` at startup |
+| **Presence: here but not always serving (v1.8.0)** | `availability` (free/busy/half) + `attention` (0-100) derived from today's `dailySchedule` current activity: sleep/meeting=busy / eating/strolling=half / other=free. Prompt injects "can reply but half-attention, doing something else" — user asks "what are you up to" no longer gets a customer-service answer |
+| **Incomplete reply mode (v1.7~v1.8)** | 7 allowed: only empathize / only complain / stall then continue / just say "dunno" / change topic / short when busy / can have "no opinion". Hard ban on the "reaction + praise + question + advice" 4-piece AI tone |
+| **Less sycophantic + crush playing-cool + teases back + not-in-the-mood (v1.7.0)** | 5 anti-sycophancy moves: every 5-8 replies ≥1 disagreement / crush stage doesn't chase or accept fully / when relationship's close enough she teases proactively / annoyance threshold triggers "low-energy mode" overriding compliance directives / `dislikes` field backs up "this isn't for me" |
 | **Real photo sending (v1.6.1)** ⭐ | When the user says "selfie", "show me you", "send a pic" — intent is detected, an AI planner decides whether to send, and a real generated image is uploaded to WeChat. Not "I'm taking one now" stalling text. Per-day cap, cooldown, unsafe-word block, graceful fallback ("just took a blurry one") when provider is missing |
 | **Stable visual identity (v1.6.1)** ⭐ | Each companion gets one visual-identity spec (hair / outfit / vibe → permanent JSON) used for every generated photo, so her face stays consistent. Reference images can be uploaded; providers that support image-to-image use them as conditioning |
 | **Proactive scene photos** | Daily 36h+ candidate window + AI planner decides — like she suddenly thought "let me show you this", with a natural one-line caption |
@@ -322,8 +329,10 @@ When enabled, **all chat history, memories, and bound credentials are accessible
 │   ├── playground.mjs       Browser chat
 │   ├── companion.mjs        18-section system prompt assembler
 │   ├── memory_v2.mjs        7-layer memory + semantic recall + forgetting curve
-│   ├── emotion_state.mjs    7-dim emotion state machine (v1.4.1 upgrade)
-│   ├── proactive.mjs        Proactive messages + scene-photo scheduling
+│   ├── emotion_state.mjs    11-dim emotion + presence (v1.8.0 adds availability/attention)
+│   ├── inner_os.mjs         Inner OS — internal monologue double-pass reply (v1.8.0)
+│   ├── open_loops.mjs       She remembers unfinished things — LLM extract + auto-resolve (v1.8.0)
+│   ├── proactive.mjs        Proactive messages + scene-photo scheduling (v1.8.0 adds recall + hidden_reason)
 │   ├── photo_intent.mjs     User photo-request intent detector (v1.6.1)
 │   ├── photo_planner.mjs    Photo AI decision + safety sanitization (v1.6.1)
 │   ├── photo_sender.mjs     Generate → transcode → upload → send helper (v1.6.1)
