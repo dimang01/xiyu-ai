@@ -35,6 +35,7 @@ import { detectPhotoIntent, hasUnsafePhotoContent } from './photo_intent.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
+import { extractOpenLoops, detectAndResolveOpenLoops } from './open_loops.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 const PHOTO_REQUEST_ENABLED = !['0', 'false', 'no', 'off'].includes(String(process.env.PHOTO_REQUEST_ENABLED ?? 'true').toLowerCase());
@@ -716,6 +717,16 @@ async function postProcess(companion, userMsg, botReply) {
   if (companion.memory_enabled) {
     await extractAndSaveMemories(companion.id, companion.user_id, userMsg, botReply);
     await extractAndUpdateUserProfile(companion.id, companion.user_id, userMsg);
+  }
+
+  // v1.8.0 #4: open loops — 抽取"未完成的事" + auto-resolve
+  // 立即用启发式检测 resolve（不调 LLM，快）
+  try { detectAndResolveOpenLoops(companion.id, userMsg); } catch (e) { log('warn', `[Bot] resolve loop: ${e.message}`); }
+  // 异步抽取新 loops（调 LLM，不阻塞）
+  if (companion.memory_enabled) {
+    extractOpenLoops(companion.id, userMsg, botReply).catch(err =>
+      log('warn', `[Bot] extract loop: ${err.message}`)
+    );
   }
 }
 

@@ -66,6 +66,11 @@ async function tick(now = new Date()) {
   await runOnce(parts, 'archive-schedule', parts.hour === 23 && parts.minute === 30, () => runArchiveDailySchedule(parts.dateKey));
   // 03:20 — 记忆衰减写回
   await runOnce(parts, 'memory-decay', parts.hour === 3 && parts.minute === 20, () => runMemoryDecay());
+  // v1.8.0 #4: 03:30 — 清理过期 stale open loops
+  await runOnce(parts, 'cleanup-stale-loops', parts.hour === 3 && parts.minute === 30, async () => {
+    const m = await import('./open_loops.mjs');
+    m.cleanupStaleOpenLoops();
+  });
   // 02:15 — 每日反思（在 daily summary 后运行）
   await runOnce(parts, 'daily-reflection', parts.hour === 2 && parts.minute === 15, () => runDailyReflections(parts.dateKey));
   // 周日 02:45 — 每周反思
