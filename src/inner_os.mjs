@@ -32,7 +32,9 @@ const MAX_INNER_TOKENS = Number(process.env.INNER_OS_MAX_TOKENS ?? 80);
 const SELECTIVE_TRIGGERS = /(?:怎么不回|你是不是|想你|喜欢我|难受|烦|累|失眠|生气|分手|不理我|为什么不|你变了|怪怪的|凭什么|不公平|委屈|心疼|讨厌|对不起|抱歉|算了|无所谓|够了|后悔|害怕|担心|焦虑|压力|崩溃|绝望|无聊|没意思|想见你|抱抱|亲|爱你)/;
 
 // 关系张力短句白名单（短句但语义密度极高）—— off 之外的 mode 都放行
-const RELATIONAL_SHORT = /(?:在干嘛|干嘛呢|怎么不回|不理我|你变了|随便你|哦|嗯+|睡了|忙吗|你最近|怪怪的|想你|讨厌|烦|累|啊|去吧|滚)/;
+// 注意：故意不收录单独的「啊」——「啊？」「啊哈哈」「啊我也是」噪音太多，
+// 真正高张力的"啊"语境（"啊行""啊好吧"）已被其他词覆盖，宁可漏过也不引入噪音。
+const RELATIONAL_SHORT = /(?:在干嘛|干嘛呢|怎么不回|不理我|你变了|随便你|哦|嗯+|睡了|忙吗|你最近|怪怪的|想你|讨厌|烦|累|去吧|滚)/;
 
 export function isInnerOsEnabled(companion) {
   if (INNER_OS_MODE === 'off') return false;
