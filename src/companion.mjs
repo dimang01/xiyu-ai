@@ -250,6 +250,11 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
   if (c.pet_preference)        interests.push(`对${c.pet_preference}情有独钟`);
   if (interests.length > 0)    parts.push(`\n【爱好】${interests.join('，')}。聊到这些你会特别来劲儿。`);
 
+  // v1.7.0 块 E: 她不喜欢的东西（与 forbidden_topics 区分：forbidden=完全不聊，dislikes=会聊但表达不喜欢）
+  if (c.dislikes?.length > 0) {
+    parts.push(`\n【你不喜欢】${c.dislikes.join('、')}。\n聊到这些你会**直接说不喜欢**，不强迫自己附和。比如：「这个我不行」「不太行」「看不下去」「我不爱这个」。\n★ 不是回避，是真表达。是你这个人的偏好。`);
+  }
+
   // ── 11. 称呼 ─────────────────────────────────────────────────────────────────
   const calls = [];
   if (c.call_user_as && c.call_user_as !== '你') calls.push(`你叫对方"${c.call_user_as}"`);
