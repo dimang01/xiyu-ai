@@ -27,8 +27,38 @@
     };
   </script>
   <style>
-    body { background: linear-gradient(180deg, #FFF7FB 0%, #FFFFFF 60%); }
-    .card { background: #fff; border: 1px solid #F0F0F2; border-radius: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    body {
+      background: #FAF7FB;
+      position: relative;
+      min-height: 100vh;
+    }
+    /* 柔和背景光晕 */
+    body::before, body::after {
+      content: ""; position: fixed; z-index: 0; border-radius: 50%;
+      filter: blur(80px); opacity: 0.55; pointer-events: none;
+    }
+    body::before {
+      width: 50vw; height: 50vw; max-width: 640px; max-height: 640px;
+      top: -12vw; left: -10vw;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 182, 217, 0.9), rgba(255, 182, 217, 0) 70%);
+    }
+    body::after {
+      width: 42vw; height: 42vw; max-width: 560px; max-height: 560px;
+      bottom: -14vw; right: -12vw;
+      background: radial-gradient(circle at 60% 60%, rgba(178, 201, 255, 0.75), rgba(178, 201, 255, 0) 70%);
+    }
+    main { position: relative; z-index: 1; }
+    .card {
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      border-radius: 22px;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.9) inset,
+        0 10px 30px -8px rgba(31, 38, 135, 0.10),
+        0 4px 10px -4px rgba(255, 143, 184, 0.10);
+    }
     .pill { background: #FFE8F2; color: #FF8FB8; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
     .pill-ok  { background: #E3F8E5; color: #28A745; }
     .pill-err { background: #FFE3E3; color: #D63B3B; }
@@ -94,9 +124,12 @@
 
 <main class="max-w-2xl mx-auto px-5 py-10">
 
-  <header class="text-center mb-8">
-    <img src="/logo-256.webp" alt="" class="w-14 h-14 mx-auto rounded-2xl shadow-sm" />
-    <h1 class="mt-4 text-[26px] font-extrabold tracking-tight">溪语 AI · 配置向导</h1>
+  <header class="text-center mb-8 relative">
+    <img src="/assets/landing/feature-schedule.webp" alt=""
+         class="hidden sm:block w-24 h-24 mx-auto mb-3 rounded-2xl object-cover"
+         style="box-shadow: 0 10px 30px -8px rgba(255, 143, 184, 0.25);" loading="lazy" />
+    <img src="/logo-256.webp" alt="" class="w-12 h-12 mx-auto rounded-2xl shadow-sm sm:hidden" />
+    <h1 class="mt-4 text-[26px] sm:text-[30px] font-extrabold tracking-tight">溪语 AI · 配置向导</h1>
     <p class="mt-1.5 text-[13px] text-mute">跟着步骤配置好就能聊天了</p>
   </header>
 
