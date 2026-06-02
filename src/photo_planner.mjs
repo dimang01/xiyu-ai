@@ -52,7 +52,11 @@ function envFlag(name, fallback = true) {
 }
 
 function numberEnv(name, fallback, min = 0) {
-  const n = Number(process.env[name]);
+  // 空字符串和未设置都走 fallback，避免 PHOTO_DAILY_LIMIT_PER_COMPANION= 这种空配置
+  // 把默认值 3 退化为 0（无限制）。
+  const raw = process.env[name];
+  if (raw == null || raw === '') return Math.max(min, fallback);
+  const n = Number(raw);
   return Math.max(min, Number.isFinite(n) ? n : fallback);
 }
 

@@ -308,6 +308,12 @@ export async function handleMessage(rawMsg, botContext = {}) {
           trigger: 'user_request',
           source: 'request',
         });
+        if (!gate.allowed) {
+          // gate 拦截（冷却/每日上限/provider 未配置）时给一个温和兜底，
+          // 别把"她要拍照"直接退回到普通 AI 文本路径——AI 不知道刚被拒。
+          replyText = pickPhotoRequestFallback();
+          log('debug', `[Bot] photo gate blocked companion=${companion.id} reason=${gate.reasons.join(',')} → fallback`);
+        }
         if (gate.allowed) {
           const recentForPlanner = getRecentHistory(msg.fromUser, botId, 10);
           let photoEmotionState = null;
@@ -355,10 +361,11 @@ export async function handleMessage(rawMsg, botContext = {}) {
             }
             log('warn', `[Bot] photo request send failed companion=${companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
           } else {
-            log('debug', `[Bot] photo planner declined companion=${companion.id} reason=${plan.reason}`);
+            // planner 拒绝发图，但用户明确要求了——也给个轻量 fallback 而不是
+            // 退到普通 AI 文本（避免 AI 不知道刚才被拒，回出反差感）。
+            replyText = pickPhotoRequestFallback();
+            log('debug', `[Bot] photo planner declined companion=${companion.id} reason=${plan.reason} → fallback`);
           }
-        } else {
-          log('debug', `[Bot] photo gate blocked companion=${companion.id} reason=${gate.reasons.join(',')}`);
         }
       }
 

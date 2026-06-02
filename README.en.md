@@ -50,7 +50,10 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 | **18-section persona prompt** | Meta-cognition / relationship stage / today's schedule / recent context / long-term summary / anti-AI-tone rules — stitched in one pass |
 | **5-stage relationship** | Flirting → Lover → Deep Love (can revert to Friend/Stranger). Distinct form of address, flirty tone, and topic depth per stage |
 | **Real-person texting cadence** | ≤15 chars per message, multi-burst sending with `\|\|`, strips AI tone; Persona Guard consistency check after each reply |
-| **Proactive messages (3-driver v1.6)** | Morning/night/random daytime/anniversary/confession/scene-photo; motivation = emotion × schedule × time × jitter; dual-layer dedup (intra-batch + vs history); restart-resistant persistence prevents duplicates |
+| **Real photo sending (v1.6.1)** ⭐ | When the user says "selfie", "show me you", "send a pic" — intent is detected, an AI planner decides whether to send, and a real generated image is uploaded to WeChat. Not "I'm taking one now" stalling text. Per-day cap, cooldown, unsafe-word block, graceful fallback ("just took a blurry one") when provider is missing |
+| **Stable visual identity (v1.6.1)** ⭐ | Each companion gets one visual-identity spec (hair / outfit / vibe → permanent JSON) used for every generated photo, so her face stays consistent. Reference images can be uploaded; providers that support image-to-image use them as conditioning |
+| **Proactive scene photos** | Daily 36h+ candidate window + AI planner decides — like she suddenly thought "let me show you this", with a natural one-line caption |
+| **Proactive messages (3-driver v1.6)** | Morning / night / random daytime / anniversary / confession; motivation = emotion × schedule × time × jitter; dual-layer dedup (intra-batch + vs history); restart-resistant persistence prevents duplicates |
 | **Missing-level 0–4** | Combines dependency + idle time to compute "how much she misses you", with 30m/3h/6h/12h/24h thresholds; tone adapts naturally |
 | **3-month simulated timeline (v1.6)** ⭐ | Dashboard button triggers LLM to generate 35 virtual interaction events + key events enter memory + affection arc 5→30; new companions feel "already known you for 3 months" |
 | **Today's thought for you** | Daily 02:35 cron generates an independent line outside chat; dashboard bubble card + 🔊 narration |
@@ -176,6 +179,8 @@ On success, credentials are written to `./.weixin-credentials.json` (mode 0600, 
 |---|---|
 | Send/receive text | ✅ |
 | Send images / files / video | ✅ |
+| **User asks for "selfie / photo / show me you" → real image sent (v1.6.1)** | ✅ Intent detected + AI planner decides + visual identity keeps her face stable |
+| Daytime proactive scene photos (≥36h candidate window, AI decides) | ✅ |
 | Proactive messages + typing indicator | ✅ |
 | Receive user voice → ASR | ✅ (also works in playground) |
 | **Bot sending voice in WeChat** | ❌ Forbidden by iLink protocol (HTTP 200 returned but message silently dropped, Tencent's anti-abuse) |
@@ -318,7 +323,12 @@ When enabled, **all chat history, memories, and bound credentials are accessible
 │   ├── companion.mjs        18-section system prompt assembler
 │   ├── memory_v2.mjs        7-layer memory + semantic recall + forgetting curve
 │   ├── emotion_state.mjs    7-dim emotion state machine (v1.4.1 upgrade)
-│   ├── proactive.mjs        Proactive messages + scene photos
+│   ├── proactive.mjs        Proactive messages + scene-photo scheduling
+│   ├── photo_intent.mjs     User photo-request intent detector (v1.6.1)
+│   ├── photo_planner.mjs    Photo AI decision + safety sanitization (v1.6.1)
+│   ├── photo_sender.mjs     Generate → transcode → upload → send helper (v1.6.1)
+│   ├── visual_identity.mjs  Stable visual identity + reference image management (v1.6.1)
+│   ├── security/netguard.mjs SSRF-safe URL download (v1.6.1)
 │   ├── persona_guard.mjs    Post-reply consistency check
 │   ├── reflection.mjs       Daily/weekly AI reflection
 │   ├── diary.mjs            Diary generation
@@ -350,6 +360,15 @@ When enabled, **all chat history, memories, and bound credentials are accessible
 - `/api/health` only outputs provider name / whether iLink is configured / email mode; never outputs tokens / user data
 - iLink `bot_token` is never logged; the QR login script only shows masked `bot_id` / `user_id`
 - CORS is closed by default; default rate limit (`src/ratelimit.mjs`) is sized for personal use — front public services with a WAF
+
+### v1.6.1 hardening
+
+- **SSRF protection**: every user-supplied URL we download from (e.g. "set avatar from URL") goes through `src/security/netguard.mjs` — http/https only, DNS resolves are validated address-by-address, all RFC1918 / loopback / link-local / 100.64/10 carrier-NAT / IPv6 ULA & link-local / multicast ranges are rejected, ≤5 MB body cap, ≤3 redirect hops, 15 s timeout
+- **Rate-limit IP source**: `req.ip` is now derived through Express trust-proxy chain instead of trusting client-supplied `X-Forwarded-For` (forgeable). For reverse-proxy setups set `TRUST_PROXY=true` or a specific IP / CIDR
+- **First-time setup token**: `POST /api/setup/local-account` is localhost-only by default. For remote one-shot bootstrap, set `XIYU_SETUP_TOKEN=<random>` and have the caller send `xiyu-setup-token: <same>` — comparison uses `crypto.timingSafeEqual` to dodge timing leaks
+- **Admin auth tightening**: `/api/admin/ilink-status` now requires `requireAdmin`; response fields are stripped of tokens, error messages are clamped to 80 chars, and bot IDs are masked
+- **IDOR fix**: `/api/companions/user/:uid` verifies the companion belongs to the requesting account
+- **Setup chat-test**: `/api/setup/test-chat` is now `softAuth`; anonymous calls are restricted to the "first-boot + localhost + zero accounts" allow-list
 
 ### Data and Content
 
@@ -408,6 +427,7 @@ Release cadence / full changelog at [GitHub Releases](https://github.com/dimang0
 
 Recent mainline:
 
+- **v1.6.1 "She can actually take photos"** ⭐ **Real photo pipeline** — when the user asks "selfie / show me you / send a pic", intent is detected, an AI planner decides whether to send, an image is really generated by the active image provider, transcoded to 1024×1024 webp and pushed to WeChat. Not "wait, I'm taking one" stalling text. Cooldown 10 min / 3 per day per companion / unsafe-word block / graceful fallback when provider is missing · **Visual identity planner** — each companion gets one identity spec (face / hair / outfit / vibe) used as conditioning for every photo, so her face stays consistent across sessions; reference images can be uploaded and providers that support image-to-image use them · **Security hardening** — SSRF guard `netguard.mjs`, X-Forwarded-For trust policy, setup token, admin auth on `/admin/ilink-status`, companion IDOR fix (see [Security](#security))
 - **v1.6.x "Deeper Humanization"** ⭐ **3-month simulated timeline** (LLM generates 35 virtual interaction events + key events enter memory + affection arc 5→30; new companions feel "already known you for 3 months" instead of starting from zero) · **11-dim emotion** (original 7 + patience / excitement / annoyance / gratitude; half-hourly recalc cron; saturation anti-spam dampening) · **Proactive 3-driver motivation** (emotion × schedule × time × jitter; restart-resistant persistence; 3-gate race protection; intra-batch bigram+LCS dedup) · Persona facts prompt 12 → 19 categories (named people + sensory details + worldview) · Playground aligned with bot emotion path
 - **v1.5.x "Long-term Companionship"** — Offline letter capsule (HMAC-signed .txt the user keeps forever) · Time capsule (she writes "the me of now" reaction when it unlocks) · Silent companion mode (cyber-distance: breathing dot in the corner instead of messages) · Relational diary "between us" (nightly, editable, exportable) · SINGLE_USER mode (self-host without login page)
 - **v1.4.x** — TTS 5 (MiniMax / OpenAI / Azure / Doubao / Qwen) + ASR 7 implemented (Gemini / OpenAI / Qwen / Groq / MiniMax / Azure / Doubao) + Vision 8 (Zhipu / OpenAI / Qwen / Doubao / Claude / Kimi / StepFun / MiniMax); default starting stage = crushing; missing-level + "today's thought for you"; in-browser voice recording + narration

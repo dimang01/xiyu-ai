@@ -171,6 +171,8 @@ export async function downloadImageWithGuards(rawUrl, opts = {}) {
 
     if (status >= 300 && status < 400) {
       const location = response.headers.location;
+      // 排空当前响应避免 socket 长时间占用
+      response.resume();
       if (!location) throw httpError('下载重定向缺少 Location', 502);
       if (redirectCount >= maxRedirects) throw httpError('下载重定向次数过多', 502);
       url = await validateUrl(new URL(location, url).toString());

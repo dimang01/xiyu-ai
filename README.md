@@ -52,7 +52,10 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | **18 节人设 prompt** | 元认知 / 关系阶段 / 今日日程 / 最近上下文 / 长期摘要 / 反 AI 味规则一次拼好 |
 | **5 阶段关系** | 暧昧 → 恋人 → 深爱（可回退朋友/陌生人）。每阶段称呼、撒娇、话题深度差异化 |
 | **真人发微信** | ≤15 字一条、多条 \|\| 连发、剥离 AI 味；Persona Guard 回复后一致性校验 |
-| **主动消息（三驱动 v1.6）** | 早安/晚安/日间/纪念日/告白/场景照；motivation = 情绪 × 日程 × 时间 × 随机；段内 + 历史双重 dedup；重启持久化防重发 |
+| **真实发图 (v1.6.1)** ⭐ | 用户说"发个自拍""让我看看你"——程序侧识别意图、AI 规划器决策、真的发生成的照片到微信，不是文字编"我现在在拍"。每日上限、冷却、敏感词拦截、Provider 缺失自动兜底"刚拍糊了" |
+| **稳定的"她长什么样"(v1.6.1)** ⭐ | 每个 companion 生成一份 visual identity（发色/发型/穿搭/气质 → 永久 spec），每次发图都按这份 spec 生成，避免每次发图都换脸。可上传参考图；provider 支持 image-to-image 时优先用 ref 图 |
+| **主动场景照** | 白天 36h 候选窗口 + AI 规划器决策，像"刚坐下来想给你看"那样低频自然发图，附自然配文 |
+| **主动消息（三驱动 v1.6）** | 早安/晚安/日间/纪念日/告白；motivation = 情绪 × 日程 × 时间 × 随机；段内 + 历史双重 dedup；重启持久化防重发 |
 | **想念档 0-4** | 综合 dependency + idle 算"她想你的程度"，30m/3h/6h/12h/24h 五档，回复口吻自然带出来 |
 | **3 个月模拟时间线 (v1.6)** ⭐ | dashboard 按钮触发，LLM 一次性生成 35 个虚拟互动事件 + 关键事件入记忆 + 好感度演化 5→30；用户首次打开聊天她已经"认识 3 个月" |
 | **今天她想对你说** | 每天 02:35 cron 生成独立于聊天的一句话，dashboard 气泡卡 + 🔊 朗读 |
@@ -178,6 +181,8 @@ npm run ilink:login
 |---|---|
 | 收发文本 | ✅ |
 | 发图片 / 文件 / 视频 | ✅ |
+| **用户要"自拍 / 照片 / 看看你" → 真实发图 (v1.6.1)** | ✅ 程序侧识别 + AI 规划器决策 + 视觉人设保持外貌一致 |
+| 白天主动场景照（≥36h 候选窗口，AI 自决是否真发） | ✅ |
 | 主动消息 + 打字指示器 | ✅ |
 | 收用户语音 → ASR | ✅（playground 也支持） |
 | **bot 在微信里发语音** | ❌ iLink 协议禁止 outbound voice（实测 HTTP 200 但消息静默丢弃，腾讯反欺诈） |
@@ -320,7 +325,12 @@ SINGLE_USER=true
 │   ├── companion.mjs        18 节 system prompt 合成
 │   ├── memory_v2.mjs        7 层记忆 + 语义召回 + 遗忘曲线
 │   ├── emotion_state.mjs    7 维情绪状态机（v1.4.1 升级）
-│   ├── proactive.mjs        主动消息 + 场景照
+│   ├── proactive.mjs        主动消息 + 场景照调度
+│   ├── photo_intent.mjs     用户照片请求意图识别（v1.6.1）
+│   ├── photo_planner.mjs    照片 AI 决策器 + 安全清洗（v1.6.1）
+│   ├── photo_sender.mjs     生图 → 转码 → 上传 → 发送 helper（v1.6.1）
+│   ├── visual_identity.mjs  稳定视觉人设 + 参考图管理（v1.6.1）
+│   ├── security/netguard.mjs SSRF 防护下载（v1.6.1）
 │   ├── persona_guard.mjs    回复后一致性校验
 │   ├── reflection.mjs       每日/每周 AI 反思
 │   ├── diary.mjs            日记生成
@@ -352,6 +362,15 @@ SINGLE_USER=true
 - `/api/health` 只输出 provider 名 / iLink configured 与否 / 邮件模式，绝不输出 token / 用户数据
 - iLink `bot_token` 从不打印；扫码脚本只显示 masked `bot_id` / `user_id`
 - 默认 CORS 关；默认 rate limit (`src/ratelimit.mjs`) 按个人量级设计，公开服务前置 WAF
+
+### v1.6.1 加固
+
+- **SSRF 防护**：所有从用户 URL 下载的图片（如"从 URL 设头像"）走 `src/security/netguard.mjs`：仅 http/https、DNS 解析后逐 IP 校验、拒绝 127/10/172.16-31/192.168/169.254/100.64/IPv6 ULA-link-local 等保留段、≤5MB、≤3 跳重定向、15s 超时
+- **限流 IP 取值**：`req.ip` 由 Express trust-proxy 链计算，不再裸读客户端 `X-Forwarded-For`（可伪造）。反代场景配置 `TRUST_PROXY=true` 或具体 IP/CIDR
+- **首次初始化 token**：`POST /api/setup/local-account` 默认只允许 localhost；如需远程一键初始化可设 `XIYU_SETUP_TOKEN=<随机串>`，调用方通过 `xiyu-setup-token` header 提供，校验用 `crypto.timingSafeEqual` 防侧信道
+- **管理端鉴权**：`/api/admin/ilink-status` 加 `requireAdmin`，返回字段去除 token / errmsg 截断 80 字 / bot_id 脱敏，避免泄漏运营态
+- **越权防护**：`/api/companions/user/:uid` 校验 companion 归属当前账号（IDOR 修复）
+- **Setup 试 Provider**：`/api/setup/test-chat` 加 `softAuth`，匿名调用仅限"首次本机 + 用户数=0"白名单
 
 ### 数据与内容
 
@@ -410,6 +429,7 @@ SINGLE_USER=true
 
 最近主线：
 
+- **v1.6.1「会拍照的她」** ⭐ **真实发图链路**（用户说"自拍/发张照片/想看你"——程序侧识别意图、AI 规划器决策、image provider 真的生图、转码 1024×1024 webp、iLink 上传发送，不是文字假装拍；冷却 10min / 每日 3 张 / 敏感词拦截 / Provider 缺失自然兜底）· **视觉人设规划器**（每个 companion 一份 identity spec：外貌/气质/风格，所有照片按 spec 生成，避免次次换脸；可上传参考图，provider 支持 image-to-image 时优先用 ref）· **安全加固**（SSRF 防护 netguard.mjs · X-Forwarded-For 信任策略 · setup token · admin 鉴权 · companions IDOR 修复，详见 [安全](#安全)）
 - **v1.6.x「拟人化深化」** ⭐ **3 个月模拟时间线**（一次性生成 35 个虚拟互动事件 + 关键事件入记忆 + 好感度演化曲线 5→30，从"刚认识"变"已经认识 3 个月"）· **11 维情绪**（原 7 维 + 耐心 / 兴奋 / 烦躁 / 感激；半小时定时重算；saturation 防刷）· **主动消息三驱动 motivation**（情绪 × 日程 × 时间 × 随机；重启持久化防重发；三道闸门防 race；段内 bigram+LCS dedup）· 人生记忆 prompt 12 → 19 类目（带名字 + 感官细节 + 世界观）· Playground 与 bot 情绪路径对齐
 - **v1.5.x「长期陪伴维度」** 离线留言胶囊（HMAC 签名 .txt 永久托管）· 时光胶囊（解封时她写"现在的我"感想）· 沉默陪伴模式（赛博距离，呼吸光点）· 反向日记「我们之间」（每晚她记录你们的互动，可编辑/导出）· SINGLE_USER 单用户模式（自托管跳过登录）
 - **v1.4.x** TTS 5 家（MiniMax/OpenAI/Azure/豆包/通义）+ ASR 7 实现（Gemini/OpenAI/Qwen/Groq/MiniMax/Azure/豆包）+ Vision 8 家（智谱/OpenAI/Qwen/豆包/Claude/Kimi/StepFun/MiniMax）；默认起步=暗恋；想念档 + 今天她想对你说；网页录音 + 朗读
