@@ -55,8 +55,8 @@ async function generateOne({ name, prompt }) {
     headers: {
       Authorization: `Bearer ${KEY}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://xiyuai.cc',
-      'X-Title': 'Xiyu AI landing illustration',
+      'HTTP-Referer': process.env.OPENROUTER_REFERER || 'https://github.com/dimang01/xiyu-ai',
+      'X-Title': process.env.OPENROUTER_APP_TITLE || 'Xiyu AI landing illustration',
     },
     body: JSON.stringify({
       model: 'openai/gpt-5-image-mini',

@@ -19,6 +19,7 @@ import {
   recallMemoriesSemantic, recallMemories, getUserProfile, getConversationContext,
   getDailySchedule, getRecentSchedules, getPersonaFacts, shanghaiDateKey,
   saveConversationTurn, getCompanionById, patchCompanion,
+  getCompanionPreferencesForPrompt,
 } from './db.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
@@ -33,6 +34,8 @@ import {
   getEmotionStateWithDefaults, updateEmotionFromUserMessage,
   updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel,
 } from './emotion_state.mjs';
+import { generateInnerMonologue, buildInnerOsHint } from './inner_os.mjs';
+import { extractOpenLoops, detectAndResolveOpenLoops } from './open_loops.mjs';
 
 /**
  * @param {object} companion 由调用方查好的 companion 行
@@ -86,9 +89,12 @@ export async function playgroundChat(companion, userText) {
   const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
   const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel });
 
+  // v1.8.0 #3: preferences 结构化偏好账本
+  const preferences = getCompanionPreferencesForPrompt(companion.id);
+
   let systemPrompt = buildSystemPrompt(companion, {
     memories, userProfile, recentTurns, longTermDigest,
-    promptMode: 'reply', dailySchedule, recentSchedules, personaFacts,
+    promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences,
   }) + stickerHint + emotionHint;
 
   // 关系刚升级
@@ -126,6 +132,18 @@ export async function playgroundChat(companion, userText) {
     role: t.role === 'assistant' ? 'assistant' : 'user',
     content: String(t.content || ''),
   }));
+
+  // v1.8.0 #6: Inner OS 双重思考 —— 生成内心独白后注入 system prompt
+  // 失败/跳过都不阻塞主流程
+  const innerThought = await generateInnerMonologue({
+    companion,
+    userText: text,
+    history,
+    context: { accountId: null },  // playground 走 web 通道，没有 wechat account
+  }).catch(() => null);
+  if (innerThought) {
+    systemPrompt += buildInnerOsHint(innerThought);
+  }
 
   let reply;
   try {
@@ -167,13 +185,20 @@ export async function playgroundChat(companion, userText) {
     log('warn', `[Playground] saveConversationTurn 失败: ${e.message}`);
   }
 
-  // 后处理（异步，不阻塞响应）：好感度 + 心情 + 记忆提取
+  // v1.8.0 #4: open loops —— 启发式 resolve 立即跑（不调 LLM，快）
+  try { detectAndResolveOpenLoops(companion.id, text); }
+  catch (e) { log('warn', `[Playground] resolve loop: ${e.message}`); }
+
+  // 后处理（异步，不阻塞响应）：好感度 + 心情 + 记忆提取 + open loops 抽取
   (async () => {
     try {
       syncUpdateCompanionState(companion, text, reply);
       if (companion.memory_enabled) {
         await extractAndSaveMemories(companion.id, companion.user_id, text, reply);
         await extractAndUpdateUserProfile(companion.id, companion.user_id, text);
+        extractOpenLoops(companion.id, text, reply).catch(err =>
+          log('warn', `[Playground] extract loop: ${err.message}`)
+        );
       }
     } catch (e) {
       log('warn', `[Playground] postProcess 失败: ${e.message}`);

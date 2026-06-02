@@ -27,10 +27,10 @@ if [[ -z "$NODE_VER" ]]; then
   fail "node not found"
 else
   MAJOR="${NODE_VER#v}"; MAJOR="${MAJOR%%.*}"
-  if (( MAJOR >= 18 )); then
-    ok "node $NODE_VER (>= 18)"
+  if (( MAJOR >= 20 )); then
+    ok "node $NODE_VER (>= 20)"
   else
-    fail "node $NODE_VER — requires >= 18"
+    fail "node $NODE_VER — requires >= 20 (matches package.json engines)"
   fi
 fi
 
