@@ -71,6 +71,15 @@ while IFS= read -r -d '' f; do
 done < <(find src scripts -name "*.mjs" -print0)
 if (( SYNTAX_FAIL == 0 )); then ok "all .mjs files pass node --check"; fi
 
+# ─── 5b. ESM import smoke (dynamic import of core modules) ───────────────────
+step "5b) ESM import smoke"
+if node "$ROOT/scripts/import_smoke.mjs" >/tmp/xiyu_import_smoke.log 2>&1; then
+  ok "all core modules import cleanly"
+else
+  fail "ESM import failure — see /tmp/xiyu_import_smoke.log"
+  tail -n 20 /tmp/xiyu_import_smoke.log || true
+fi
+
 # ─── 6. opensource_check ─────────────────────────────────────────────────────
 step "6) opensource_check.sh"
 if bash "$ROOT/scripts/opensource_check.sh" 2>&1 | grep -q "Fail: 0"; then
