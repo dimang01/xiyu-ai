@@ -15,18 +15,49 @@
 import { generateReply } from './ai.mjs';
 import { log } from './logger.mjs';
 
-const INNER_OS_DEFAULT_ENABLED = !['0','false','no','off'].includes(
-  String(process.env.INNER_OS_ENABLED ?? 'true').toLowerCase()
+// 三态：off | selective | always（默认 always，保留对未说出口情绪的反应）
+// 旧 INNER_OS_ENABLED=false/0/no/off 仍兼容，等价于 mode=off
+const RAW_MODE = String(process.env.INNER_OS_MODE ?? '').toLowerCase().trim();
+const LEGACY_DISABLED = ['0','false','no','off'].includes(
+  String(process.env.INNER_OS_ENABLED ?? '').toLowerCase()
 );
+const INNER_OS_MODE = LEGACY_DISABLED
+  ? 'off'
+  : (['off','selective','always'].includes(RAW_MODE) ? RAW_MODE : 'always');
 
 const MIN_USER_MSG_LEN = Number(process.env.INNER_OS_MIN_LEN ?? 8);
 const MAX_INNER_TOKENS = Number(process.env.INNER_OS_MAX_TOKENS ?? 80);
 
+// selective 模式下，长消息**必须**命中其中之一才跑 inner OS
+const SELECTIVE_TRIGGERS = /(?:怎么不回|你是不是|想你|喜欢我|难受|烦|累|失眠|生气|分手|不理我|为什么不|你变了|怪怪的|凭什么|不公平|委屈|心疼|讨厌|对不起|抱歉|算了|无所谓|够了|后悔|害怕|担心|焦虑|压力|崩溃|绝望|无聊|没意思|想见你|抱抱|亲|爱你)/;
+
+// 关系张力短句白名单（短句但语义密度极高）—— off 之外的 mode 都放行
+const RELATIONAL_SHORT = /(?:在干嘛|干嘛呢|怎么不回|不理我|你变了|随便你|哦|嗯+|睡了|忙吗|你最近|怪怪的|想你|讨厌|烦|累|啊|去吧|滚)/;
+
 export function isInnerOsEnabled(companion) {
-  // 全局开关（环境变量）+ companion 级开关（数据库字段，本 PR 不加字段，默认 true）
-  if (!INNER_OS_DEFAULT_ENABLED) return false;
-  // 未来可加 companion.inner_os_enabled 字段做 per-companion 控制
+  if (INNER_OS_MODE === 'off') return false;
   return true;
+}
+
+/**
+ * 判断本条消息是否应该跑 inner OS。
+ * - off：永不
+ * - always：长消息跑；短消息命中关系张力词跑
+ * - selective：长消息命中情绪词跑；短消息命中关系张力词跑
+ */
+export function shouldRunInnerOs(userText) {
+  if (INNER_OS_MODE === 'off') return false;
+  const text = String(userText || '').trim();
+  if (!text) return false;
+
+  const isLong = text.length >= MIN_USER_MSG_LEN;
+
+  // 短句：白名单放行（mode 无关，只要不是 off）
+  if (!isLong) return RELATIONAL_SHORT.test(text);
+
+  // 长消息：always 默认跑，selective 必须命中触发词
+  if (INNER_OS_MODE === 'always') return true;
+  return SELECTIVE_TRIGGERS.test(text);
 }
 
 /**
@@ -80,7 +111,7 @@ export async function generateInnerMonologue({
   context = {},
 } = {}) {
   if (!isInnerOsEnabled(companion)) return null;
-  if (!userText || userText.length < MIN_USER_MSG_LEN) return null;
+  if (!shouldRunInnerOs(userText)) return null;
 
   try {
     const sys = buildInnerSystemPrompt(companion);
