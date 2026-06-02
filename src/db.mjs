@@ -58,8 +58,35 @@ export function getDb() {
     migrateConversationTurnSynthetic();
     migrateBackfillFlag();
     migratePreferences();  // v1.8.0 #3
+    migrateOpenLoops();    // v1.8.0 #4
   }
   return db;
+}
+
+// ─── v1.8.0 #4: companion_open_loops "未完成的事" ────────────────────────
+// "他说明天去招聘会" → 第二天她主动问"面试怎么样"
+// 真人陪伴感最强的瞬间之一：她记得用户说过的事
+function migrateOpenLoops() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_open_loops (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id     INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      title            TEXT    NOT NULL,
+      due_at           TEXT,
+      emotional_weight INTEGER DEFAULT 5 CHECK(emotional_weight BETWEEN 0 AND 100),
+      expected_followup TEXT,
+      status           TEXT NOT NULL DEFAULT 'open'
+                       CHECK(status IN ('open','resolved','stale','dismissed')),
+      source_message_id TEXT,
+      resolved_at      TEXT,
+      resolved_text    TEXT,
+      followed_up_at   TEXT,
+      created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loops_companion_status_due
+      ON companion_open_loops(companion_id, status, due_at);
+  `);
 }
 
 // ─── v1.8.0 #3: companion_preferences 结构化偏好账本 ───────────────────────
@@ -2454,6 +2481,81 @@ export function deletePreference(companionId, type, target) {
   const db = getDb();
   return db.prepare(`DELETE FROM companion_preferences WHERE companion_id = ? AND type = ? AND target = ?`)
     .run(companionId, type, target).changes;
+}
+
+// ─── v1.8.0 #4: companion_open_loops CRUD ──────────────────────────────────
+export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight = 5, expectedFollowup = null, sourceMessageId = null }) {
+  if (!companionId || !title) throw new Error('saveOpenLoop: missing required fields');
+  const db = getDb();
+  // 防重复：同 companion 最近 7 天内的相同 title 视为重复（轻量去重）
+  const existing = db.prepare(`
+    SELECT id FROM companion_open_loops
+    WHERE companion_id = ? AND title = ? AND status = 'open'
+      AND datetime(created_at) > datetime('now', '-7 days')
+    LIMIT 1
+  `).get(companionId, title);
+  if (existing) return existing.id;
+  const info = db.prepare(`
+    INSERT INTO companion_open_loops (companion_id, title, due_at, emotional_weight, expected_followup, source_message_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(companionId, String(title).slice(0, 200), dueAt, Math.max(0, Math.min(100, emotionalWeight)),
+         expectedFollowup ? String(expectedFollowup).slice(0, 200) : null, sourceMessageId);
+  return info.lastInsertRowid;
+}
+
+export function listOpenLoops(companionId, { status = 'open', limit = 50 } = {}) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM companion_open_loops
+    WHERE companion_id = ? AND status = ?
+    ORDER BY emotional_weight DESC, due_at ASC, id DESC
+    LIMIT ?
+  `).all(companionId, status, limit);
+}
+
+// 临近到期 / 已到期未 resolve 的 loops（给 proactive 用）
+export function listDueOpenLoops(companionId, { withinHours = 24 } = {}) {
+  const db = getDb();
+  // due_at 在 +withinHours 内或已过期；按权重排序
+  return db.prepare(`
+    SELECT * FROM companion_open_loops
+    WHERE companion_id = ? AND status = 'open'
+      AND due_at IS NOT NULL
+      AND datetime(due_at) <= datetime('now', '+' || ? || ' hours')
+    ORDER BY emotional_weight DESC, due_at ASC
+    LIMIT 5
+  `).all(companionId, withinHours);
+}
+
+export function resolveOpenLoop(loopId, resolvedText = null) {
+  const db = getDb();
+  return db.prepare(`
+    UPDATE companion_open_loops
+    SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP,
+        resolved_text = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(resolvedText, loopId).changes;
+}
+
+export function markOpenLoopFollowedUp(loopId) {
+  const db = getDb();
+  db.prepare(`UPDATE companion_open_loops SET followed_up_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(loopId);
+}
+
+// stale: due_at 过期 7+ 天且未 resolve / 没 due_at 但创建 14+ 天的；定期 cron 跑
+export function markStaleOpenLoops(companionId = null) {
+  const db = getDb();
+  const where = companionId ? 'AND companion_id = ?' : '';
+  const args = companionId ? [companionId] : [];
+  return db.prepare(`
+    UPDATE companion_open_loops
+    SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+    WHERE status = 'open' ${where}
+      AND (
+        (due_at IS NOT NULL AND datetime(due_at) < datetime('now', '-7 days'))
+        OR (due_at IS NULL AND datetime(created_at) < datetime('now', '-14 days'))
+      )
+  `).run(...args).changes;
 }
 
 // 给 prompt 注入用：分组 + 限量
