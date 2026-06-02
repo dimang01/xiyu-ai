@@ -11,10 +11,15 @@
  */
 
 import { extractStructuredInfo } from './ai.mjs';
-import { saveOpenLoop, listOpenLoops, resolveOpenLoop, markStaleOpenLoops } from './db.mjs';
+import { saveOpenLoop, listOpenLoops, resolveOpenLoop, markStaleOpenLoops, shanghaiDateKey } from './db.mjs';
 import { log } from './logger.mjs';
 
-const EXTRACT_SYSTEM_PROMPT = `你是 open-loop 提取助手。从用户消息中识别"未完成、有未来结果、值得后续询问"的事情。
+function buildExtractSystemPrompt(todayKey) {
+  return `你是 open-loop 提取助手。从用户消息中识别"未完成、有未来结果、值得后续询问"的事情。
+
+今天是 ${todayKey}，时区 Asia/Shanghai。
+用户说"明天/后天/下周/周五/周末/过几天"时，必须**基于今天**换算成具体日期。
+due_at 只能输出 YYYY-MM-DD 或 null，禁止输出相对说法（如"明天"）。
 
 只提取这类事：
 - 用户提到的"将来要做的事"且**还没结果**："明天去面试"、"周五考试"、"周末搬家"、"等下吃完饭"
@@ -23,7 +28,7 @@ const EXTRACT_SYSTEM_PROMPT = `你是 open-loop 提取助手。从用户消息�
 - 用户提到的"短期纠结/烦恼"："最近被工作压得喘不过气"、"在纠结要不要分手"（情感权重高）
 
 不要提取：
-- 已经结束的事（"我昨天去过了"）
+- 已经结束的事（"我昨天去过了"、"刚弄完"、"寄了"、"白去了"、"没戏了"）
 - 长期事实（"我是程序员"）
 - 偏好（"我喜欢猫"）
 
@@ -38,14 +43,15 @@ const EXTRACT_SYSTEM_PROMPT = `你是 open-loop 提取助手。从用户消息�
 如果用户消息里没有 open loop，返回空数组 []。
 
 每次最多输出 2 条。`;
+}
 
 const RESOLVE_KEYWORDS = [
-  // 完成 / 结束
-  { re: /(?:搞定|完成|结束|去过|做完|过完|拿到|没拿到|黄了|挂了|过了|没过|考完|考了|交了|提交了|搬完了|搬好了|搬过去了)/, action: 'check' },
-  // 取消 / 没去
-  { re: /(?:没去|不去了|取消了|改天再说|算了|放弃了|不做了)/, action: 'check' },
+  // 完成 / 结束 / 已发生
+  { re: /(?:搞定|完成|结束|去过|做完|过完|拿到|没拿到|黄了|挂了|过了|没过|考完|考了|考过|面完|面过|交了|交完|提交了|搬完|搬好|搬过去|寄了|寄出去|寄到了|送出去|发出去|发了|发完|收到了|签收|已经回来|回来了|刚弄完|刚做完|刚结束|刚回|结束了|忙完|忙完了|出结果|出来了)/, action: 'check' },
+  // 取消 / 没去 / 黄了
+  { re: /(?:没去|没去成|不去了|取消了|改天再说|算了|放弃了|不做了|不用去了|没戏|没戏了|白去了|白跑了|白搞了|凉了|寄了|GG|没下文)/, action: 'check' },
   // 结果反馈
-  { re: /(?:面试.*(?:通过|没过|挂了)|工作.*(?:找到|找着|没找到)|考试.*(?:过了|没过))/, action: 'check' },
+  { re: /(?:面试.*(?:通过|没过|挂了|凉了|过了)|工作.*(?:找到|找着|没找到|定了)|考试.*(?:过了|没过|挂了)|offer)/, action: 'check' },
 ];
 
 function safeParseArray(raw) {
@@ -74,9 +80,10 @@ export async function extractOpenLoops(companionId, userMsg, botReply, sourceMes
   if (!QUICK_GATE.test(userMsg)) return 0;
 
   const userContent = `用户说："${userMsg}"\nAI回复："${(botReply || '').slice(0, 100)}"\n\n请提取 open loops（如果有）。`;
+  const systemPrompt = buildExtractSystemPrompt(shanghaiDateKey(new Date()));
 
   try {
-    const raw = await extractStructuredInfo(EXTRACT_SYSTEM_PROMPT, userContent);
+    const raw = await extractStructuredInfo(systemPrompt, userContent);
     const list = safeParseArray(raw);
     if (list.length === 0) return 0;
 
