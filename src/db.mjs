@@ -679,6 +679,11 @@ function migrateEmotionState() {
   addColIfMissing('companion_emotion_state', 'excitement', 'INTEGER DEFAULT 30');
   addColIfMissing('companion_emotion_state', 'annoyance',  'INTEGER DEFAULT 0');
   addColIfMissing('companion_emotion_state', 'gratitude',  'INTEGER DEFAULT 40');
+  // v1.8.0 #1: 即时状态 — 她此刻是否方便聊天 / 注意力是否在你身上
+  // availability: free / busy / half  （free=完全有空，busy=在忙真不便，half=能回但分心）
+  // attention:    0-100  （对你这次消息的注意力。低 → 回复短/略走神/略有延迟感）
+  addColIfMissing('companion_emotion_state', 'availability', "TEXT DEFAULT 'free'");
+  addColIfMissing('companion_emotion_state', 'attention',    'INTEGER DEFAULT 80');
 }
 
 // ─── Proactive Engine v2 ───────────────────────────────────────────────────────

@@ -45,6 +45,9 @@ const DEFAULT_STATE = {
   excitement:      30,  // 短期峰值：被夸/惊喜会冲 80+，每小时衰减约 20
   annoyance:       0,   // 短期烦躁：被忽视/打断累积；高 annoyance 时回复变冷
   gratitude:       40,  // 长期感激：用户体贴/陪伴时累加，影响她回复温度
+  // v1.8.0 #1: 即时 presence 状态
+  availability:   'free',  // free / busy / half — 此刻是否方便聊天（由日程当前活动 + 时段推导）
+  attention:       80,     // 0-100 对你这条消息的注意力；低 → 回复短、可能略走神
 };
 
 // Clamp helpers
@@ -441,6 +444,61 @@ export function getEmotionTrend(companionId, options = {}) {
 //   1) 让她"想你"的程度真的在回复里能感知到（按 missingLevel 给出分档指令）
 //   2) 不同维度叠加描述（mood + dep + poss + sec + trust + energy），而非只看 mood
 // 调用方可以传 missingLevel（从 getMissingLevel 算）；不传则按 dependency 估算。
+/**
+ * v1.8.0 #1: 从今日日程 + 当前分钟数推导即时 presence（availability / attention）
+ * 返回 { availability, attention } 或 null（无日程时）
+ *
+ * - 睡/课/开会/工作中 → busy, attention 10-40
+ * - 吃/散步/逛/看剧/闲 → half,  attention 50-70
+ * - 其它 / 在家发呆等 → free,  attention 85
+ * - 深夜 22:30+ → 至少 half, attention<=50
+ * - 早 7:30 之前 → busy（在睡）, attention 5
+ */
+function derivePresenceFromSchedule(dailySchedule, nowMin) {
+  if (!dailySchedule?.items?.length || nowMin == null) return null;
+
+  // 早起前
+  if (nowMin < 7 * 60 + 30) return { availability: 'busy', attention: 5 };
+
+  // 找当前活动
+  let curActivity = '';
+  for (const it of dailySchedule.items) {
+    const m = String(it.time || '').match(/^(\d{1,2}):(\d{2})/);
+    if (!m) continue;
+    const itMin = Number(m[1]) * 60 + Number(m[2]);
+    if (itMin <= nowMin) curActivity = String(it.activity || '');
+  }
+
+  const a = curActivity;
+  let availability = 'free';
+  let attention = 85;
+
+  if (/睡|入睡|床上|休息中|准备睡/.test(a)) {
+    availability = 'busy'; attention = 8;
+  } else if (/上课|课程|开会|会议|考试|工作中|工作时|加班|面试|做实验|赶稿|赶项目|训练|出差/.test(a)) {
+    availability = 'busy'; attention = 25;
+  } else if (/吃|午餐|晚餐|早餐|散步|逛|看剧|追剧|刷|看视频|看书|看小说|看电影|健身|做饭|做菜|洗澡|出门/.test(a)) {
+    availability = 'half'; attention = 55;
+  }
+
+  // 深夜降级
+  if (nowMin >= 22 * 60 + 30) {
+    availability = availability === 'free' ? 'half' : availability;
+    attention = Math.min(attention, 45);
+  }
+
+  return { availability, attention };
+}
+
+// 当前上海时间的分钟数（0-1439）
+function _nowShanghaiMinute() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date()).filter(x => x.type !== 'literal').map(x => [x.type, x.value]));
+  return Number(p.hour) * 60 + Number(p.minute);
+}
+
 export function buildEmotionPromptHint(emotionState, opts = {}) {
   if (!emotionState) return '';
   const parts = [];
@@ -448,6 +506,20 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   const mood = emotionState.mood || 'neutral';
   const ann = emotionState.annoyance ?? 0;
   const pat = emotionState.patience ?? 60;
+
+  // v1.8.0 #1: 从 dailySchedule 推派生 presence，覆盖默认 free/80
+  // 调用方传 opts.dailySchedule 即生效；不传走 DB 里存的 availability/attention
+  if (opts.dailySchedule) {
+    const derived = derivePresenceFromSchedule(opts.dailySchedule, _nowShanghaiMinute());
+    if (derived) {
+      // 只在 DB 里仍是默认值时覆盖；如果 DB 有非默认值（人工干预 / cron 重算）则尊重
+      const dbAvail = emotionState.availability || 'free';
+      const dbAttn = emotionState.attention ?? 80;
+      if (dbAvail === 'free' && dbAttn === 80) {
+        emotionState = { ...emotionState, ...derived };
+      }
+    }
+  }
 
   // v1.7.0 块 D: "今天就是不想聊"低能量模式
   // 触发：mood=cold 或 annoyance≥70 或 patience≤20
@@ -472,6 +544,23 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   const energy = emotionState.energy ?? 60;
   if (!lowEnergyMode && energy < 25) parts.push('• 你今天精力不太够，回复可以短一些、语气带点困意，不用太积极。');
   else if (energy >= 80) parts.push('• 你今天精力很满，说话节奏快、表达多、容易兴奋起来。');
+
+  // v1.8.0 #1: presence — 此刻是否方便聊天 / 注意力
+  // 低能量模式下不再加 presence hint（避免与低能量冲突）
+  if (!lowEnergyMode) {
+    const availability = emotionState.availability || 'free';
+    const attention = emotionState.attention ?? 80;
+    if (availability === 'busy') {
+      parts.push('• 你现在在忙手头的事，能回但要简短，可能要让他等等。语气像「等下」「先这样」「忙完跟你说」');
+    } else if (availability === 'half') {
+      parts.push('• 你现在能回消息但分心，注意力不全在他身上（边做别的事边回）。回复可以略短、偶尔走神。');
+    }
+    if (attention < 40 && availability !== 'busy') {
+      parts.push('• 你这条消息的注意力不太满，可以略走神、回得短、不需要每件事都接住。');
+    } else if (attention >= 90) {
+      parts.push('• 你这条消息很专注他，反应可以更细、更接得住他的情绪。');
+    }
+  }
 
   // ── 想念档（按 missingLevel）—— v1.4.1 的核心存在感来源 ────────────────
   const dep = emotionState.dependency ?? 30;
