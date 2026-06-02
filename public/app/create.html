@@ -286,8 +286,20 @@
               class="w-full px-4 py-3 text-[15px] bg-cloud border border-line rounded-2xl font-medium resize-none"></textarea>
           </div>
 
+          <div class="flex flex-wrap gap-2" data-multi="dislikes">
+            <span class="block w-full text-[13px] font-semibold mb-1">她不喜欢的东西 <span class="text-mute font-normal">（聊到这些她会直接说不喜欢，不假装共鸣）</span></span>
+            <button type="button" class="chip" data-val="听抱怨"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>听抱怨</button>
+            <button type="button" class="chip" data-val="吃辣"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>吃辣</button>
+            <button type="button" class="chip" data-val="狗血剧"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>狗血剧</button>
+            <button type="button" class="chip" data-val="网络梗"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>网络梗</button>
+            <button type="button" class="chip" data-val="夜店"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>夜店</button>
+            <button type="button" class="chip" data-val="说教"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>说教</button>
+            <button type="button" class="chip" data-val="爹味"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>爹味</button>
+            <button type="button" class="chip" data-val="算计的人"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>算计的人</button>
+          </div>
+
           <div class="flex flex-wrap gap-2" data-multi="forbidden_topics">
-            <span class="block w-full text-[13px] font-semibold mb-1">避免提及（可多选）</span>
+            <span class="block w-full text-[13px] font-semibold mb-1">避免提及 <span class="text-mute font-normal">（完全不会聊的话题）</span></span>
             <button type="button" class="chip" data-val="前任"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>前任</button>
             <button type="button" class="chip" data-val="分手"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>分手</button>
             <button type="button" class="chip" data-val="工作压力"><i data-lucide="check" class="w-3.5 h-3.5 check"></i>工作压力</button>
@@ -380,6 +392,7 @@
       speech_styles: ['自然口语'],
       reply_length: '适中(3-4句)',
       forbidden_topics: [],
+      dislikes: [],  // v1.7.0
     };
 
     let stepIdx = 1;

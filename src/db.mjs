@@ -606,6 +606,10 @@ function migrateCompanions() {
     ['voice_speed',           'REAL DEFAULT 1.0'],
     ['chat_modes',            'TEXT DEFAULT \'["日常聊天"]\''],
     ['chat_mode_active',      "TEXT DEFAULT '日常聊天'"],
+    // v1.7.0: 她不喜欢的东西（话题/食物/类型/人格特质），聊到时她会直接说不喜欢
+    // 而不是假装共鸣。与 forbidden_topics 区别：forbidden 是"完全不聊"，dislikes
+    // 是"会聊但表达不喜欢"。
+    ['dislikes',              "TEXT DEFAULT '[]'"],
   ];
   for (const [col, def] of cols) addColIfMissing('companions', col, def);
 }
@@ -976,6 +980,7 @@ function toJson(v) {
 const JSON_ARRAY_FIELDS = new Set([
   'personality_tags', 'speech_styles', 'hobbies', 'memory_priorities', 'forbidden_topics',
   'scene_history', 'chat_modes',
+  'dislikes',  // v1.7.0: 她不喜欢的话题/食物/类型/人格特质
 ]);
 const BOOL_FIELDS = new Set([
   'use_kaomoji', 'can_joke', 'avoid_cheesy', 'no_pressure', 'occasional_tantrum',
@@ -997,7 +1002,7 @@ const ALLOWED_FIELDS = new Set([
   'voice_reply_enabled', 'voice_id',
   'voice_reply_enabled', 'sticker_reply_enabled',
   'call_user_as', 'user_call_her_as',
-  'persona_prompt', 'forbidden_topics',
+  'persona_prompt', 'forbidden_topics', 'dislikes',
   // 新增
   'memory_enabled', 'current_mood', 'affection_level', 'relationship_stage',
   'current_scene', 'scene_history', 'backstory', 'family_background', 'education', 'secrets',
@@ -1027,6 +1032,7 @@ export function parseCompanionRow(row) {
     hobbies:              parseJson(row.hobbies, []),
     memory_priorities:    parseJson(row.memory_priorities, []),
     forbidden_topics:     parseJson(row.forbidden_topics, []),
+    dislikes:             parseJson(row.dislikes, []),
     scene_history:        parseJson(row.scene_history, []),
     chat_modes:           parseJson(row.chat_modes, []),
     use_kaomoji:           !!row.use_kaomoji,
