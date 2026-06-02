@@ -57,8 +57,57 @@ export function getDb() {
     migrateProactiveLastSent();
     migrateConversationTurnSynthetic();
     migrateBackfillFlag();
+    migratePreferences();  // v1.8.0 #3
   }
   return db;
+}
+
+// ─── v1.8.0 #3: companion_preferences 结构化偏好账本 ───────────────────────
+// 比 companions.dislikes (JSON 数组) 更精细：可加强度、原因、来源、type 区分
+// 启动 migration 自动把 companions.hobbies + dislikes 同步到本表（source='legacy'）
+function migratePreferences() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_preferences (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      type         TEXT    NOT NULL CHECK(type IN ('like','dislike','neutral','taboo')),
+      target       TEXT    NOT NULL,
+      intensity    INTEGER DEFAULT 3 CHECK(intensity BETWEEN 1 AND 5),
+      reason       TEXT,
+      source       TEXT    DEFAULT 'system',  -- system / user_observed / generated / legacy
+      created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(companion_id, type, target)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pref_companion ON companion_preferences(companion_id, type);
+  `);
+
+  // 一次性 backfill：把 hobbies (JSON) 同步为 like, dislikes (JSON) 同步为 dislike
+  // 已存在的 (companion_id, type, target) 用 UNIQUE 跳过
+  try {
+    const rows = db.prepare(`SELECT id, hobbies, dislikes FROM companions`).all();
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO companion_preferences (companion_id, type, target, intensity, source)
+      VALUES (?, ?, ?, 3, 'legacy')
+    `);
+    const tx = db.transaction(list => {
+      let synced = 0;
+      for (const r of list) {
+        const likes = parseJsonSafe(r.hobbies);
+        const dislikes = parseJsonSafe(r.dislikes);
+        for (const t of likes) if (t) { insert.run(r.id, 'like', String(t)); synced++; }
+        for (const t of dislikes) if (t) { insert.run(r.id, 'dislike', String(t)); synced++; }
+      }
+      return synced;
+    });
+    const n = tx(rows);
+    if (n > 0) console.log(`[migratePreferences] backfilled ${n} rows from hobbies/dislikes`);
+  } catch (e) {
+    console.error(`[migratePreferences] backfill skipped: ${e.message}`);
+  }
+}
+
+function parseJsonSafe(s) {
+  try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 
 function migrateUserAccounts() {
@@ -2299,7 +2348,19 @@ export function createCompanion(wechatUserId, botId, data) {
     INSERT INTO companions (user_id, bot_id${fields.cols.length ? ', ' + fields.cols.join(', ') : ''})
     VALUES (?, ?${fields.cols.length ? ', ' + fields.placeholders.join(', ') : ''})
   `).run(user.id, botId, ...fields.values);
-  return getCompanionById(info.lastInsertRowid);
+  const newId = info.lastInsertRowid;
+  // v1.8.0 #3: 新建时同步 hobbies/dislikes 到 preferences
+  if ('hobbies' in data || 'dislikes' in data) {
+    try {
+      syncLegacyPreferences(newId, {
+        hobbies: 'hobbies' in data ? (Array.isArray(data.hobbies) ? JSON.stringify(data.hobbies) : data.hobbies) : null,
+        dislikes: 'dislikes' in data ? (Array.isArray(data.dislikes) ? JSON.stringify(data.dislikes) : data.dislikes) : null,
+      });
+    } catch (e) {
+      console.error(`[createCompanion] preferences sync skipped: ${e.message}`);
+    }
+  }
+  return getCompanionById(newId);
 }
 
 export function updateCompanion(id, data) {
@@ -2311,6 +2372,17 @@ export function updateCompanion(id, data) {
   const sets = fields.cols.map(c => `${c} = ?`).join(', ');
   db.prepare(`UPDATE companions SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
     .run(...fields.values, id);
+  // v1.8.0 #3: 同步 hobbies/dislikes 到 preferences 表（如果本次更新涉及）
+  if ('hobbies' in data || 'dislikes' in data) {
+    try {
+      syncLegacyPreferences(id, {
+        hobbies: 'hobbies' in data ? (Array.isArray(data.hobbies) ? JSON.stringify(data.hobbies) : data.hobbies) : null,
+        dislikes: 'dislikes' in data ? (Array.isArray(data.dislikes) ? JSON.stringify(data.dislikes) : data.dislikes) : null,
+      });
+    } catch (e) {
+      console.error(`[updateCompanion] preferences sync skipped: ${e.message}`);
+    }
+  }
   return getCompanionById(id);
 }
 
@@ -2321,6 +2393,80 @@ export function patchCompanion(id, fields) {
   const vals = Object.values(fields);
   db.prepare(`UPDATE companions SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
     .run(...vals, id);
+
+  // v1.8.0 #3: hobbies/dislikes 更新时同步到 preferences 表
+  // 让 chip UI 编辑能立刻反映到结构化偏好账本
+  if ('hobbies' in fields || 'dislikes' in fields) {
+    try {
+      syncLegacyPreferences(id, {
+        hobbies: 'hobbies' in fields ? fields.hobbies : null,
+        dislikes: 'dislikes' in fields ? fields.dislikes : null,
+      });
+    } catch (e) {
+      console.error(`[patchCompanion] preferences sync skipped: ${e.message}`);
+    }
+  }
+}
+
+// 把 companions.hobbies/dislikes JSON 数组同步到 preferences 表 (source='legacy')
+// 删掉旧 legacy 项 + 重新 insert，保证一致性
+function syncLegacyPreferences(companionId, { hobbies, dislikes }) {
+  const db = getDb();
+  if (hobbies !== null) {
+    const list = parseJsonSafe(hobbies);
+    db.prepare(`DELETE FROM companion_preferences WHERE companion_id = ? AND type = 'like' AND source = 'legacy'`).run(companionId);
+    for (const t of list) if (t) upsertPreference({ companionId, type: 'like', target: String(t), source: 'legacy' });
+  }
+  if (dislikes !== null) {
+    const list = parseJsonSafe(dislikes);
+    db.prepare(`DELETE FROM companion_preferences WHERE companion_id = ? AND type = 'dislike' AND source = 'legacy'`).run(companionId);
+    for (const t of list) if (t) upsertPreference({ companionId, type: 'dislike', target: String(t), source: 'legacy' });
+  }
+}
+
+// ─── v1.8.0 #3: companion_preferences CRUD ─────────────────────────────────
+export function listPreferences(companionId, { type = null } = {}) {
+  const db = getDb();
+  const sql = type
+    ? `SELECT * FROM companion_preferences WHERE companion_id = ? AND type = ? ORDER BY intensity DESC, id`
+    : `SELECT * FROM companion_preferences WHERE companion_id = ? ORDER BY type, intensity DESC, id`;
+  return type
+    ? db.prepare(sql).all(companionId, type)
+    : db.prepare(sql).all(companionId);
+}
+
+export function upsertPreference({ companionId, type, target, intensity = 3, reason = null, source = 'system' }) {
+  if (!companionId || !type || !target) throw new Error('upsertPreference: missing required fields');
+  if (!['like','dislike','neutral','taboo'].includes(type)) throw new Error('upsertPreference: invalid type');
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO companion_preferences (companion_id, type, target, intensity, reason, source)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(companion_id, type, target) DO UPDATE SET
+      intensity = excluded.intensity,
+      reason = COALESCE(excluded.reason, companion_preferences.reason),
+      source = excluded.source,
+      created_at = companion_preferences.created_at
+  `).run(companionId, type, String(target).slice(0, 80), Math.max(1, Math.min(5, intensity)), reason, source);
+}
+
+export function deletePreference(companionId, type, target) {
+  const db = getDb();
+  return db.prepare(`DELETE FROM companion_preferences WHERE companion_id = ? AND type = ? AND target = ?`)
+    .run(companionId, type, target).changes;
+}
+
+// 给 prompt 注入用：分组 + 限量
+export function getCompanionPreferencesForPrompt(companionId, { maxPerType = 8 } = {}) {
+  const all = listPreferences(companionId);
+  const byType = { like: [], dislike: [], neutral: [], taboo: [] };
+  for (const row of all) {
+    const arr = byType[row.type];
+    if (arr && arr.length < maxPerType) {
+      arr.push({ target: row.target, intensity: row.intensity, reason: row.reason });
+    }
+  }
+  return byType;
 }
 
 // ─── companion_memories ───────────────────────────────────────────────────────

@@ -98,7 +98,7 @@ const MOOD_INFLUENCE = {
 };
 
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
-export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null } = {}) {
+export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null } = {}) {
   const c     = companion;
   const parts = [];
 
@@ -272,8 +272,25 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
   if (c.pet_preference)        interests.push(`对${c.pet_preference}情有独钟`);
   if (interests.length > 0)    parts.push(`\n【爱好】${interests.join('，')}。聊到这些你会特别来劲儿。`);
 
-  // v1.7.0 块 E: 她不喜欢的东西（与 forbidden_topics 区分：forbidden=完全不聊，dislikes=会聊但表达不喜欢）
-  if (c.dislikes?.length > 0) {
+  // v1.8.0 #3: preferences 结构化偏好账本（优先于 v1.7.0 的 dislikes 字段）
+  // preferences 形如 { like: [{target,intensity}], dislike: [...], taboo: [...] }
+  // 如果传入，覆盖 v1.7.0 的 dislikes prompt + 扩展为 likes/taboo
+  if (preferences && (preferences.like?.length || preferences.dislike?.length || preferences.taboo?.length)) {
+    const fmt = arr => arr.map(p => {
+      const tag = p.intensity >= 5 ? '极' : p.intensity >= 4 ? '很' : p.intensity <= 2 ? '有点' : '';
+      return tag + p.target;
+    }).join('、');
+    if (preferences.like?.length > 0) {
+      parts.push(`\n【你的偏好 · 喜欢】${fmt(preferences.like)}。聊到这些会自然来劲、话也多一点。`);
+    }
+    if (preferences.dislike?.length > 0) {
+      parts.push(`\n【你的偏好 · 不喜欢】${fmt(preferences.dislike)}。\n聊到这些你会**直接说不喜欢**，不强迫自己附和。比如：「这个我不行」「不太行」「看不下去」「我不爱这个」。强度越高反应越明显。\n★ 不是回避，是真表达。是你这个人的偏好。`);
+    }
+    if (preferences.taboo?.length > 0) {
+      parts.push(`\n【你的偏好 · 雷区】${fmt(preferences.taboo)}。这些是你真正的禁区，碰到会冷下来、不想继续聊。但不要直接说"这是我的雷区"，要像真人那样自然回避或情绪变化。`);
+    }
+  } else if (c.dislikes?.length > 0) {
+    // Fallback (v1.7.0 路径)：preferences 没传时用 companion.dislikes
     parts.push(`\n【你不喜欢】${c.dislikes.join('、')}。\n聊到这些你会**直接说不喜欢**，不强迫自己附和。比如：「这个我不行」「不太行」「看不下去」「我不爱这个」。\n★ 不是回避，是真表达。是你这个人的偏好。`);
   }
 

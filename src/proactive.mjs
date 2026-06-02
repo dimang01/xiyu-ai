@@ -10,6 +10,7 @@ import {
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
   recordProactiveSentTimestamp, getProactiveLastSent,
+  getCompanionPreferencesForPrompt,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
@@ -347,7 +348,8 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   const _es = getEmotionStateWithDefaults(companion.id);
   const _ml = getMissingLevel(_es, companion.last_user_reply_at);
   const emotionHint = buildEmotionPromptHint(_es, { missingLevel: _ml, dailySchedule: proactiveDailySchedule });
-  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts })}${stickerHint}${emotionHint}
+  const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
+  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences })}${stickerHint}${emotionHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
