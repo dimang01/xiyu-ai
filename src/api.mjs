@@ -560,6 +560,9 @@ function companionSummary(companion) {
     sticker_reply_enabled: !!companion.sticker_reply_enabled,
     voice_reply_enabled: !!companion.voice_reply_enabled,
     memory_enabled: companion.memory_enabled !== false,
+    // v1.9.10 Bug 5：dashboard 有沉默模式 toggle 但之前漏返回 silent_mode 字段，
+    // 用户开了刷新就回关（同 Bug 3 模式）。
+    silent_mode: !!companion.silent_mode,
   };
 }
 
