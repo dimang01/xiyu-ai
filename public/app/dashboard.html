@@ -172,27 +172,35 @@
       background: #FFE8F2; color: #FF6FA3;
       font-size: 12px; font-weight: 600; transition: all .15s;
       max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex-shrink: 0;
     }
     .header-model-btn:hover { background: #FFD1E5; }
+    /* v1.9.7: 手机窄屏（<640px）model 按钮只显示图标，省横向空间 */
+    @media (max-width: 639px) {
+      .header-model-btn { padding: 6px 8px; }
+      #header-model-label { display: none; }
+    }
   </style>
   <link rel="manifest" href="/manifest.webmanifest" />
 </head>
 
 <body class="min-h-screen bg-cloud font-sans text-ink antialiased">
 
+  <!-- v1.9.7: 手机端 header 重构 — 缩 padding/gap、logo 文字不换行、
+       model 按钮缩成图标、user-name 在小屏隐藏。整体不挤、不截断、不强制换行。 -->
   <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
-    <div class="max-w-content mx-auto px-6 lg:px-8 h-16 flex items-center justify-between" style="max-width:1120px;">
-      <a href="/" class="flex items-center gap-2.5">
-        <img src="/logo-256.webp" alt="溪语AI" class="w-8 h-8 rounded-lg" />
-        <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
+    <div class="max-w-content mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2" style="max-width:1120px;">
+      <a href="/" class="flex items-center gap-2 sm:gap-2.5 flex-shrink-0 min-w-0">
+        <img src="/logo-256.webp" alt="溪语AI" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex-shrink-0" />
+        <span class="text-[15px] font-semibold tracking-tight whitespace-nowrap">溪语AI</span>
       </a>
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 sm:gap-4 flex-shrink min-w-0">
         <button id="btn-open-model" class="header-model-btn" title="切换 AI 模型">
           <span>⚙</span><span id="header-model-label">AI 模型</span>
         </button>
-        <span id="user-name" class="text-[13px] font-medium text-mute"></span>
-        <span id="plan-badge" class="text-[11px] font-bold px-2 py-0.5 rounded-full pro-chip">开源版</span>
-        <button id="btn-logout" class="text-[13px] font-medium text-mute hover:text-ink transition-colors">登出</button>
+        <span id="user-name" class="hidden sm:inline text-[13px] font-medium text-mute truncate max-w-[120px]"></span>
+        <span id="plan-badge" class="text-[11px] font-bold px-2 py-0.5 rounded-full pro-chip whitespace-nowrap flex-shrink-0">开源版</span>
+        <button id="btn-logout" class="text-[13px] font-medium text-mute hover:text-ink transition-colors whitespace-nowrap flex-shrink-0">登出</button>
       </div>
     </div>
   </header>
