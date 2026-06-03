@@ -80,6 +80,16 @@ else
   tail -n 20 /tmp/xiyu_import_smoke.log || true
 fi
 
+# ─── 5c. companionSummary 字段漂移检查（v1.9.10）─────────────────────────────
+# 防 dashboard 读 c.xxx 但后端没返回的反复 bug（v1.9.9 Bug 3 / v1.9.10 silent_mode）
+step "5c) companionSummary field drift"
+if node "$ROOT/scripts/check_summary_field_drift.mjs" >/tmp/xiyu_field_drift.log 2>&1; then
+  ok "no field drift between dashboard.html and companionSummary"
+else
+  fail "field drift detected — see /tmp/xiyu_field_drift.log"
+  tail -n 20 /tmp/xiyu_field_drift.log || true
+fi
+
 # ─── 6. opensource_check ─────────────────────────────────────────────────────
 step "6) opensource_check.sh"
 if bash "$ROOT/scripts/opensource_check.sh" 2>&1 | grep -q "Fail: 0"; then
