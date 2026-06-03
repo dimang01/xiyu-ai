@@ -11,6 +11,8 @@
 # 运行时数据
 data/
 logs/
+# v1.9.1: ai_taste_scan 输出含敏感对话内容
+reports/
 *.db
 *.db-wal
 *.db-shm
