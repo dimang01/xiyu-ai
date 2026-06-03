@@ -23,7 +23,9 @@ import { extractStructuredInfo } from './ai.mjs';
 import { getEmotionStateWithDefaults, buildEmotionPromptHint } from './emotion_state.mjs';
 import { isSensitiveMemoryContent, sanitizeMemoryContent } from './memory_v2.mjs';
 
-const MIN_TURNS = 3;            // 少于这么多轮对话当天就不写日记（没素材）
+// v1.9.9: 3 → 1。之前 3 轮门槛对刚认识的用户太苛刻，dashboard "她还没有写下日记"
+// 体验差。1 轮也能写（哪怕只是"今天他说了一句..."这种淡淡的笔触）。
+const MIN_TURNS = 1;
 const TURNS_LIMIT = 200;
 
 // 上海时区按天偏移，复用 reflection.mjs 的写法（私有，避免跨模块耦合）。

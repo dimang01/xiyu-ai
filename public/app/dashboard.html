@@ -1695,8 +1695,8 @@
         }
         const x = d.data;
         if (!x.has_schedule) {
-          // 还没生成今天的日程：profile 顶给一个可读 fallback，下方 now-card 不展示
-          if (sceneEl) sceneEl.textContent = '今天的日程还在生成中…';
+          // v1.9.9: 后端会异步触发日程生成，几秒后刷新就有。文案改更拟人。
+          if (sceneEl) sceneEl.textContent = '她还在想今天要做点什么…过会儿再看';
           return;
         }
         const card = document.getElementById('now-card');

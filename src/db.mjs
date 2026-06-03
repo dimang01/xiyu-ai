@@ -2480,7 +2480,13 @@ export function createCompanion(wechatUserId, botId, data) {
     const err = new Error('该用户已存在 companion，请用 PUT 更新');
     err.code = 'EXISTS'; err.id = existing.id; throw err;
   }
-  const fields = buildUpsertFields(data);
+  // v1.9.9 Bug 4：表情包默认开启（新建 companion 时如果没显式设，给 1）。
+  // 之前 schema DEFAULT 0 让新用户聊很多回合都没收到过表情包，体感"功能没生效"。
+  const dataWithDefaults = {
+    sticker_reply_enabled: 1,
+    ...data,
+  };
+  const fields = buildUpsertFields(dataWithDefaults);
   const info = db.prepare(`
     INSERT INTO companions (user_id, bot_id${fields.cols.length ? ', ' + fields.cols.join(', ') : ''})
     VALUES (?, ?${fields.cols.length ? ', ' + fields.placeholders.join(', ') : ''})

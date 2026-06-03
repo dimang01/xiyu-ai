@@ -181,6 +181,8 @@ import {
 } from './db.mjs';
 import { openOneCapsule } from './time_capsule.mjs';
 import { generateRelationalDiaryForCompanion } from './relational_diary.mjs';
+// v1.9.9 Bug 1：让 dashboard 打开时如果今天日程缺失就立即触发生成
+import { ensureScheduleForCompanion } from './plan_tasks.mjs';
 
 // 由 index.mjs 注入：{ registerBotAccount, unregisterBotAccount, listBotPool }
 let botPoolHandle = null;
@@ -551,6 +553,10 @@ function companionSummary(companion) {
     chat_mode: fallbackText(companion.chat_mode_active, '日常聊天'),
     memory_count: memoryCount,
     proactive_enabled: !!companion.proactive_enabled,
+    // v1.9.9 Bug 3 修复：之前漏返回这个字段，导致 dashboard slider 始终回默认 10。
+    proactive_daily_target: Number.isFinite(Number(companion.proactive_daily_target))
+      ? Number(companion.proactive_daily_target)
+      : 10,
     sticker_reply_enabled: !!companion.sticker_reply_enabled,
     voice_reply_enabled: !!companion.voice_reply_enabled,
     memory_enabled: companion.memory_enabled !== false,
@@ -2399,6 +2405,14 @@ router.get('/companions/:id/today', requireAuth, (req, res) => {
   const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const todayKey = shanghaiDateKey();
   const sched = getDailySchedule(id, todayKey);
+  // v1.9.9 Bug 1：今天日程缺失时**异步**触发生成（不 await，避免阻塞响应）。
+  // ensureScheduleForCompanion 内部 30 分钟 idempotent cooldown，不会重复发起。
+  // 用户下次刷新 dashboard 时通常已生成完毕。
+  if (!sched) {
+    ensureScheduleForCompanion(id, todayKey).catch(err =>
+      log('warn', `[API] today auto-ensure failed companion=${id}: ${err.message}`)
+    );
+  }
   // 计算上海当前分钟
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
