@@ -2080,38 +2080,38 @@ export function getActiveWechatBinding(wechatUserId, botId) {
   };
 }
 
+/**
+ * v1.9.4 安全修复：读权限对齐写权限，根除越权读。
+ *
+ * 之前版本通过 5 路 OR JOIN（含 historical_wa / wechat_user_id 隐式匹配）
+ * 让 dashboard 显示给 account A 的 companion 可能实际属于 account B。
+ * 写路径 isCompanionOwnedByAccount 已严格，读路径却宽松 →
+ * 用户看到别人数据，操作时才被 403 拒绝。
+ *
+ * 新规则：完全对齐 isCompanionOwnedByAccount —— 只有两条来源：
+ *   1. c.user_id === accountId（web 创建路径）
+ *   2. 显式 wa.companion_id === c.id（wechat 绑定路径）
+ *
+ * 如果两条都匹配，**优先返回 wechat 绑定的**（用户当前活跃使用的那个），
+ * 否则返回最近更新的。
+ */
 export function getCompanionByAccountId(accountId) {
+  if (!accountId) return null;
   const db = getDb();
   return parseCompanionRow(db.prepare(`
     SELECT c.*
-    FROM wechat_accounts wa
-    LEFT JOIN users u
-      ON u.wechat_user_id = wa.wechat_user_id
-    LEFT JOIN wechat_accounts historical_wa
-      ON historical_wa.account_id = wa.account_id
-     AND historical_wa.wechat_user_id IS NOT NULL
-    LEFT JOIN users historical_u
-      ON historical_u.wechat_user_id = historical_wa.wechat_user_id
-    JOIN companions c
-      ON c.id = wa.companion_id
-      OR (c.user_id = u.id AND c.bot_id = wa.bot_id)
-      OR c.id = historical_wa.companion_id
-      OR c.user_id = historical_u.id
-      OR c.user_id = wa.account_id
-    WHERE wa.account_id = ?
-      AND wa.is_active = 1
+    FROM companions c
+    LEFT JOIN wechat_accounts wa
+      ON wa.companion_id = c.id
+     AND wa.account_id = ?
+     AND wa.is_active = 1
+    WHERE c.user_id = ?              -- web 直接创建路径
+       OR wa.id IS NOT NULL          -- 显式 wechat 绑定路径
     ORDER BY
-      wa.updated_at DESC,
-      CASE
-        WHEN c.id = wa.companion_id THEN 0
-        WHEN c.user_id = u.id AND c.bot_id = wa.bot_id THEN 1
-        WHEN c.id = historical_wa.companion_id THEN 2
-        WHEN c.user_id = historical_u.id THEN 3
-        ELSE 4
-      END,
+      CASE WHEN wa.id IS NOT NULL THEN 0 ELSE 1 END,
       c.updated_at DESC
     LIMIT 1
-  `).get(accountId));
+  `).get(accountId, accountId));
 }
 
 export function deleteCompanionForAccount(accountId, companionId) {
@@ -3668,16 +3668,38 @@ export function touchMemory(memoryId, companionId) {
   `).run(now, now, memoryId, companionId);
 }
 
+/**
+ * v1.9.4 安全修复：companion 所有权检查收紧
+ *
+ * 之前版本通过 `wa.wechat_user_id IN (SELECT wechat_user_id FROM users WHERE id = c.user_id)`
+ * 隐式 JOIN — 只要两个 web account 绑了同一个微信号，就被认为共享 companion
+ * 所有权。这导致越权读：account A 注册时手贱选了 account B 的微信号，
+ * 立刻能看到 B 的全部 companion 数据（聊天历史 / 记忆 / 日记）。
+ *
+ * 新规则：所有权仅来自两条**显式**关系：
+ *   1. companions.user_id === accountId（web 直接创建路径）
+ *   2. wechat_accounts.companion_id === c.id 且 wa.account_id === accountId 且 wa.is_active=1
+ *      （wechat 绑定路径，显式 companion 绑定）
+ *
+ * 不再有"绑了同个微信号 = 共享 companion"的隐式 JOIN。
+ */
 export function isCompanionOwnedByAccount(companionId, accountId) {
+  if (!companionId || !accountId) return false;
   const db = getDb();
   const row = db.prepare(`
     SELECT 1 FROM companions c
-    JOIN wechat_accounts wa ON
-      wa.companion_id = c.id OR
-      wa.wechat_user_id IN (SELECT wechat_user_id FROM users WHERE id = c.user_id)
-    WHERE c.id = ? AND wa.account_id = ? AND wa.is_active = 1
+    WHERE c.id = ?
+      AND (
+        c.user_id = ?
+        OR EXISTS (
+          SELECT 1 FROM wechat_accounts wa
+          WHERE wa.companion_id = c.id
+            AND wa.account_id = ?
+            AND wa.is_active = 1
+        )
+      )
     LIMIT 1
-  `).get(companionId, accountId);
+  `).get(companionId, accountId, accountId);
   return !!row;
 }
 
