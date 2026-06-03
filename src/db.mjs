@@ -1280,19 +1280,26 @@ export function getActiveBotByAccountId(accountId) {
 /**
  * For proactive sender: find the bot ctx that owns this companion.
  * Returns { token, botId, baseUrl, wechatUserId } or null.
+ *
+ * v1.9.5 安全修复：与 v1.9.4 同类 — 之前版本含
+ * `wa.wechat_user_id = u.wechat_user_id` 隐式 JOIN（"绑了同微信号 =
+ * 共享 bot context"），可让 proactive 在数据脏时给 companion A 使用
+ * companion B 的 bot_token，把消息发到错误的微信号去。
+ *
+ * 新规则：只显式 wa.companion_id = ?。如果该 companion 没有 active
+ * wechat 绑定行（通常意味着用户还没绑微信，或绑定被停用），返回 null
+ * → proactive 主流程会跳过本次发送，是合理 fallback。
  */
 export function getBotContextForCompanion(companionId) {
   if (!companionId) return null;
   const db = getDb();
   const row = db.prepare(`
-    SELECT wa.bot_id, wa.bot_token, wa.wechat_user_id
-    FROM wechat_accounts wa
-    JOIN companions c ON c.id = ?
-    LEFT JOIN users u ON u.id = c.user_id
-    WHERE wa.is_active = 1
-      AND wa.bot_token IS NOT NULL AND wa.bot_token <> ''
-      AND (wa.companion_id = c.id OR wa.wechat_user_id = u.wechat_user_id)
-    ORDER BY wa.updated_at DESC
+    SELECT bot_id, bot_token, wechat_user_id
+    FROM wechat_accounts
+    WHERE is_active = 1
+      AND companion_id = ?
+      AND bot_token IS NOT NULL AND bot_token <> ''
+    ORDER BY updated_at DESC
     LIMIT 1
   `).get(companionId);
   if (!row) return null;
