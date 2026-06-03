@@ -4,6 +4,9 @@
 > 默认假设你是 **自托管单用户 / 小规模** 场景（家用 NAS、个人 VPS、小团队内网）。
 > 如果你要做"对外公网 + 多用户 + 商业服务"，请额外阅读末尾的 **多用户边界** 一节。
 
+> ⛔ **不要部署到 Serverless 平台**（Vercel / Netlify / Cloudflare Workers / 阿里函数计算 等）。
+> 详见下文 [0.1 为什么不能用 Serverless](#01-为什么不能用-serverless)。
+
 ---
 
 ## 0. TL;DR · 选一个起点
@@ -14,6 +17,35 @@
 | 同事/家人共用 | systemd + nginx + HTTPS | [3](#3-systemd-自启) + [2 HTTPS](#2-https-反向代理) |
 | Docker 习惯者 | docker compose | [4 Docker](#4-docker-compose) |
 | 公网部署 | systemd + Caddy/nginx + 备份计划 | 全文 + [7 备份](#7-备份与恢复) |
+| **Vercel / Netlify / Cloudflare Workers** | ❌ **不支持** | [0.1 ↓](#01-为什么不能用-serverless) |
+
+---
+
+## 0.1 为什么不能用 Serverless
+
+新手最容易踩的坑是把仓库 import 到 Vercel/Netlify 这种 Serverless 平台，看到"前端静态资源能加载"就以为部署成功 —— 实际**所有需要后端的功能（注册/登录/密码找回/聊天/记忆/主动消息）全是 404 或 500**。
+
+**Serverless 跑不动溪语 AI 的根本原因**：
+
+| 项目依赖 | Serverless 限制 |
+|---|---|
+| Express 5 长进程 | Serverless 函数生命周期通常 ≤ 60s，跑不了常驻服务 |
+| `better-sqlite3` (native C++) | 多数 Serverless 不支持 native module 编译/链接 |
+| SQLite 文件持久化 + WAL | Serverless 文件系统是临时的，冷启动会丢数据 |
+| iLink 长轮询（每个微信账号一个常驻 polling loop） | Serverless 不允许常驻进程 |
+| `plan_tasks.mjs` cron 调度（TICK 60s） | Serverless 没有内置 cron |
+| Proactive 主动消息引擎 | 同上 |
+
+**如果你已经把仓库连到 Vercel 了，怎么办**：
+
+1. 打开 https://vercel.com/dashboard → 找到 \`xiyu-ai\` 项目 → Settings → 滚到底 → **Delete Project**
+2. 打开 https://github.com/settings/installations → 找到 **Vercel** → Configure → 取消勾选 \`<your-account>/xiyu-ai\` 仓库（或直接 **Uninstall**）
+
+完成后 \`*.vercel.app\` 那个站会下线，每次 push 也不再触发自动部署。然后按下面的 systemd 或 Docker 方案部署到自己的 VPS。
+
+**如果你想用 Vercel 只是因为有免费 HTTPS + 国外 CDN**：
+
+更合适的方案是 **Cloudflare Tunnel**（见 [2.3](#23-cloudflare-隧道无公网-ip--nat-后部署)）—— 自动 HTTPS、零配置、国内可访问，**后端跑在你的 VPS** 上。
 
 ---
 
