@@ -381,10 +381,13 @@ export async function handleMessage(rawMsg, botContext = {}) {
       }
     }
 
-    // ── v1.9.0 #1: 安全风险检测（不阻断主对话流，只记录） ──────────────────
-    // proactive 调度时会查 safety_events，24h 内有 high → 暂停普通主动消息
+    // ── v1.9.0 #1 + v1.9.1: 安全风险检测 + 温度收紧 ────────────────────────
+    // 1. proactive 调度时会查 safety_events，24h 内有 high → 暂停普通主动消息
+    // 2. v1.9.1: 检测到 high/medium 后，本次 generateReply 用更低温度（更稳更少发散）
+    let userMsgSafetyLevel = 'none';
     try {
       const risk = detectSafetyRisk(userText);
+      userMsgSafetyLevel = risk.level;
       if (risk.level !== 'none') {
         recordSafetyEvent({
           companionId: companion.id,
@@ -532,12 +535,19 @@ export async function handleMessage(rawMsg, botContext = {}) {
     }
 
     // ── 生成 AI 回复 ─────────────────────────────────────────────────────────
+    // v1.9.1: 把检测到的 safety level 传下去，high/medium 时 generateReply 内部会
+    // 把 temperature 收紧到 min(base, 0.4|0.6)。不上调用户已设的低温值。
     let reply;
     const genReplyOnce = () => generateReply(
       systemPrompt,
       history,
       userText,
-      { temperature: companion.temperature, max_tokens: companion.max_tokens, top_p: companion.top_p },
+      {
+        temperature: companion.temperature,
+        max_tokens: companion.max_tokens,
+        top_p: companion.top_p,
+        safetyLevel: userMsgSafetyLevel,
+      },
       { accountId: binding.account_id || null },
     );
     try {

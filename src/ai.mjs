@@ -243,10 +243,28 @@ export async function embedText(text) {
 
 // ─── 对话回复 ─────────────────────────────────────────────────────────────
 
+/**
+ * v1.9.1: safety-aware 温度上限。
+ * 高危/中危用户消息后，外层回复要更稳、更少发散。**只下不上** —
+ * 如果 companion 本来 temperature 比 ceiling 还低（用户主动调过），保留原值。
+ *   high   → min(base, 0.4)
+ *   medium → min(base, 0.6)
+ *   none/undefined → 不动
+ */
+export function resolveReplyTemperature(baseTemperature, safetyLevel) {
+  if (safetyLevel === 'high')   return Math.min(baseTemperature, 0.4);
+  if (safetyLevel === 'medium') return Math.min(baseTemperature, 0.6);
+  return baseTemperature;
+}
+
 export async function generateReply(personaPrompt, history, userMessage, params = {}, ctx = {}) {
   // v1.2.10: 兜底默认与 companions 表 DEFAULT 对齐 (0.8 / 3000 / 0.95)，
   // 让回复更有创意、空间更宽、用词更自然。caller 显式传值会优先。
-  const { temperature = 0.8, max_tokens = 3000, top_p = 0.95 } = params;
+  const { temperature: rawTemp = 0.8, max_tokens = 3000, top_p = 0.95, safetyLevel = null } = params;
+  const temperature = resolveReplyTemperature(rawTemp, safetyLevel);
+  if (safetyLevel && temperature !== rawTemp) {
+    log('info', `[ai] safety-aware temp: ${rawTemp} → ${temperature} (risk=${safetyLevel})`);
+  }
   const { accountId = null } = ctx;
 
   const messages = [];

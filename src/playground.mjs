@@ -49,9 +49,11 @@ export async function playgroundChat(companion, userText) {
   if (!text) throw new Error('userText 不能为空');
   if (text.length > 2000) throw new Error('userText 过长（>2000）');
 
-  // ── v1.9.0 #1: 安全风险检测（不阻断主对话，只记录用于 proactive 安全门） ──
+  // ── v1.9.0 #1 + v1.9.1: 安全风险检测 + 温度收紧 ──────────────────────────
+  let userMsgSafetyLevel = 'none';
   try {
     const risk = detectSafetyRisk(text);
+    userMsgSafetyLevel = risk.level;
     if (risk.level !== 'none') {
       recordSafetyEvent({
         companionId: companion.id,
@@ -169,6 +171,7 @@ export async function playgroundChat(companion, userText) {
       temperature: companion.temperature,
       max_tokens: companion.max_tokens,
       top_p: companion.top_p,
+      safetyLevel: userMsgSafetyLevel,  // v1.9.1: high/medium 时收紧温度
     });
   } catch (err) {
     log('error', `[Playground] generateReply 失败 companion=${companion.id}: ${err.message}`);
