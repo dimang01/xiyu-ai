@@ -127,7 +127,7 @@ export const REGISTRY = {
   },
   // 通用 OpenAI 兼容网关：用户自定义 Base URL + Model + API Key。
   // 适用于 OpenRouter / SiliconFlow / One API / New API / LiteLLM /
-  // LM Studio / Ollama OpenAI 兼容端点等。不保证所有平台都完全兼容。
+  // LM Studio 等 OpenAI 兼容端点等。不保证所有平台都完全兼容。
   'openai-compatible': {
     baseURL: '',           // 动态：env OPENAI_COMPATIBLE_BASE_URL > app_settings
     defaultModel: '',      // 动态：env OPENAI_COMPATIBLE_MODEL > app_settings
@@ -138,6 +138,22 @@ export const REGISTRY = {
     baseURLEnv: 'OPENAI_COMPATIBLE_BASE_URL',
     modelEnv: 'OPENAI_COMPATIBLE_MODEL',
     note: '可用于 OpenRouter / SiliconFlow / One API / LiteLLM 等 OpenAI 兼容网关',
+  },
+
+  // v1.9.8: Ollama 本地模型预设。OpenAI 兼容端点，但单独立项让用户更容易发现。
+  // 默认连本机 11434；模型由用户指定（qwen2.5:7b / llama3:8b / deepseek-r1:7b 等）。
+  // OLLAMA_API_KEY 通常不需要，Ollama 默认不鉴权，但 REGISTRY 要求有 apiKeyEnv，
+  // 这里填一个占位（启动检查会被绕过：见 getOpenAIClientFor 对 ollama 的 fallback）。
+  ollama: {
+    baseURL: '',                                  // 动态：env OLLAMA_BASE_URL（默认 http://127.0.0.1:11434/v1）
+    defaultModel: '',                             // 动态：env OLLAMA_MODEL
+    apiKeyEnv: 'OLLAMA_API_KEY',                  // 通常不需要，给个占位即可（"ollama"）
+    label: 'Ollama (本地模型)',
+    link: 'https://ollama.com/',
+    custom: true,
+    baseURLEnv: 'OLLAMA_BASE_URL',
+    modelEnv: 'OLLAMA_MODEL',
+    note: '本地跑大模型，零 API 成本。安装 Ollama → 选模型 → 设 OLLAMA_MODEL 即可',
   },
 };
 
