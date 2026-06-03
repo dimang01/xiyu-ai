@@ -1936,25 +1936,30 @@ function getActiveBindingByWechat(db, wechatUserId, botId) {
 }
 
 function findCurrentCompanionForAccount(db, accountId, botId) {
+  // v1.9.6 安全修复：绑定流程"找回当前 companion"时，去掉
+  // `wa_by_user.wechat_user_id = u.wechat_user_id` 隐式匹配 —— 该匹配让
+  // "account A 曾绑过 B 的微信号" 在重新绑定时关联到 B 的 companion（越权）。
+  //
+  // 现在只走两条显式安全路径：
+  //   1. wa_by_companion：active 显式 companion 绑定到本账号
+  //   2. c.user_id === accountId：web 直接创建路径
+  // 副作用：纯 wechat 创建、又没有显式 wa.companion_id 绑定行的旧 companion
+  // 重绑时找不回 → 会新建 companion（可接受的 graceful degradation；v1.9.4+
+  // 之后所有新绑定都会写 wa.companion_id）。
   return db.prepare(`
     SELECT c.*
     FROM companions c
-    LEFT JOIN users u
-      ON u.id = c.user_id
     LEFT JOIN wechat_accounts wa_by_companion
       ON wa_by_companion.companion_id = c.id
      AND wa_by_companion.account_id = ?
-    LEFT JOIN wechat_accounts wa_by_user
-      ON wa_by_user.wechat_user_id = u.wechat_user_id
-     AND wa_by_user.account_id = ?
+     AND wa_by_companion.is_active = 1
     WHERE wa_by_companion.id IS NOT NULL
-       OR wa_by_user.id IS NOT NULL
        OR c.user_id = ?
     ORDER BY
       CASE WHEN c.bot_id = ? THEN 0 ELSE 1 END,
       c.updated_at DESC
     LIMIT 1
-  `).get(accountId, accountId, accountId, botId);
+  `).get(accountId, accountId, botId);
 }
 
 function ensureCompanionBot(db, companionId, botId) {
@@ -2136,19 +2141,30 @@ export function deleteCompanionForAccount(accountId, companionId) {
       throw error;
     }
 
+    // v1.9.6 安全修复：删除越权（同 v1.9.4/v1.9.5 漏洞模式，但影响更大 —
+    // 删除会 CASCADE 清掉 memories/聊天记录/profiles）。
+    //
+    // 旧版 owned 检查走 `u.wechat_user_id = wa.wechat_user_id` 隐式 JOIN：
+    // account A 绑了 B 的微信号 + bot_id 匹配 → A 能删 B 的 companion 全部数据。
+    //
+    // 新规则与 isCompanionOwnedByAccount 完全一致（显式两条路径）：
+    //   1. c.user_id === accountId（web 直接创建路径）
+    //   2. 存在 active wechat_accounts 行 wa.companion_id === c.id 且
+    //      wa.account_id === accountId（wechat 显式绑定路径）
     const owned = db.prepare(`
-      SELECT c.id
-      FROM wechat_accounts wa
-      JOIN users u
-        ON u.wechat_user_id = wa.wechat_user_id
-      JOIN companions c
-        ON c.user_id = u.id
-       AND c.bot_id = wa.bot_id
-      WHERE wa.account_id = ?
-        AND wa.is_active = 1
-        AND c.id = ?
+      SELECT c.id FROM companions c
+      WHERE c.id = ?
+        AND (
+          c.user_id = ?
+          OR EXISTS (
+            SELECT 1 FROM wechat_accounts wa
+            WHERE wa.companion_id = c.id
+              AND wa.account_id = ?
+              AND wa.is_active = 1
+          )
+        )
       LIMIT 1
-    `).get(accountId, companionId);
+    `).get(companionId, accountId, accountId);
     if (!owned) {
       const error = new Error('无权删除该人设');
       error.code = 'FORBIDDEN';
