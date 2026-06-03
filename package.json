@@ -1,6 +1,6 @@
 {
   "name": "xiyu-ai",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "type": "module",
   "description": "溪语 AI · 开源的微信 AI 陪伴系统。支持 DeepSeek / OpenAI / Claude / xAI / 智谱 / 豆包 / 千问 / Kimi / 文心 等多种大模型",
   "license": "MIT",
