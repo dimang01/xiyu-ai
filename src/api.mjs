@@ -2606,6 +2606,10 @@ router.delete('/companions/:id', requireAuth, (req, res) => {
   if (!id) return res.status(400).json({ ok: false, message: 'id 无效' });
   const accountId = req.authUser.id;
 
+  // v1.9.6 纵深防御：路由层再做一次所有权检查（deleteCompanionForAccount 内部
+  // 也查，但删除这种破坏性操作值得双保险，与其它 /companions/:id/* 路由一致）
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+
   try {
     const result = deleteCompanionForAccount(accountId, id);
     log('info', `[API] 删除 companion id=${id} account=${accountId}`);
