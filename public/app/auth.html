@@ -242,14 +242,20 @@
          kind === 'success' ? 'bg-emerald-50 text-emerald-600' :
          'bg-sakura-soft text-sakura-deep');
     }
+    // v1.9.3: 永远不抛。fetch 网络错（断网/CSP/CORS）会被吞成 { ok:false, status:0, data:{message:...} }
+    // 修真实 bug：之前 fetch reject → 调用方 await 抛错 → click handler 没 try/catch → 按钮永远卡在"发送中..."
     async function apiPost(path, body) {
-      const r = await fetch(API + path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await r.json().catch(() => ({}));
-      return { ok: r.ok, status: r.status, data };
+      try {
+        const r = await fetch(API + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        return { ok: r.ok, status: r.status, data };
+      } catch (err) {
+        return { ok: false, status: 0, data: { message: '网络异常，请检查网络后重试' }, networkError: true };
+      }
     }
     function setLoading(btn, loading, originalText) {
       btn.disabled = loading;

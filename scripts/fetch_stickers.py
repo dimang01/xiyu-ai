@@ -125,7 +125,14 @@ PACKS = [
     # v1.9.2 新增：反讽/吐槽/翻白眼 meme 核心（截图里"你又觉得你配了"这种）
     # 金馆长熊猫源自互联网 meme，二创繁多。如果做商业/公网部署，
     # 替换成自己原创素材；个人本地玩可保留。
-    ("015Golden_Curator_Panda金馆长熊猫🐼BQB", ["panda", "meme", "sarcasm"], "mock"),
+    #
+    # v1.9.3 修：base_tags 显式覆盖 prompt 里写的所有反讽 tag。
+    # 之前只有 sarcasm 一个，prompt 让 AI 用 [STICKER:mock]/[STICKER:eyeroll]
+    # 时只能靠 stickers.mjs 子串模糊匹配落到 sarcasm 池，命中率低。
+    # 现在 PandaHead 池被 8 个 tag 全部直接命中，AI 选哪个反讽词都能直出。
+    ("015Golden_Curator_Panda金馆长熊猫🐼BQB",
+        ["panda", "meme", "sarcasm", "mock", "dismissive", "eyeroll", "whatever", "speechless"],
+        "mock"),
     # 花泽香菜（声优表情包，IP 边界模糊；个人本地玩可保留）
     ("040HanazawaKana表情包三巨头_花泽香菜BQB", ["cute", "girl"], "happy"),
 ]
