@@ -28,7 +28,8 @@ import { shouldSearch, webSearch, formatSearchContext } from './web_search.mjs';
 // 三类瞬时故障 → 重试：超时 / 429 / 5xx / 网络错
 // 三类持久故障 → 立即抛：401 key 错误 / 403 权限 / 400 prompt 格式 / 404 模型不存在
 const PROVIDER_RETRY_MAX = Math.max(0, Number(process.env.PROVIDER_RETRY_MAX ?? 2));
-const PROVIDER_RETRY_BASE_MS = 250;  // 250 / 750 / 2250ms 指数退避
+// 退避基线（指数 3 倍）：默认 250ms → 750 → 2250。调高让重试更耐心，调低更激进。
+const PROVIDER_RETRY_BASE_MS = Math.max(0, Number(process.env.PROVIDER_RETRY_BASE_DELAY_MS ?? 250));
 
 function isRetryableError(err) {
   if (!err) return false;
