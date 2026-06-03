@@ -126,12 +126,18 @@ export function parseStickerMarkers(reply) {
  */
 export function buildStickerPromptHint(enabled) {
   if (!enabled || !hasStickers()) return '';
-  const tags = listAvailableTags(30);
+  const tags = listAvailableTags(40);
   if (tags.length === 0) return '';
+  // v1.9.2: 例子里加反讽/吐槽类，让 AI 知道这些 meme 反应也是可选的
+  // （否则容易只在 happy/cute/cat 之间选，错过陪伴语境最有杀伤力的反讽场景）
   return `
 【可用表情包】
-- 在合适的场景可以用 [STICKER:tag] 表情标记，比如 [STICKER:happy]、[STICKER:cat]、[STICKER:night]
+- 在合适的场景可以用 [STICKER:tag] 表情标记
+- 正面例子：[STICKER:happy]、[STICKER:love]、[STICKER:shy]
+- 反讽吐槽：[STICKER:mock]、[STICKER:dismissive]、[STICKER:eyeroll]、[STICKER:whatever]、[STICKER:speechless]
+  · 用在他得意忘形 / 说傻话 / 自恋 / 吹牛 / 找事时（"你又觉得你配了"这类反应）
+- 场景：[STICKER:night]、[STICKER:morning]、[STICKER:cat]
 - 可用 tag：${tags.join('、')}
-- 一条消息最多用一个表情；不要每条都用；标记要放在合适的位置（开头/结尾）
+- 一条消息最多用一个表情；不要每条都用；标记放合适的位置（开头/结尾）
 - 没有特别合适的情绪时就不要硬塞表情`;
 }

@@ -30,7 +30,7 @@ PER_PACK = 12           # 每包最多下载几个
 
 # 关键字 → tag/emotion 映射（命中多个就都加进 tags）
 KEYWORD_MAP = {
-    # 情绪
+    # ── 情绪 · 基本 ──
     "笑": ["happy"], "嘻嘻": ["happy"], "哈哈": ["happy"], "开心": ["happy"], "乐": ["happy"],
     "害羞": ["shy"], "脸红": ["shy"], "羞": ["shy"],
     "哭": ["sad", "cry"], "委屈": ["sad", "pout"], "难过": ["sad"],
@@ -46,13 +46,53 @@ KEYWORD_MAP = {
     "yeah": ["happy", "cheer"], "耶": ["cheer"], "胜利": ["cheer"], "加油": ["cheer"],
     "OK": ["ok"], "ok": ["ok"], "好的": ["ok"], "好": ["ok"],
     "不行": ["no"], "不要": ["no"], "拒绝": ["no"],
-    # 动作
+
+    # ── v1.9.2: 反讽 / 吐槽 / 嘲讽 / 翻白眼（meme 场景，截图里熊猫"你又觉得你配了"那种） ──
+    "无语": ["whatever", "speechless"],
+    "翻白眼": ["eyeroll", "dismissive"],
+    "白眼": ["eyeroll", "dismissive"],
+    "嘲": ["mock", "sarcasm"], "嘲讽": ["mock", "sarcasm"],
+    "讽刺": ["sarcasm"],
+    "切": ["dismissive"], "哼": ["dismissive", "tsun"],
+    "呵呵": ["sarcasm", "dismissive"],
+    "啊这": ["awkward", "speechless"],
+    "尴尬": ["awkward"],
+    "汗": ["awkward"],
+    "懒得": ["dismissive", "tired"],
+    "随便": ["dismissive", "whatever"],
+    "算了": ["dismissive"],
+    "无奈": ["resigned", "tired"],
+    "敷衍": ["dismissive"],
+    "呸": ["dismissive", "mock"],
+    "鄙视": ["mock", "dismissive"],
+    "傻": ["mock", "tease"], "蠢": ["mock"],
+    "笨": ["tease", "mock"], "笨蛋": ["tease"],
+    "废": ["mock"], "菜": ["mock", "tease"],
+    "牛": ["impressed", "praise"], "厉害": ["impressed"],
+    "服": ["impressed", "speechless"],
+    "扎心": ["heartbroken", "mock"],
+    "心碎": ["heartbroken"],
+    "戏": ["drama"], "演": ["drama"],
+    "酸": ["jealous", "petty"],
+    "柠檬": ["jealous"],
+    "怀疑": ["suspicious"], "怀疑人生": ["speechless"],
+    "?": ["confused"], "？": ["confused"],
+    "啥": ["confused"], "什么鬼": ["confused", "speechless"],
+    # 熊猫头系列高频文案
+    "熊猫": ["meme", "panda"],
+    "再见.*兄弟": ["dismissive"],
+    "我裂开": ["speechless", "broken"],
+    "你礼貌吗": ["dismissive", "speechless"],
+    "牛逼": ["impressed", "praise"],
+
+    # ── 动作 ──
     "招手": ["wave"], "再见": ["wave"], "拜拜": ["wave"], "byebye": ["wave"],
     "吃": ["eat"], "饿": ["eat", "hungry"],
     "喝": ["drink"], "茶": ["drink"], "奶茶": ["drink"],
     "摸头": ["cute"], "rua": ["cute"],
     "送花": ["flower", "love"], "花花": ["flower"],
-    # 场景
+
+    # ── 场景 ──
     "早安": ["morning"], "早上好": ["morning"],
     "晚上": ["night"], "夜": ["night"],
     "周末": ["weekend"],
@@ -61,15 +101,33 @@ KEYWORD_MAP = {
 }
 
 # 挑选这几个包 + 每包"建议主标签"
+#
+# ⚠️ 版权提示（v1.9.2 修订，本注释必须保留）：
+# 以下列表是抓取**默认值**，跑脚本前请自己确认每个 pack 的实际素材来源：
+# - 动物类（cat/duck/hamster/turtle）通常风险最低，多为原创/CC0 风格
+# - PandaHead 系列源自互联网 meme 二创，**商业/公网部署慎用**
+# - 不要加入含真人头像 / 影视截图 / 政治符号 / 种族敏感内容的 pack
+#   （ChineseBQB 仓库里有此类内容，已被本默认列表排除）
+# 你的 production 责任：跑脚本 → 人工筛 → 删掉不合规素材 → 重建 manifest
 PACKS = [
+    # 通用可爱（动物 / 卡通，IP 风险低）
     ("002CuteGirl_可爱的女孩纸👧BQB", ["cute", "girl"], "cute"),
-    ("040HanazawaKana表情包三巨头_花泽香菜BQB", ["cute", "girl"], "happy"),
     ("060MurCat_Mur猫😺BQB", ["cat", "cute"], "cute"),
     ("010Cat_是喵星人啦🐱BQB", ["cat"], "cute"),
     ("049CatEveryday_猫咪日常BQB", ["cat"], "cute"),
     ("008HappyDuck_开心鸭🐥BQB", ["duck", "cute"], "happy"),
     ("057HappyDuck_开心鸭BQB", ["duck", "cute"], "happy"),
     ("006Hamster_仓鼠🐹BQB", ["hamster", "cute"], "cute"),
+    # v1.9.2 新增：通用动物（更多日常反应）
+    ("027Turtle_乌龟🐢BQB", ["turtle", "cute"], "cute"),
+    ("026Chicken_小幺鸡🐔BQB", ["chicken", "cute"], "cute"),
+    ("031Penguin_沙雕企鹅🐧BQB", ["penguin", "silly"], "happy"),
+    # v1.9.2 新增：反讽/吐槽/翻白眼 meme 核心（截图里"你又觉得你配了"这种）
+    # 金馆长熊猫源自互联网 meme，二创繁多。如果做商业/公网部署，
+    # 替换成自己原创素材；个人本地玩可保留。
+    ("015Golden_Curator_Panda金馆长熊猫🐼BQB", ["panda", "meme", "sarcasm"], "mock"),
+    # 花泽香菜（声优表情包，IP 边界模糊；个人本地玩可保留）
+    ("040HanazawaKana表情包三巨头_花泽香菜BQB", ["cute", "girl"], "happy"),
 ]
 
 
@@ -89,8 +147,24 @@ def tags_from_name(name, base_tags):
 
 
 def pick_emotion(tags, default):
-    priority = ["love", "kiss", "hug", "happy", "shy", "sad", "sleepy", "angry",
-                "shock", "proud", "cheer", "pout", "cute", "wave"]
+    # v1.9.2: 加入反讽/吐槽类 priority。情感强类排前，meme 类排中段，
+    # 通用 cute/wave 兜底放最后。这只影响 manifest.json 里每条的 emotion
+    # 默认字段，不影响 tags（tags 完整保留）。
+    priority = [
+        # 强情感
+        "love", "kiss", "hug", "heartbroken",
+        # 正面
+        "happy", "shy", "proud", "cheer", "impressed",
+        # 负面
+        "sad", "angry", "jealous", "petty",
+        # meme / 反讽（v1.9.2 新增）
+        "mock", "sarcasm", "dismissive", "eyeroll", "whatever",
+        "speechless", "awkward", "tsun", "resigned",
+        # 状态
+        "sleepy", "tired", "shock", "confused", "suspicious", "drama",
+        # 兜底
+        "pout", "cute", "wave", "meme",
+    ]
     for p in priority:
         if p in tags:
             return p
