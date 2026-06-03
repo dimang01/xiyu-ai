@@ -19,6 +19,7 @@ import {
   isAccountBanned, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markUserConfessed, patchCompanion,
   getCompanionPreferencesForPrompt,
+  recordSafetyEvent,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
@@ -26,7 +27,7 @@ import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserP
 import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
-import { safeOutboundReply, inboundIsBlocked } from './moderation.mjs';
+import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -378,6 +379,24 @@ export async function handleMessage(rawMsg, botContext = {}) {
         saveConversationTurn(companion.id, 'assistant', replyText, companion.chat_mode_active);
         return;
       }
+    }
+
+    // ── v1.9.0 #1: 安全风险检测（不阻断主对话流，只记录） ──────────────────
+    // proactive 调度时会查 safety_events，24h 内有 high → 暂停普通主动消息
+    try {
+      const risk = detectSafetyRisk(userText);
+      if (risk.level !== 'none') {
+        recordSafetyEvent({
+          companionId: companion.id,
+          userId: companion.user_id,
+          level: risk.level,
+          signals: risk.signals,
+          sourceText: userText,
+        });
+        log('warn', `[Safety] level=${risk.level} companion=${companion.id} signals=${risk.signals.join(',')}`);
+      }
+    } catch (e) {
+      log('warn', `[Safety] detect failed companion=${companion.id}: ${e.message}`);
     }
 
     // ── 召回长期记忆：优先语义检索，失败兜底关键词 ─────────────────────────

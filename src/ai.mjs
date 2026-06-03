@@ -24,6 +24,53 @@ import { asrRecognize } from './providers/asr.mjs';
 import { embedText as _embedText } from './providers/embedding.mjs';
 import { shouldSearch, webSearch, formatSearchContext } from './web_search.mjs';
 
+// ─── v1.9.0 #2: Provider retry wrapper（单 provider 内退避，不做跨 provider fallback） ──
+// 三类瞬时故障 → 重试：超时 / 429 / 5xx / 网络错
+// 三类持久故障 → 立即抛：401 key 错误 / 403 权限 / 400 prompt 格式 / 404 模型不存在
+const PROVIDER_RETRY_MAX = Math.max(0, Number(process.env.PROVIDER_RETRY_MAX ?? 2));
+const PROVIDER_RETRY_BASE_MS = 250;  // 250 / 750 / 2250ms 指数退避
+
+function isRetryableError(err) {
+  if (!err) return false;
+  // 1. SDK 上的 status 字段（OpenAI APIError 等）
+  if (typeof err.status === 'number') {
+    if (err.status === 429) return true;
+    if (err.status >= 500 && err.status <= 599) return true;
+    // 401/403/400/404 → 不 retry
+    return false;
+  }
+  // 2. message 里包含明确 HTTP 状态
+  const msg = String(err.message || err);
+  if (/HTTP\s+(?:429|5\d{2})/i.test(msg)) return true;
+  if (/HTTP\s+(?:400|401|403|404)/i.test(msg)) return false;
+  // 3. 网络/超时类
+  if (/timeout|timed out|abort|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENOTFOUND|ENETUNREACH|EAI_AGAIN|socket hang up|fetch failed|network/i.test(msg)) {
+    return true;
+  }
+  // 4. 未知错误 → 保守起见**不** retry（避免无脑重复 prompt 格式错误这种持久故障）
+  return false;
+}
+
+async function chatCompleteWithRetry(args, { label = 'chat' } = {}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= PROVIDER_RETRY_MAX; attempt++) {
+    try {
+      return await chatComplete(args);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= PROVIDER_RETRY_MAX || !isRetryableError(err)) {
+        throw err;
+      }
+      const base = PROVIDER_RETRY_BASE_MS * Math.pow(3, attempt);
+      const jitter = base * (0.8 + Math.random() * 0.4);  // ±20%
+      const delay = Math.round(jitter);
+      log('warn', `[ai] ${label} retry ${attempt + 1}/${PROVIDER_RETRY_MAX} after ${delay}ms: ${String(err.message || err).slice(0, 120)}`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 // ─── 图像生成 ─────────────────────────────────────────────────────────────
 
 export async function generateImage(prompt, { size = '1024x1024' } = {}) {
@@ -86,7 +133,7 @@ export async function activityToPhotoPrompt(activity, { timeSlot = 'afternoon', 
 只输出英文 prompt，无引号无解释。`;
   const userMsg = `活动：${activity}\n时段：${timeSlot}\n${mood ? '心情：' + mood : ''}`;
   try {
-    const { text } = await chatComplete({
+    const { text } = await chatCompleteWithRetry({
       system: sys,
       messages: [{ role: 'user', content: userMsg }],
       temperature: 0.7,
@@ -173,7 +220,7 @@ export async function generatePersonaFacts(companion) {
 严格只输出 JSON。`;
 
   try {
-    const { text } = await chatComplete({
+    const { text } = await chatCompleteWithRetry({
       system: sys,
       messages: [{ role: 'user', content: '生成她的人生背景 + 世界观 JSON' }],
       temperature: 0.8,
@@ -235,7 +282,7 @@ export async function generateReply(personaPrompt, history, userMessage, params 
   log('debug', `[ai] chat messages=${messages.length} temp=${temperature}`);
   const FALLBACK = '嗯…我刚刚有点走神，等我一下下，再跟你说～';
   try {
-    const { text, usage } = await chatComplete({
+    const { text, usage } = await chatCompleteWithRetry({
       system: effectiveSystem,
       messages,
       temperature,
@@ -267,7 +314,7 @@ export async function generateReply(personaPrompt, history, userMessage, params 
 export async function extractStructuredInfo(systemPrompt, userContent, ctx = {}) {
   const { accountId = null, maxTokens = 400, temperature = 0.1 } = ctx;
   try {
-    const { text, usage } = await chatComplete({
+    const { text, usage } = await chatCompleteWithRetry({
       system: systemPrompt,
       messages: [{ role: 'user', content: userContent }],
       temperature,

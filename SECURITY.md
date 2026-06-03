@@ -6,6 +6,41 @@
 
 ## 中文
 
+### 数据敏感性
+
+溪语 AI 不是普通的"配置型"开源软件。它本质是一个**陪伴关系记录器**，长期运行会
+在 `data/bot.db` 里积累以下数据，每一类都比 SaaS 后台数据敏感得多：
+
+| 数据类型 | 表 | 敏感度 |
+|---|---|---|
+| 聊天历史（双方原文） | `companion_conversation_turns`、`wechat_messages` | 极高 |
+| 长期记忆（她"记得你"的内容） | `companion_memories`、`memory_v2` | 极高 |
+| 她的日记 / 反向日记（私密心理画像） | `companion_diary`、`relational_diary` | 极高 |
+| 用户偏好（你的喜好/雷区/禁忌） | `companion_preferences`、`user_profiles` | 高 |
+| 未完成事项 | `companion_open_loops` | 中-高（含工作/生活细节） |
+| 情绪状态 / 关系阶段 | `companions.*emotion*`、`affection_level` | 中 |
+| 安全事件（自伤/绝望信号） | `safety_events`（v1.9.0+） | **极高（含心理危机记录）** |
+| 用户上传的照片 / 语音 | `data/uploads/`、`public/avatars/` | 中-高 |
+
+**这意味着**：
+
+- `data/` 目录权限设 700，不要让 Web 目录服务（nginx autoindex）能列到它
+- SQLite 文件 `data/bot.db` 当作"病历"对待 —— 不要随便发给别人调试
+- 备份文件（`data/backups/*.db`）含全量数据，**外传必须加密**（GPG/age 等）
+- 用户陪伴史在某些司法辖区可能受**心理健康记录**或**通信隐私**专门法律保护，
+  商业部署前请咨询法律
+- 自伤/危机信号记录（`safety_events`）极度敏感，**绝不能**用于商业画像或分析
+
+### 数据加密计划
+
+当前（v1.9.0）所有数据以 SQLite 明文存储。如果需要更强的静态加密：
+
+- **文件系统层**：LUKS / dm-crypt / APFS 加密整个 `data/` 目录所在卷（最简单）
+- **SQLite 层**：可选 SQLCipher（需替换 `better-sqlite3` → `@journeyapps/sqlcipher`，
+  当前仓库不内置；未来可能通过 `DATA_ENCRYPTION_*` 环境变量提供官方支持）
+- **字段层**：高敏字段（diary / safety_events）单独加密 —— 当前不提供，
+  在 ROADMAP 候选
+
 ### 敏感文件
 
 **永远不要 commit** 以下内容到 Git：
@@ -49,6 +84,51 @@
 ---
 
 ## English
+
+### Data Sensitivity
+
+Xiyu AI is not a typical "config-only" open-source project. It is fundamentally
+a **companion relationship recorder**. Long-running deployments will accumulate
+the following data in `data/bot.db`, every category of which is far more sensitive
+than a typical SaaS backend:
+
+| Data type | Tables | Sensitivity |
+|---|---|---|
+| Chat history (both sides, verbatim) | `companion_conversation_turns`, `wechat_messages` | Critical |
+| Long-term memory (what "she remembers" about you) | `companion_memories`, `memory_v2` | Critical |
+| Her diary / relational diary (intimate psychological profile) | `companion_diary`, `relational_diary` | Critical |
+| User preferences (your likes / dislikes / taboos) | `companion_preferences`, `user_profiles` | High |
+| Open loops (unfinished things you mentioned) | `companion_open_loops` | Medium-High (work/life detail) |
+| Emotion state / relationship stage | `companions.*emotion*`, `affection_level` | Medium |
+| Safety events (self-harm / despair signals) | `safety_events` (v1.9.0+) | **Critical (mental health record)** |
+| Uploaded photos / voice | `data/uploads/`, `public/avatars/` | Medium-High |
+
+**Implications**:
+
+- Set `data/` directory permissions to 700; do NOT let any web server
+  (e.g. nginx autoindex) list its contents
+- Treat `data/bot.db` like a **medical record** — do not casually share it for
+  "debugging"
+- Backup files (`data/backups/*.db`) contain full data; **encrypt before
+  off-site transfer** (GPG / age / etc.)
+- Companion history may be protected by **mental-health record** or
+  **communications privacy** statutes in some jurisdictions; consult legal
+  counsel before commercial deployment
+- Self-harm / crisis signal records (`safety_events`) are extremely sensitive
+  and **MUST NOT** be used for commercial profiling or analytics
+
+### Data Encryption Plans
+
+As of v1.9.0, all data is stored in plaintext SQLite. For stronger at-rest
+encryption:
+
+- **Filesystem layer**: LUKS / dm-crypt / APFS encryption on the volume holding
+  `data/` (simplest)
+- **SQLite layer**: SQLCipher (requires replacing `better-sqlite3` with
+  `@journeyapps/sqlcipher`; not bundled today; future support may arrive via
+  `DATA_ENCRYPTION_*` env vars)
+- **Field-level**: High-sensitivity fields (diary / safety_events) encrypted
+  individually — not currently offered; tracked as a ROADMAP candidate
 
 ### Sensitive Files
 

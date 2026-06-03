@@ -59,8 +59,95 @@ export function getDb() {
     migrateBackfillFlag();
     migratePreferences();  // v1.8.0 #3
     migrateOpenLoops();    // v1.8.0 #4
+    migrateSafetyEvents(); // v1.9.0 #1 安全事件记录（高危后暂停普通主动消息）
   }
   return db;
+}
+
+// ─── v1.9.0 #1: safety_events 高危/中危安全事件 ──────────────────────────
+// 记录用户消息中检测到的自伤/自杀/绝望等信号。proactive 调度前查这张表：
+//   · 24h 内有 high   → 仅允许 safety check-in，禁止普通早安/晚安/想念/吃醋/告白
+//   · 6h  内有 medium → 禁止占有/吃醋/告白，允许温和关心
+// 这是真实风险：用户说"不想活了"后半小时系统发"突然想你了"是不可接受的。
+function migrateSafetyEvents() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS safety_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      user_id      INTEGER,
+      level        TEXT    NOT NULL CHECK(level IN ('high','medium')),
+      signals      TEXT,                 -- JSON array of matched signal keywords
+      source_text  TEXT,                 -- 截断到 200 字的原始消息（用于复盘）
+      created_at   INTEGER NOT NULL      -- 毫秒时间戳，方便区间查询
+    );
+    CREATE INDEX IF NOT EXISTS idx_safety_companion_time
+      ON safety_events(companion_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_safety_level_time
+      ON safety_events(level, created_at DESC);
+  `);
+}
+
+/**
+ * 写入一条安全事件。signals 为字符串数组，会序列化为 JSON。
+ * 静默失败：不阻塞主对话流。
+ */
+export function recordSafetyEvent({ companionId, userId = null, level, signals = [], sourceText = '' }) {
+  if (!companionId || !['high','medium'].includes(level)) return null;
+  try {
+    const stmt = getDb().prepare(`
+      INSERT INTO safety_events (companion_id, user_id, level, signals, source_text, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const r = stmt.run(
+      companionId,
+      userId,
+      level,
+      JSON.stringify(Array.isArray(signals) ? signals.slice(0, 10) : []),
+      String(sourceText || '').slice(0, 200),
+      Date.now(),
+    );
+    return r.lastInsertRowid;
+  } catch (e) {
+    // 不抛 — 安全事件记录失败不应影响主对话
+    return null;
+  }
+}
+
+/**
+ * 查询 companion 最近一段时间内的最高级别安全事件。
+ * 默认窗口：high 24h，medium 6h（matches Anthropic-style 安全门设计）。
+ * 返回 { level: 'high'|'medium'|'none', recentAt: number|null, signals: string[] }
+ */
+export function getRecentSafetyRisk(companionId, { highWindowMs = 86_400_000, mediumWindowMs = 21_600_000 } = {}) {
+  if (!companionId) return { level: 'none', recentAt: null, signals: [] };
+  const now = Date.now();
+  try {
+    // 优先查 high
+    const high = getDb().prepare(`
+      SELECT created_at, signals FROM safety_events
+      WHERE companion_id = ? AND level = 'high' AND created_at >= ?
+      ORDER BY created_at DESC LIMIT 1
+    `).get(companionId, now - highWindowMs);
+    if (high) {
+      let sig = [];
+      try { sig = JSON.parse(high.signals || '[]'); } catch {}
+      return { level: 'high', recentAt: high.created_at, signals: Array.isArray(sig) ? sig : [] };
+    }
+    // 再查 medium
+    const mid = getDb().prepare(`
+      SELECT created_at, signals FROM safety_events
+      WHERE companion_id = ? AND level = 'medium' AND created_at >= ?
+      ORDER BY created_at DESC LIMIT 1
+    `).get(companionId, now - mediumWindowMs);
+    if (mid) {
+      let sig = [];
+      try { sig = JSON.parse(mid.signals || '[]'); } catch {}
+      return { level: 'medium', recentAt: mid.created_at, signals: Array.isArray(sig) ? sig : [] };
+    }
+    return { level: 'none', recentAt: null, signals: [] };
+  } catch {
+    return { level: 'none', recentAt: null, signals: [] };
+  }
 }
 
 // ─── v1.8.0 #4: companion_open_loops "未完成的事" ────────────────────────

@@ -12,6 +12,7 @@ import {
   recordProactiveSentTimestamp, getProactiveLastSent,
   getCompanionPreferencesForPrompt,
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
+  getRecentSafetyRisk,                        // v1.9.0 #1
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
@@ -55,6 +56,43 @@ function jitterOffset(jitter) {
 const TICK_MS = 60_000;
 
 const schedules = new Map();
+
+// ─── v1.9.0 #3: 失败日志标准化（不建表，先用结构化 log，观察一段时间再决定是否升表） ──
+// 用法：logProactiveFailure({ companionId, kind, errorType, latencyMs, message })
+// 字段对齐 ChatGPT 的 proactive_delivery_events 设计（companion_id/kind/error_type/latency_ms），
+// 但落到 log 而不是 SQL，避免提前引入维护成本。grep `[Proactive][fail]` 可统一汇总。
+function classifyError(err) {
+  if (!err) return 'unknown';
+  if (typeof err.status === 'number') {
+    if (err.status === 429) return 'rate_limit';
+    if (err.status >= 500) return 'provider_5xx';
+    if (err.status === 401 || err.status === 403) return 'auth';
+    if (err.status === 400) return 'bad_request';
+    return `http_${err.status}`;
+  }
+  const msg = String(err.message || err);
+  if (/timeout|timed out|abort/i.test(msg))               return 'timeout';
+  if (/ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN|fetch failed|socket hang up/i.test(msg)) return 'network';
+  if (/HTTP\s+429/i.test(msg))                            return 'rate_limit';
+  if (/HTTP\s+5\d{2}/i.test(msg))                         return 'provider_5xx';
+  if (/HTTP\s+(?:401|403)/i.test(msg))                    return 'auth';
+  if (/HTTP\s+400/i.test(msg))                            return 'bad_request';
+  return 'unknown';
+}
+
+function logProactiveFailure({ companionId, kind, error, latencyMs = null, extra = '' }) {
+  const errorType = classifyError(error);
+  const parts = [
+    `companion=${companionId}`,
+    `kind=${kind}`,
+    `error_type=${errorType}`,
+  ];
+  if (latencyMs != null) parts.push(`latency_ms=${latencyMs}`);
+  const msg = String(error?.message || error || '').slice(0, 200);
+  if (msg) parts.push(`msg="${msg}"`);
+  if (extra) parts.push(extra);
+  log('warn', `[Proactive][fail] ${parts.join(' ')}`);
+}
 
 // v1.5.2 B3 修：进程内"正在处理中" companion 集合，防同 companion 并发 sendProactiveMessage
 // （比如 generateReply 跑 8s 期间又来一个 tick）
@@ -151,6 +189,20 @@ async function tick(now = new Date()) {
 async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) {
   if (_proactiveInFlight.has(companion.id)) {
     log('info', `[Proactive] 跳过：companion=${companion.id} 已有发送在进行中（kind=${kind}）`);
+    return;
+  }
+  // ── v1.9.0 #1: 安全门 ─────────────────────────────────────────────────
+  // 用户最近表达自伤/自杀/绝望信号时，不要发普通主动消息（包括纪念日/告白/想念）。
+  // "她今天没找我" 远好于 "她在我说不想活了之后发了句突然想你"。
+  try {
+    const risk = getRecentSafetyRisk(companion.id);
+    if (risk.level === 'high' || risk.level === 'medium') {
+      log('warn', `[Proactive] 安全门拦截 companion=${companion.id} kind=${kind} risk=${risk.level} signals=${(risk.signals || []).join(',')}`);
+      return;
+    }
+  } catch (e) {
+    // 查询失败不应阻塞 — 但也不静默继续发，保守起见同样跳过本次
+    log('warn', `[Proactive] 安全门查询失败 companion=${companion.id}: ${e.message} → 保守跳过本次`);
     return;
   }
   // 持久化间隔检查
@@ -323,8 +375,9 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
 
   // ── 单独分支：场景照片 ──
   if (kind === 'photo') {
+    const t0 = Date.now();
     return sendScenePhoto(companion, ctx).catch(err =>
-      log('error', `[Proactive] 场景照失败 companion=${companion.id}: ${err.message}`)
+      logProactiveFailure({ companionId: companion.id, kind: 'photo', error: err, latencyMs: Date.now() - t0 })
     );
   }
 

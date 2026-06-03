@@ -20,6 +20,7 @@ import {
   getDailySchedule, getRecentSchedules, getPersonaFacts, shanghaiDateKey,
   saveConversationTurn, getCompanionById, patchCompanion,
   getCompanionPreferencesForPrompt,
+  recordSafetyEvent,
 } from './db.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
@@ -28,7 +29,7 @@ import {
   detectUserConfession, consumePendingCelebration, extractAndSaveMemories,
   extractAndUpdateUserProfile,
 } from './memory.mjs';
-import { safeOutboundReply } from './moderation.mjs';
+import { safeOutboundReply, detectSafetyRisk } from './moderation.mjs';
 import { buildStickerPromptHint, hasStickers, parseStickerMarkers } from './stickers.mjs';
 import {
   getEmotionStateWithDefaults, updateEmotionFromUserMessage,
@@ -47,6 +48,23 @@ export async function playgroundChat(companion, userText) {
   const text = String(userText || '').trim();
   if (!text) throw new Error('userText 不能为空');
   if (text.length > 2000) throw new Error('userText 过长（>2000）');
+
+  // ── v1.9.0 #1: 安全风险检测（不阻断主对话，只记录用于 proactive 安全门） ──
+  try {
+    const risk = detectSafetyRisk(text);
+    if (risk.level !== 'none') {
+      recordSafetyEvent({
+        companionId: companion.id,
+        userId: companion.user_id,
+        level: risk.level,
+        signals: risk.signals,
+        sourceText: text,
+      });
+      log('warn', `[Safety] level=${risk.level} companion=${companion.id} signals=${risk.signals.join(',')}`);
+    }
+  } catch (e) {
+    log('warn', `[Safety] detect failed companion=${companion.id}: ${e.message}`);
+  }
 
   // ── 召回长期记忆 ───────────────────────────────────────────────────────────
   let memories = [];
