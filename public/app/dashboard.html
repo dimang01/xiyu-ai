@@ -504,6 +504,40 @@
           </div>
         </div>
 
+        <!-- v1.9.8: AI 用量自查（per-account 透明度） -->
+        <div class="card p-7" id="ai-usage-card">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+                <i data-lucide="activity" class="w-5 h-5 text-sakura-deep"></i>
+              </div>
+              <h3 class="text-[15px] font-bold">AI 用量</h3>
+            </div>
+            <select id="usage-days-select" class="text-[11px] font-medium text-mute bg-cloud border border-line rounded-lg px-2 py-1">
+              <option value="7" selected>近 7 天</option>
+              <option value="30">近 30 天</option>
+              <option value="90">近 90 天</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-3 gap-3 text-center">
+            <div>
+              <div class="text-[18px] font-bold text-sakura-deep" id="usage-messages">—</div>
+              <div class="text-[10px] text-mute font-medium mt-0.5">消息数</div>
+            </div>
+            <div>
+              <div class="text-[18px] font-bold text-sakura-deep" id="usage-tokens">—</div>
+              <div class="text-[10px] text-mute font-medium mt-0.5">总 token</div>
+            </div>
+            <div>
+              <div class="text-[18px] font-bold text-sakura-deep" id="usage-cost">—</div>
+              <div class="text-[10px] text-mute font-medium mt-0.5">估算花费</div>
+            </div>
+          </div>
+          <p class="text-[11px] text-mute/80 font-medium mt-3 leading-relaxed">
+            按当前 chat provider 价格估算。<span id="usage-provider"></span>本地 Ollama 走免费路径不计费。
+          </p>
+        </div>
+
         <!-- 时光胶囊（v1.5） -->
         <div class="card p-7">
           <div class="flex items-center gap-3 mb-3">
@@ -1604,10 +1638,49 @@
       // 加载 P2 成就 & 备份区
       loadP2Section(companionId);
 
+      // v1.9.8: AI 用量卡片
+      loadAiUsage(7);
+      const usageSelect = document.getElementById('usage-days-select');
+      if (usageSelect) {
+        usageSelect.addEventListener('change', e => loadAiUsage(Number(e.target.value) || 7));
+      }
+
       // reveal in
       document.querySelectorAll('.reveal').forEach((el, i) => {
         setTimeout(() => el.classList.add('in'), 80 * i);
       });
+    }
+
+    // v1.9.8: 调 /me/ai-usage 填充用量卡片
+    async function loadAiUsage(days) {
+      const elMsg = document.getElementById('usage-messages');
+      const elTok = document.getElementById('usage-tokens');
+      const elCost = document.getElementById('usage-cost');
+      const elProv = document.getElementById('usage-provider');
+      if (!elMsg) return;
+      try {
+        const r = await fetch('/api/me/ai-usage?days=' + encodeURIComponent(days), {
+          headers: { Authorization: 'Bearer ' + token },
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.message || 'failed');
+        const t = d.data?.totals || {};
+        const fmt = n => (typeof n === 'number' ? n.toLocaleString('en-US') : '—');
+        elMsg.textContent = fmt(t.message_count || 0);
+        elTok.textContent = fmt(t.total_tokens || 0);
+        if (t.estimated_cost == null) {
+          elCost.textContent = '—';
+        } else {
+          const cur = t.currency || 'USD';
+          const symbol = cur === 'CNY' ? '¥' : (cur === 'USD' ? '$' : (cur + ' '));
+          // 显示 4 位小数；过小用科学计数法可读性差
+          elCost.textContent = symbol + Number(t.estimated_cost).toFixed(4);
+        }
+        if (elProv && d.data?.provider) elProv.textContent = `当前: ${d.data.provider}。`;
+      } catch (e) {
+        elMsg.textContent = elTok.textContent = elCost.textContent = '—';
+        console.warn('[ai-usage] load failed', e);
+      }
     }
 
     // ─── 她现在（实时状态）────────────────────────────────────────────

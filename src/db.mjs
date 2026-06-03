@@ -2768,6 +2768,48 @@ export function getMemories(companionId, userId, limit = 50) {
   `).all(companionId, userId, limit);
 }
 
+/**
+ * v1.9.8: 找出 N 天前的"零碎"记忆（event / emotion / fact），用于长期压缩 cron。
+ * 故意不含 preference（稳定特征不能丢）、daily/weekly/monthly_summary（已是总结）、
+ * image（图片识别记忆量小）、pinned=1（用户钉住的）。
+ *
+ * @param {object} args
+ *   companionId, userId
+ *   beforeDateIso: ISO 时间字符串（如 '2025-09-01T00:00:00.000Z'）
+ *   limit: 单次最多拉多少条，防 LLM context 爆（默认 200）
+ * @returns 数组：{ id, memory_type, content, created_at, ... }
+ */
+export function listEpisodicMemoriesOlderThan({ companionId, userId, beforeDateIso, limit = 200 }) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT id, memory_type, content, created_at, importance
+    FROM companion_memories
+    WHERE companion_id = ?
+      AND user_id = ?
+      AND memory_type IN ('fact', 'event', 'emotion')
+      AND COALESCE(pinned, 0) = 0
+      AND created_at < ?
+    ORDER BY created_at ASC
+    LIMIT ?
+  `).all(companionId, userId, beforeDateIso, limit);
+}
+
+/**
+ * v1.9.8: 批量删除 memory（在压缩成功落地后清掉原条目）。
+ * 用事务，要么全删要么不删。
+ */
+export function deleteMemoriesByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+  const db = getDb();
+  const stmt = db.prepare('DELETE FROM companion_memories WHERE id = ?');
+  const tx = db.transaction(arr => {
+    let n = 0;
+    for (const id of arr) n += stmt.run(id).changes;
+    return n;
+  });
+  return tx(ids);
+}
+
 export function recallMemories(companionId, userId, currentMessage, limit = 7) {
   const db = getDb();
   // 提取关键词（2字以上中文词组 & 英文单词）

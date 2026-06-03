@@ -23,6 +23,7 @@ import {
   saveMemory, summaryMemoryExists, getDb, shanghaiDateKey, shanghaiBoundsForDateKey,
   getRecentSummaries,
   saveDailySchedule, getDailySchedule,
+  listEpisodicMemoriesOlderThan, deleteMemoriesByIds,   // v1.9.8 老记忆压缩
 } from './db.mjs';
 import { applyMemoryDecayBatch } from './memory_v2.mjs';
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
@@ -522,6 +523,73 @@ async function runMonthly(todayKey) {
     } catch (err) {
       log('error', `[PlanTasks] monthly 失败 companion=${companion.id}: ${err.message}`);
     }
+
+    // v1.9.8: 长期记忆压缩 — 把 90 天前的零碎 fact/event/emotion 合并成
+    // "老记忆压缩"摘要，删除原条目。避免半年/一年后零碎记忆无限膨胀。
+    // 不动 preference（稳定特征）/ pinned（用户钉住）/ summary（已总结）。
+    try {
+      await compactOldEpisodicMemories(companion);
+    } catch (err) {
+      log('warn', `[PlanTasks] compactMemory 失败 companion=${companion.id}: ${err.message}`);
+    }
+  }
+}
+
+/**
+ * v1.9.8: 单 companion 的老记忆压缩。按"创建月份"分组，每组合并成
+ * monthly_summary（prefix 区分于自动月总结），然后删除原条目。
+ * 静默失败（不抛），不影响主 runMonthly 流程。
+ */
+async function compactOldEpisodicMemories(companion) {
+  const compactDays = Math.max(30, Number(process.env.MEMORY_COMPACT_DAYS) || 90);
+  const before = new Date(Date.now() - compactDays * 86_400_000).toISOString();
+  const rows = listEpisodicMemoriesOlderThan({
+    companionId: companion.id,
+    userId: companion.user_id,
+    beforeDateIso: before,
+    limit: 200,
+  });
+  if (rows.length < 5) return;  // 太少没必要压缩
+
+  // 按 "YYYY-MM" 分组（用 created_at 前 7 位）
+  const groups = new Map();
+  for (const r of rows) {
+    const key = String(r.created_at || '').slice(0, 7); // YYYY-MM
+    if (!/^\d{4}-\d{2}$/.test(key)) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  if (groups.size === 0) return;
+
+  log('info', `[PlanTasks] compact start companion=${companion.id} rows=${rows.length} groups=${groups.size} cutoff=${compactDays}d`);
+
+  let compactedGroups = 0;
+  for (const [groupMonth, groupRows] of groups.entries()) {
+    if (groupRows.length < 3) continue;  // 单月不足 3 条 skip
+    const prefix = `老记忆压缩 ${groupMonth}：`;
+    // 已有同 prefix 的压缩摘要 → 跳过（idempotent 防重复）
+    if (summaryMemoryExists(companion.id, companion.user_id, 'monthly_summary', prefix)) continue;
+
+    try {
+      const summary = await summarizeMemoryList('老记忆压缩', groupMonth, groupRows);
+      saveMemory({
+        companionId: companion.id,
+        userId: companion.user_id,
+        memoryType: 'monthly_summary',
+        content: `${prefix}${summary}`,
+        importance: 15,  // 高于普通月总结（这是压缩后的精华，回忆时优先召回）
+      });
+      // 摘要落地成功才删原条目（防摘要失败导致数据丢失）
+      const ids = groupRows.map(r => r.id);
+      const deleted = deleteMemoriesByIds(ids);
+      compactedGroups++;
+      log('info', `[PlanTasks] compact group companion=${companion.id} month=${groupMonth} src=${groupRows.length} deleted=${deleted}`);
+    } catch (err) {
+      log('warn', `[PlanTasks] compact group failed companion=${companion.id} month=${groupMonth}: ${err.message}`);
+    }
+  }
+  if (compactedGroups > 0) {
+    log('info', `[PlanTasks] compact done companion=${companion.id} groups=${compactedGroups}`);
   }
 }
 
