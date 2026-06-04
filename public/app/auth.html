@@ -100,7 +100,7 @@
         <div class="hero-blob is-pink"   style="width:380px;height:380px;top:-40px;left:-60px;"></div>
         <div class="hero-blob is-violet" style="width:300px;height:300px;bottom:-30px;right:-40px;"></div>
         <div class="relative">
-          <img src="/assets/landing/feature-persona.webp" alt="" class="w-full max-w-[460px] rounded-[28px] shadow-sakura-lg" loading="eager" />
+          <img src="/assets/landing/auth-hero.webp" alt="" class="w-full max-w-[460px] rounded-[28px] shadow-sakura-lg" loading="eager" />
           <!-- 浮在插图上的玻璃小卡 -->
           <div class="floating-card absolute -bottom-6 -left-6 px-5 py-4 max-w-[240px]" style="animation-delay:0.4s">
             <div class="flex items-center gap-2 mb-1">
@@ -310,10 +310,12 @@
       btnSendCode.textContent = '发送中...';
 
       const { ok, data } = await apiPost('/api/auth/send-code', { email, purpose: 'register', turnstile_token: tsToken });
-      // token 只能用一次，无论成功失败都重置 widget，下次点击需重新验证
-      window.__xiyuTurnstileToken = null;
-      try { if (window.turnstile) window.turnstile.reset(); } catch {}
       if (!ok) {
+        // v1.10.2 fix: 仅在失败时重置人机验证（下次重试需重新验证）。
+        // 旧实现发码成功后也立刻 reset()，widget 会马上又转一圈"正在验证" → 用户观感就是"刚验证完又弹一次"。
+        // token 一次性由后端 siteverify 兜底（重放被 timeout-or-duplicate 拒），成功后无需前端 reset。
+        window.__xiyuTurnstileToken = null;
+        try { if (window.turnstile) window.turnstile.reset(); } catch {}
         showMsg('msg-register', data.message || '发送失败，请稍后再试', 'error');
         btnSendCode.disabled = false;
         btnSendCode.textContent = '发送验证码';

@@ -41,18 +41,32 @@
     } catch {}
   }
 
-  // 注入切换按钮
+  // 注入切换按钮 + 引导气泡
   function injectToggle() {
     if (document.getElementById('xiyu-theme-toggle')) return;
+
+    function showBubble(text, ms) {
+      let b = document.getElementById('xiyu-theme-bubble');
+      if (!b) {
+        b = document.createElement('div');
+        b.id = 'xiyu-theme-bubble';
+        b.className = 'xiyu-theme-bubble';
+        document.body.appendChild(b);
+      }
+      b.textContent = text;
+      b.classList.add('show');
+      clearTimeout(b._t);
+      b._t = setTimeout(() => b.classList.remove('show'), ms);
+    }
+
     const btn = document.createElement('button');
     btn.id = 'xiyu-theme-toggle';
     btn.className = 'xiyu-theme-toggle';
     btn.setAttribute('aria-label', '切换主题');
-    btn.title = '主题：跟随系统 → 浅色 → 深色';
     function render() {
       const pref = getPref();
       btn.textContent = pref === 'dark' ? '🌙' : pref === 'light' ? '☀️' : '🌓';
-      btn.title = '主题：' + (pref === 'auto' ? '跟随系统' : pref === 'dark' ? '深色' : '浅色') + '（点击切换）';
+      btn.title = '主题：' + (pref === 'auto' ? '跟随系统' : pref === 'dark' ? '深色' : '浅色') + '（点击切换：跟随系统 → 浅色 → 深色）';
     }
     render();
     btn.addEventListener('click', () => {
@@ -62,8 +76,17 @@
       setPref(next);
       apply(next);
       render();
+      showBubble(next === 'auto' ? '已切换：跟随系统' : next === 'dark' ? '已切换：深色模式' : '已切换：浅色模式', 1600);
     });
     document.body.appendChild(btn);
+
+    // 首次访问引导一次（让用户知道右下角能切深 / 浅色）
+    try {
+      if (!localStorage.getItem('xiyu_theme_hint_seen')) {
+        setTimeout(() => showBubble('切换深色 / 浅色 →', 5000), 900);
+        localStorage.setItem('xiyu_theme_hint_seen', '1');
+      }
+    } catch {}
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', injectToggle);
