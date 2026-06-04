@@ -45,6 +45,7 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 
 | Capability | Description |
 |---|---|
+| **She sleeps (v1.10.0)** ⭐⭐ | Every companion has a sleep schedule (bedtime / wake time + ±N min jitter + learn state). During sleep hours your messages are **fully silenced** — no typing indicator, no reply; they queue into `companion_missed_messages` and are summarized in one morning catch-up ("saw you sent a bunch last night \|\| just woke up"). First 7 days observe your own activity (first/last message timestamps), day 8 her schedule auto-locks to the medians (or set manually). Dashboard gets a **📞 Call her awake** button: instantly exits sleep, but she wakes up grumpy (annoyance +8 / anger +5, escalates linearly on repeat wakeups) |
 | **Default starting point = "flirting"** | affection 35/100, stage = flirting. She likes you from day one, not built up from zero |
 | **Concrete life memories** | At registration, generates 46+ specific life events ("got chased by a dog in 3rd grade") — not abstract tags |
 | **18-section persona prompt** | Meta-cognition / relationship stage / today's schedule / recent context / long-term summary / anti-AI-tone rules — stitched in one pass |
@@ -246,11 +247,26 @@ Trim the image: pass `--build-arg WITH_VOICE=0 --build-arg WITH_IMAGE=0` to drop
 | [`deploy/README.md`](./deploy/README.md) | clone → production step-by-step |
 | `scripts/backup-db.sh` | Starting point for SQLite trio backup (`bot.db` + `-wal` + `-shm`) |
 
+### nginx dual-directory deploy gotcha (common in self-hosting)
+
+If your nginx `root` points to a **separate** frontend directory (e.g. `/var/www/xxx/frontend/`) instead of the project's own `public/`, then after every `git pull` you **must rsync `public/` over** — otherwise frontend changes (html/css/js) won't take effect but API changes will, leading to confusing "frontend calls new API and errors out" symptoms.
+
+Minimal sync script (preserves assets unique to the nginx dir):
+
+```bash
+rsync -av --exclude='.gitkeep' /opt/xiyu-ai-new/public/ /var/www/xxx/frontend/
+systemctl restart zhaohy-wechat
+```
+
+If your nginx `root` points directly at the project's `public/` (recommended), ignore this section.
+
 ### Self-Check / Diagnostics
 
 ```bash
 npm run doctor          # Node/SQLite/keys/iLink/port/service-health in one command
-npm run check:p0        # P0/P1 regression — 124 checks
+npm run check:p0        # P0/P1 regression — 126 checks (incl. proactive guard since v1.10.0)
+npm run check:imports   # ESM cycle / dead-import check
+npm run check:field-drift  # daily_summary field-name drift
 npm run smoke           # Release smoke test — 10 checks
 bash scripts/opensource_check.sh   # 6-item open-source compliance
 ```
@@ -436,6 +452,7 @@ Release cadence / full changelog at [GitHub Releases](https://github.com/dimang0
 
 Recent mainline:
 
+- **v1.10.0 "She sleeps / sign-up anti-abuse / dark mode / proactive bugfix"** ⭐⭐ Five-pack: **#1 Sleep & circadian system** — new tables `companion_sleep_schedule` (bedtime/wake + ±N min jitter + learn state) and `companion_missed_messages` (queue during sleep). New module `src/sleep.mjs`: bot entry silently swallows messages during sleep hours and queues them; proactive reads bedtime/wake from this table, the `morning` kind auto-prepends a "saw you sent a bunch last night \|\| just woke up" hint built from the queue; first 7 days observe user's first/last message times → day 8 locks to medians; dashboard gets 📞 Call her awake (instant exitSleep + annoyance/anger up, AI immediately fires a sleepy "what time is it…" reply) · **#2 proactive-not-sending bugfix** — root cause: `item.sent = true` was set *before* `evaluateProactive`, so when v2 rejected via the 90-min backoff the item was permanently marked sent and never retried; users felt "she sends way fewer proactive messages than I configured". Fix: `item.sent` only flips when actually entering the send wrapper; rejections write `_v2_deny_until = now + 15min` for debounce; 2 source-level regression checks added to p0 · **#3 Cloudflare Turnstile on signup** — auth.html register tab gets the widget, `send-code` endpoint runs `verifyTurnstile(token, remoteIp)` against the official siteverify first; secret stays in `.env`, site key is hardcoded on the frontend; skipping when secret is absent (dev-friendly), conservative block on network failure · **#4 Site-wide dark mode** — `public/app/theme.js` with localStorage `xiyu_theme` = auto/light/dark; auto follows `prefers-color-scheme` mediaquery; floating toggle 🌓→☀️→🌙; all 17 HTML pages get a tiny inline pre-script in `<head>` to avoid render flash; glass.css extends the dark skeleton to cover commonly-used Tailwind utilities · **#5 MiniMax / Tavily / Qwen keys** — wire up in `.env` and the existing providers (chat/tts/asr/vision/web_search/embedding) detect them automatically
 - **v1.8.0 "She actually remembers + she has an inner monologue"** ⭐⭐ Realism upgrade v2. 6 blocks: **#7** `incomplete-reply` prompt (7 allowed: only empathize / only complain / stall then continue / just say "dunno" / change topic / short when busy / no opinion) · **#1** `emotion_state` adds `availability` + `attention` derived from today's `dailySchedule` current activity (sleep/meeting=busy, eating/strolling=half), prompt injects "I'm here but only half-attention" · **#3** new `companion_preferences` table (like/dislike/taboo/neutral × intensity 1-5), startup backfills existing `hobbies/dislikes`, patch syncs; prompt modifies "極/很/有点" by intensity; 3 new REST endpoints · **#4** new `companion_open_loops` table — she remembers unfinished things ("he's going to the job fair tomorrow" + due_at + emotional_weight + expected_followup + status), LLM extraction + heuristic auto-resolve ("the job fair was a bust" → auto-resolve), 03:30 cron marks stale · **#5** proactive **causal restructuring**: normal kind checks `listDueOpenLoops`, hits upgrade to `recall` kind, injects `hidden_reason` — she'll say "oh by the way || did you nail the interview" instead of "how was your day" · **#6** **Inner OS** double-pass reply pipeline — every reply first generates an internal monologue (short, not sent), injects into outer system prompt so the model writes the visible reply *based on* the inner thought. The gap between what she thinks and what she says is the real-person signal. Toggleable (`INNER_OS_ENABLED=false`), short messages < 8 chars auto-skip
 - **v1.7.0 "Less sycophantic, more lived-in"** ⭐ Addresses LLM sycophancy specifically in the companion / dating context. 5 blocks: **A** ~200-word "she's not here to please you" prompt segment (every 5-8 replies ≥1 with disagreement/dislike/blunt critique, with familiar-friend casualness not coldness) · **B** ~200-word "she teases you back" prompt (sarcasm/fake complain/inside jokes/self-deprecating flirt, gated by `can_joke`, only when stage≠stranger, frequency 1/6-8 in friends~flirting, 1/3-4 in lover~deep love) · **C** crush-period "playing it cool" concrete examples (180 words + 6 counterexamples, only injected at stranger/friend/flirting stages) · **D** emotion_state low-energy mode (`mood=cold` or `annoyance≥70` or `patience≤20` triggers the highest-priority "not in the mood today" hint: single-char replies / not engaging / can interrupt with "let me go xx"; **overrides** the discord/tease/sycophancy directives above) · **E** new `companion.dislikes` JSON field (distinct from `forbidden_topics`: dislikes = "will discuss but state I dislike", forbidden = "won't engage at all"; prompt injects "this isn't for me" type lines; create.html adds 8 preset chips: complaints / spicy food / soap operas / internet memes / clubs / lectures / "boomer dad energy" / calculating people).
 - **v1.6.3 "Drop the off-tone hero illustration"** — the `hero-girl.webp` regenerated in v1.6.2 (via OpenRouter `gpt-5-image-mini`) came out as a pink-haired anime girl facing forward — directly conflicting with the "she feels like a real person" tone the product enforces elsewhere; using it as a logo underlay on the homepage also drowned out the logo / tagline / chips. This release drops the hero-girl reference and the .webp file, removes the item from the regen script, restores the homepage to clean `logo + tagline`, and swaps the auth left column to `feature-persona` (journal pictogram).
