@@ -251,6 +251,8 @@
           <td class="px-4 py-3 text-mute text-[12px]">${a.created_at || ''}</td>
           <td class="px-4 py-3 text-right whitespace-nowrap">
             <button class="btn-action text-[12px] px-2 py-1 rounded-lg bg-cloud hover:bg-line font-semibold" data-act="detail" data-id="${a.id}">详情</button>
+            <!-- v1.9.11: 画像入口 -->
+            <a href="/app/admin-user-profile.html?account_id=${a.id}" class="inline-block text-[12px] px-2 py-1 rounded-lg bg-sakura-soft text-sakura-deep hover:bg-sakura/30 font-semibold ml-1 align-middle">画像</a>
             ${a.is_banned
               ? `<button class="btn-action text-[12px] px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-semibold ml-1" data-act="unban" data-id="${a.id}">解封</button>`
               : `<button class="btn-action text-[12px] px-2 py-1 rounded-lg bg-red-50 text-danger hover:bg-red-100 font-semibold ml-1" data-act="ban" data-id="${a.id}">封禁</button>`}

@@ -3764,6 +3764,35 @@ router.get('/admin/accounts/:id', requireAdmin, (req, res) => {
   });
 });
 
+// v1.9.11: GET /api/admin/user-profile/:account_id?with_llm=1
+// 综合用户画像：SQL 维度 + 关键词频率 + 可选 LLM 推断
+// ⚠️ 仅 admin 自查工具。LLM 推断结果不持久化，每次调用实时算。
+// 见 src/user_profile.mjs 顶部伦理边界说明 + SECURITY.md "数据敏感性"
+router.get('/admin/user-profile/:account_id', requireAdmin, async (req, res) => {
+  const accountId = intId(req.params.account_id);
+  if (!accountId) return err(res, 'account_id 无效');
+  const account = getUserAccountById(accountId);
+  if (!account) return err(res, '账号不存在', 404);
+  const withLlm = req.query.with_llm === '1' || req.query.with_llm === 'true';
+  try {
+    const { computeFullProfile } = await import('./user_profile.mjs');
+    const profile = await computeFullProfile(accountId, { withLlm });
+    return ok(res, {
+      account: {
+        id: account.id,
+        username: account.username,
+        email: account.email,
+        created_at: account.created_at,
+        is_banned: !!account.is_banned,
+      },
+      ...profile,
+    });
+  } catch (e) {
+    log('error', `[Admin] user-profile failed account=${accountId}: ${e.message}`);
+    return err(res, e.message || '画像生成失败', 500);
+  }
+});
+
 // POST /api/admin/accounts/:id/ban
 router.post('/admin/accounts/:id/ban', requireAdmin, (req, res) => {
   const id = intId(req.params.id);

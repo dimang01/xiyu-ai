@@ -24,6 +24,7 @@ const MODULES = [
   'src/memory_v2.mjs',
   'src/emotion_state.mjs',
   'src/inner_os.mjs',
+  'src/user_profile.mjs',
   'src/ai_taste_guard.mjs',
   'src/open_loops.mjs',
   'src/proactive.mjs',
