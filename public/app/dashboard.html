@@ -427,24 +427,28 @@
             她默认 00:30 入睡、07:30 起床，睡眠时段你发的消息她不会立刻回（起床后一起补回）。可在下方调整作息时间，或关闭。
           </p>
 
-          <div class="grid grid-cols-2 gap-3 mb-3">
-            <label class="text-[11px] text-mute font-semibold">
-              入睡时间
-              <input id="sleep-bed" type="time" class="mt-1 w-full px-3 py-2 rounded-xl border border-line text-[13px] font-medium" value="23:00" />
-            </label>
-            <label class="text-[11px] text-mute font-semibold">
-              起床时间
-              <input id="sleep-wake" type="time" class="mt-1 w-full px-3 py-2 rounded-xl border border-line text-[13px] font-medium" value="07:30" />
-            </label>
-          </div>
-
-          <div class="mb-3">
-            <div class="flex items-baseline justify-between mb-1">
-              <span class="text-[11px] text-mute font-semibold">随机抖动 ± <span id="sleep-jitter-val">30</span> 分钟</span>
-              <span class="text-[10px] text-mute">每天起睡时刻自然波动</span>
+          <!-- iOS 风格圆形作息拨盘 -->
+          <div class="flex flex-col items-center mb-2 select-none">
+            <svg id="sleep-dial" width="232" height="232" viewBox="0 0 240 240" style="touch-action:none">
+              <circle cx="120" cy="120" r="92" fill="none" stroke="#F0F0F2" stroke-width="26"/>
+              <path id="dial-arc" fill="none" stroke="#1D1D1F" stroke-width="26" stroke-linecap="round" opacity="0.85"/>
+              <text x="120" y="42"  text-anchor="middle" font-size="13" font-weight="700" fill="#9a9aa2">0</text>
+              <text x="200" y="125" text-anchor="middle" font-size="13" font-weight="700" fill="#9a9aa2">6</text>
+              <text x="120" y="210" text-anchor="middle" font-size="13" font-weight="700" fill="#9a9aa2">12</text>
+              <text x="40"  y="125" text-anchor="middle" font-size="13" font-weight="700" fill="#9a9aa2">18</text>
+              <text id="dial-duration" x="120" y="116" text-anchor="middle" font-size="19" font-weight="800" fill="#1D1D1F">—</text>
+              <text x="120" y="138" text-anchor="middle" font-size="11" font-weight="600" fill="#86868B">睡眠时长</text>
+              <g id="dial-bed"  style="cursor:grab"><circle r="16" fill="#fff" stroke="#C9B8FF" stroke-width="2.5"/><text text-anchor="middle" dy="5" font-size="15">🌙</text></g>
+              <g id="dial-wake" style="cursor:grab"><circle r="16" fill="#fff" stroke="#FF8FB8" stroke-width="2.5"/><text text-anchor="middle" dy="5" font-size="15">☀️</text></g>
+            </svg>
+            <div class="flex gap-10 text-center mt-1">
+              <div><div class="text-[10px] text-mute font-semibold">🌙 就寝</div><div id="dial-bed-time" class="text-[16px] font-bold tracking-tight">00:30</div></div>
+              <div><div class="text-[10px] text-mute font-semibold">☀️ 起床</div><div id="dial-wake-time" class="text-[16px] font-bold tracking-tight">07:30</div></div>
             </div>
-            <input id="sleep-jitter" type="range" min="0" max="90" step="5" value="30" class="proactive-slider w-full" />
+            <p class="text-[10px] text-mute mt-1.5 text-center">拖动 🌙 ☀️ 调整 · 每天自动小幅波动（睡 -15~+45、起 ±10 分钟）</p>
           </div>
+          <input type="hidden" id="sleep-bed" value="00:30"/>
+          <input type="hidden" id="sleep-wake" value="07:30"/>
 
           <label class="flex items-center gap-2 mb-3 text-[12px] font-medium text-ink/80">
             <input id="sleep-enabled" type="checkbox" checked /> 启用作息（关闭则她不会睡觉）
@@ -2401,10 +2405,7 @@
         const s = d.data;
         const card = document.getElementById('sleep-card');
         card.style.display = 'block';
-        document.getElementById('sleep-bed').value  = s.bed_time;
-        document.getElementById('sleep-wake').value = s.wake_time;
-        document.getElementById('sleep-jitter').value = s.jitter_min;
-        document.getElementById('sleep-jitter-val').textContent = s.jitter_min;
+        if (window._sleepDial) window._sleepDial.set(s.bed_time, s.wake_time);
         document.getElementById('sleep-enabled').checked = !!s.enabled;
         const pill = document.getElementById('sleep-status-pill');
         if (!s.enabled) {
@@ -2428,15 +2429,61 @@
         }
       } catch (e) { console.warn('loadSleep failed', e); }
     }
-    document.getElementById('sleep-jitter').addEventListener('input', (e) => {
-      document.getElementById('sleep-jitter-val').textContent = e.target.value;
-    });
-    document.getElementById('btn-sleep-save').addEventListener('click', async () => {
+    // v1.10.8: iOS 风格圆形作息拨盘
+    (function initSleepDial(){
+      const SVG = document.getElementById('sleep-dial');
+      if (!SVG) return;
+      const CX = 120, CY = 120, R = 92;
+      let bedMin = 30, wakeMin = 450;
+      const arc = document.getElementById('dial-arc');
+      const hBed = document.getElementById('dial-bed');
+      const hWake = document.getElementById('dial-wake');
+      const durEl = document.getElementById('dial-duration');
+      const bedTimeEl = document.getElementById('dial-bed-time');
+      const wakeTimeEl = document.getElementById('dial-wake-time');
+      const bedInput = document.getElementById('sleep-bed');
+      const wakeInput = document.getElementById('sleep-wake');
+      const pad = n => String(n).padStart(2, '0');
+      const fmt = min => pad(Math.floor(min / 60) % 24) + ':' + pad(min % 60);
+      const hhmmToMin = s => { const [h, m] = String(s || '0:0').split(':').map(n => parseInt(n, 10) || 0); return (h * 60 + m) % 1440; };
+      const pos = (min, r = R) => { const a = (min / 1440) * 2 * Math.PI; return { x: CX + r * Math.sin(a), y: CY - r * Math.cos(a) }; };
+      function render() {
+        const b = pos(bedMin), w = pos(wakeMin);
+        hBed.setAttribute('transform', 'translate(' + b.x + ',' + b.y + ')');
+        hWake.setAttribute('transform', 'translate(' + w.x + ',' + w.y + ')');
+        const dur = (wakeMin - bedMin + 1440) % 1440;
+        const large = dur > 720 ? 1 : 0;
+        arc.setAttribute('d', 'M ' + b.x + ' ' + b.y + ' A ' + R + ' ' + R + ' 0 ' + large + ' 1 ' + w.x + ' ' + w.y);
+        const dh = Math.floor(dur / 60), dm = dur % 60;
+        durEl.textContent = dh + '小时' + (dm ? ' ' + dm + '分' : '');
+        bedTimeEl.textContent = fmt(bedMin);
+        wakeTimeEl.textContent = fmt(wakeMin);
+        bedInput.value = fmt(bedMin);
+        wakeInput.value = fmt(wakeMin);
+      }
+      function evtToMin(e) {
+        const rect = SVG.getBoundingClientRect();
+        const sx = 240 / rect.width, sy = 240 / rect.height;
+        const px = (e.clientX - rect.left) * sx - CX, py = (e.clientY - rect.top) * sy - CY;
+        let a = Math.atan2(px, -py); if (a < 0) a += 2 * Math.PI;
+        return (Math.round((a / (2 * Math.PI)) * 1440 / 5) * 5) % 1440;
+      }
+      let dragging = null;
+      const startDrag = which => e => { e.preventDefault(); dragging = which; try { SVG.setPointerCapture(e.pointerId); } catch (_) {} };
+      hBed.addEventListener('pointerdown', startDrag('bed'));
+      hWake.addEventListener('pointerdown', startDrag('wake'));
+      SVG.addEventListener('pointermove', e => { if (!dragging) return; const m = evtToMin(e); if (dragging === 'bed') bedMin = m; else wakeMin = m; render(); });
+      function endDrag() { if (dragging) { dragging = null; if (window._onSleepDialChange) window._onSleepDialChange(); } }
+      SVG.addEventListener('pointerup', endDrag);
+      SVG.addEventListener('pointercancel', endDrag);
+      window._sleepDial = { set: (b, w) => { bedMin = hhmmToMin(b); wakeMin = hhmmToMin(w); render(); } };
+      render();
+    })();
+    async function saveSleep(silent) {
       const body = {
         enabled: document.getElementById('sleep-enabled').checked,
         bed_time: document.getElementById('sleep-bed').value,
         wake_time: document.getElementById('sleep-wake').value,
-        jitter_min: parseInt(document.getElementById('sleep-jitter').value, 10),
       };
       try {
         const r = await fetch('/api/companions/' + companionId + '/sleep', {
@@ -2446,10 +2493,14 @@
         });
         const d = await r.json();
         if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
-        showToast('✓ 作息已保存');
+        if (!silent) showToast('✓ 作息已保存');
         loadSleep();
       } catch (e) { alert('保存失败：' + e.message); }
-    });
+    }
+    // 拖动松手自动保存；保存按钮显式保存；启用开关切换即存
+    window._onSleepDialChange = () => saveSleep(true);
+    document.getElementById('btn-sleep-save').addEventListener('click', () => saveSleep(false));
+    document.getElementById('sleep-enabled').addEventListener('change', () => saveSleep(true));
     document.getElementById('btn-sleep-call').addEventListener('click', async () => {
       if (!confirm('确认打电话叫醒她？她会有起床气，annoyance 增加。')) return;
       try {
