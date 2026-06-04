@@ -38,6 +38,7 @@ import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
 import { extractOpenLoops, detectAndResolveOpenLoops } from './open_loops.mjs';
 import { generateInnerMonologue, buildInnerOsHint } from './inner_os.mjs';
+import { maybeSleepBlock } from './sleep.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 const PHOTO_REQUEST_ENABLED = !['0', 'false', 'no', 'off'].includes(String(process.env.PHOTO_REQUEST_ENABLED ?? 'true').toLowerCase());
@@ -277,6 +278,23 @@ export async function handleMessage(rawMsg, botContext = {}) {
     // v1.3.4: 开源版无套餐分级。所有用户、所有能力（文本/图片/语音）一视同仁。
     // 历史上这里有 free 用户 50 条/天上限 + 图片/语音识别拦截，已全部移除。
     // 自托管用户的"限流"应通过 src/ratelimit.mjs 或上游 WAF 控制，不再按账号分级。
+
+    // v1.10.0 睡眠拦截：处于睡眠时段 → 完全静默 + 入队 missed。
+    // 起床后由 plan_tasks tick 触发起床早安 + 补回。
+    try {
+      const sleepGate = maybeSleepBlock({
+        companionId: companion.id,
+        msgType: msg.msgType,
+        content: msg.text || `[${msg.msgType}]`,
+        receivedAt: Date.now(),
+      });
+      if (sleepGate.blocked) {
+        log('info', `[Bot] sleep block: companion=${companion.id} type=${msg.msgType} (silent, queued to missed)`);
+        return;
+      }
+    } catch (e) {
+      log('warn', `[Bot] sleep gate error companion=${companion.id}: ${e.message}`);
+    }
 
     let userText = null;
 

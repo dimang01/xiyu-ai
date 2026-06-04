@@ -411,6 +411,59 @@
           </div>
         </div>
 
+        <!-- v1.10.0 作息与睡眠 -->
+        <div class="card p-7" id="sleep-card" style="display:none;">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+                <i data-lucide="bed" class="w-5 h-5 text-sakura-deep"></i>
+              </div>
+              <h3 class="text-[15px] font-bold">作息与睡眠</h3>
+            </div>
+            <span id="sleep-status-pill" class="text-[11px] font-bold px-2 py-1 rounded-full bg-sakura-soft text-sakura-deep">—</span>
+          </div>
+
+          <p class="text-[12px] text-mute font-medium leading-relaxed mb-3" id="sleep-hint">
+            她有自己的作息。在睡眠时段你发的消息她不会立刻回，起床后会一起补回。
+          </p>
+
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <label class="text-[11px] text-mute font-semibold">
+              入睡时间
+              <input id="sleep-bed" type="time" class="mt-1 w-full px-3 py-2 rounded-xl border border-line text-[13px] font-medium" value="23:00" />
+            </label>
+            <label class="text-[11px] text-mute font-semibold">
+              起床时间
+              <input id="sleep-wake" type="time" class="mt-1 w-full px-3 py-2 rounded-xl border border-line text-[13px] font-medium" value="07:30" />
+            </label>
+          </div>
+
+          <div class="mb-3">
+            <div class="flex items-baseline justify-between mb-1">
+              <span class="text-[11px] text-mute font-semibold">随机抖动 ± <span id="sleep-jitter-val">30</span> 分钟</span>
+              <span class="text-[10px] text-mute">每天起睡时刻自然波动</span>
+            </div>
+            <input id="sleep-jitter" type="range" min="0" max="90" step="5" value="30" class="proactive-slider w-full" />
+          </div>
+
+          <label class="flex items-center gap-2 mb-3 text-[12px] font-medium text-ink/80">
+            <input id="sleep-enabled" type="checkbox" checked /> 启用作息（关闭则她不会睡觉）
+          </label>
+
+          <div class="flex gap-2 flex-wrap">
+            <button id="btn-sleep-save" class="flex-1 min-w-[100px] py-2.5 text-[12px] font-bold text-white bg-gradient-to-r from-sakura to-sakura-deep rounded-full shadow-sakura hover:scale-[1.02] transition-all">
+              保存作息
+            </button>
+            <button id="btn-sleep-call" class="flex-1 min-w-[100px] py-2.5 text-[12px] font-bold text-white bg-gradient-to-r from-rose-400 to-rose-500 rounded-full hover:scale-[1.02] transition-all disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+              📞 打电话叫醒她
+            </button>
+          </div>
+          <button id="btn-sleep-reset-learn" type="button" class="mt-3 text-[11px] font-medium text-mute hover:text-sakura-deep transition-colors">
+            重置学习期（按你最近作息重新学）
+          </button>
+          <p id="sleep-learn-note" class="mt-2 text-[11px] text-mute"></p>
+        </div>
+
         <!-- 沉默陪伴模式（v1.5） -->
         <div class="card p-7" id="silent-mode-card">
           <div class="flex items-center justify-between mb-1">
@@ -2339,11 +2392,96 @@
       } catch (e) { alert('重置失败：' + e.message); }
     });
 
+    // v1.10.0 作息与睡眠
+    async function loadSleep() {
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/sleep', { headers: { Authorization: 'Bearer ' + token } });
+        const d = await r.json();
+        if (!r.ok || !d.ok) return;
+        const s = d.data;
+        const card = document.getElementById('sleep-card');
+        card.style.display = 'block';
+        document.getElementById('sleep-bed').value  = s.bed_time;
+        document.getElementById('sleep-wake').value = s.wake_time;
+        document.getElementById('sleep-jitter').value = s.jitter_min;
+        document.getElementById('sleep-jitter-val').textContent = s.jitter_min;
+        document.getElementById('sleep-enabled').checked = !!s.enabled;
+        const pill = document.getElementById('sleep-status-pill');
+        if (!s.enabled) {
+          pill.textContent = '已关闭';
+          pill.className = 'text-[11px] font-bold px-2 py-1 rounded-full bg-gray-100 text-gray-500';
+        } else if (s.is_sleeping) {
+          pill.textContent = '💤 睡眠中';
+          pill.className = 'text-[11px] font-bold px-2 py-1 rounded-full bg-indigo-50 text-indigo-600';
+        } else {
+          pill.textContent = '清醒';
+          pill.className = 'text-[11px] font-bold px-2 py-1 rounded-full bg-emerald-50 text-emerald-600';
+        }
+        document.getElementById('btn-sleep-call').disabled = !s.is_sleeping;
+        const note = document.getElementById('sleep-learn-note');
+        if (s.learn_state === 'observing') {
+          note.textContent = `学习期：已采样 ${s.learn_samples}/7 天，满 7 天后会自动按你的实际作息调整。`;
+        } else if (s.user_set) {
+          note.textContent = '已使用你手动设置的作息。';
+        } else {
+          note.textContent = `已根据你最近 7 天作息固化（${s.bed_time} 入睡 / ${s.wake_time} 起床）。`;
+        }
+      } catch (e) { console.warn('loadSleep failed', e); }
+    }
+    document.getElementById('sleep-jitter').addEventListener('input', (e) => {
+      document.getElementById('sleep-jitter-val').textContent = e.target.value;
+    });
+    document.getElementById('btn-sleep-save').addEventListener('click', async () => {
+      const body = {
+        enabled: document.getElementById('sleep-enabled').checked,
+        bed_time: document.getElementById('sleep-bed').value,
+        wake_time: document.getElementById('sleep-wake').value,
+        jitter_min: parseInt(document.getElementById('sleep-jitter').value, 10),
+      };
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/sleep', {
+          method: 'PUT',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
+        showToast('✓ 作息已保存');
+        loadSleep();
+      } catch (e) { alert('保存失败：' + e.message); }
+    });
+    document.getElementById('btn-sleep-call').addEventListener('click', async () => {
+      if (!confirm('确认打电话叫醒她？她会有起床气，annoyance 增加。')) return;
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/sleep/wake', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '叫醒失败');
+        showToast('📞 已叫醒她（今天第 ' + d.data.woken_today + ' 次）');
+        loadSleep();
+      } catch (e) { alert('叫醒失败：' + e.message); }
+    });
+    document.getElementById('btn-sleep-reset-learn').addEventListener('click', async () => {
+      if (!confirm('重置学习期：作息回到 23:00 / 07:30 默认，清空已观察的样本，重新跟随你的作息学习 7 天？')) return;
+      try {
+        const r = await fetch('/api/companions/' + companionId + '/sleep/reset-learn', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '重置失败');
+        showToast('✓ 已重置学习期');
+        loadSleep();
+      } catch (e) { alert('重置失败：' + e.message); }
+    });
+
     load().catch(e => {
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('no-companion').classList.remove('hidden');
       console.error(e);
-    });
+    }).then(() => { if (companionId) loadSleep(); });
   </script>
 
   <!-- ─── 模型设置抽屉 JS ──────────────────────────────────────────────── -->

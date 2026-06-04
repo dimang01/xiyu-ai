@@ -278,6 +278,42 @@ function initAiUsageTable() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_stage_milestones_companion ON companion_stage_milestones(companion_id, created_at);
+
+    -- v1.10.0 作息/睡眠
+    -- 每个 companion 一条；today_* 字段每天 cron 重算（含 jitter）。
+    -- learn_state='observing' 前 7 天纯观察用户作息，第 8 天 'locked' 固化。
+    CREATE TABLE IF NOT EXISTS companion_sleep_schedule (
+      companion_id INTEGER PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      bed_time TEXT NOT NULL DEFAULT '23:00',           -- HH:MM 24h，上海时区
+      wake_time TEXT NOT NULL DEFAULT '07:30',
+      jitter_min INTEGER NOT NULL DEFAULT 30,           -- ±N 分钟随机抖动
+      user_set INTEGER NOT NULL DEFAULT 0,              -- 0=默认/学习 1=用户手动设
+      learn_state TEXT NOT NULL DEFAULT 'observing',    -- observing | locked
+      learn_started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      observed_samples_json TEXT NOT NULL DEFAULT '[]', -- [{date, first_msg, last_msg}, ...]
+      today_date TEXT,                                  -- 今天 today_* 的有效日 YYYY-MM-DD
+      today_bed_at INTEGER,                             -- 今天的入睡时刻 ts(ms)
+      today_wake_at INTEGER,                            -- 今天的起床时刻 ts(ms)
+      is_sleeping INTEGER NOT NULL DEFAULT 0,
+      sleep_started_at INTEGER,
+      woken_today INTEGER NOT NULL DEFAULT 0,
+      last_woken_at INTEGER,
+      goodnight_sent_for_date TEXT,                     -- 今晚是否已发睡前晚安
+      goodmorning_sent_for_date TEXT,                   -- 今早是否已发起床早安
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 睡眠期间收到的用户消息（用于起床后补回总结）
+    CREATE TABLE IF NOT EXISTS companion_missed_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL,
+      received_at INTEGER NOT NULL,                     -- ts(ms)
+      msg_type TEXT NOT NULL,                           -- text | image | voice | etc
+      content TEXT NOT NULL,
+      consumed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_missed_msgs_comp ON companion_missed_messages(companion_id, consumed, received_at);
   `);
 }
 
@@ -4054,4 +4090,72 @@ export function getCompanionBackfillStatus(companionId) {
     FROM companions WHERE id = ?
   `).get(companionId, companionId);
   return row ? { backfilledAt: row.history_backfilled_at || null, syntheticCount: row.synthetic_count || 0 } : null;
+}
+
+// ─── v1.10.0 睡眠作息 ────────────────────────────────────────────────────────
+export function getSleepRow(companionId) {
+  return getDb()
+    .prepare(`SELECT * FROM companion_sleep_schedule WHERE companion_id = ?`)
+    .get(companionId) || null;
+}
+
+export function ensureSleepRow(companionId) {
+  const existing = getSleepRow(companionId);
+  if (existing) return existing;
+  getDb()
+    .prepare(`INSERT OR IGNORE INTO companion_sleep_schedule (companion_id) VALUES (?)`)
+    .run(companionId);
+  return getSleepRow(companionId);
+}
+
+export function upsertSleepSchedule(companionId, fields = {}) {
+  ensureSleepRow(companionId);
+  const allowed = [
+    'enabled', 'bed_time', 'wake_time', 'jitter_min', 'user_set',
+    'learn_state', 'observed_samples_json',
+    'today_date', 'today_bed_at', 'today_wake_at',
+    'is_sleeping', 'sleep_started_at',
+    'woken_today', 'last_woken_at',
+    'goodnight_sent_for_date', 'goodmorning_sent_for_date',
+  ];
+  const keys = Object.keys(fields).filter(k => allowed.includes(k));
+  if (keys.length === 0) return getSleepRow(companionId);
+  const sets = keys.map(k => `${k} = ?`).join(', ');
+  const vals = keys.map(k => fields[k]);
+  vals.push(companionId);
+  getDb()
+    .prepare(`UPDATE companion_sleep_schedule SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE companion_id = ?`)
+    .run(...vals);
+  return getSleepRow(companionId);
+}
+
+export function listSleepRowsEnabled() {
+  return getDb()
+    .prepare(`SELECT * FROM companion_sleep_schedule WHERE enabled = 1`)
+    .all();
+}
+
+export function queueMissedMessage(companionId, { msgType, content, receivedAt }) {
+  getDb()
+    .prepare(`INSERT INTO companion_missed_messages (companion_id, received_at, msg_type, content, consumed) VALUES (?, ?, ?, ?, 0)`)
+    .run(companionId, receivedAt || Date.now(), String(msgType || 'text'), String(content || '').slice(0, 4000));
+}
+
+export function getUnconsumedMissed(companionId, limit = 50) {
+  return getDb()
+    .prepare(`SELECT * FROM companion_missed_messages WHERE companion_id = ? AND consumed = 0 ORDER BY received_at ASC LIMIT ?`)
+    .all(companionId, limit);
+}
+
+export function markMissedConsumed(companionId) {
+  getDb()
+    .prepare(`UPDATE companion_missed_messages SET consumed = 1 WHERE companion_id = ? AND consumed = 0`)
+    .run(companionId);
+}
+
+export function countMissedSince(companionId, sinceTs) {
+  const row = getDb()
+    .prepare(`SELECT COUNT(*) AS n FROM companion_missed_messages WHERE companion_id = ? AND received_at >= ?`)
+    .get(companionId, sinceTs || 0);
+  return row?.n || 0;
 }
