@@ -35,6 +35,12 @@ import { runEmotionRecalcBatch } from './emotion_state.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
+import {
+  listEnabledRows as listSleepEnabled,
+  getOrRefreshTodaySchedule,
+  exitSleep,
+  tryLockSchedule,
+} from './sleep.mjs';
 
 const TZ = 'Asia/Shanghai';
 const TICK_MS = 60_000;
@@ -91,6 +97,37 @@ async function tick(now = new Date()) {
   await runOnce(parts, `emotion-tick-${parts.hour}-${parts.minute}`,
     parts.minute === 0 || parts.minute === 30,
     () => runEmotionRecalcBatch());
+
+  // v1.10.0 sleep tick：每分钟跑（轻量，no LLM）
+  try {
+    runSleepTick(now);
+  } catch (e) {
+    log('warn', `[Sleep] tick failed: ${e.message}`);
+  }
+}
+
+// ─── v1.10.0 sleep ─────────────────────────────────────────────────────────
+function runSleepTick(now) {
+  const nowMs = now.getTime();
+  const rows = listSleepEnabled();
+  for (const row of rows) {
+    try {
+      // 重算今日 bed/wake（若已是今天则不动）
+      const fresh = getOrRefreshTodaySchedule(row.companion_id, nowMs);
+      // 1) 起床兜底：今天 wake 已过 + 还标记 is_sleeping → 强制 exit
+      //    （proactive morning kind 通常已经 exitSleep；这里救场 proactive 失败/disabled 的情况）
+      if (fresh.is_sleeping && fresh.today_wake_at && nowMs >= fresh.today_wake_at + 5 * 60_000) {
+        exitSleep(row.companion_id);
+        log('info', `[Sleep] fallback exitSleep companion=${row.companion_id} (no morning sent within 5min of wake)`);
+      }
+      // 2) 学习固化：每天 03:40 cron 时尝试（避开高峰）
+      if (now.getHours() === 3 && now.getMinutes() === 40) {
+        tryLockSchedule(row.companion_id, nowMs);
+      }
+    } catch (e) {
+      log('warn', `[Sleep] tick companion=${row.companion_id}: ${e.message}`);
+    }
+  }
 }
 
 // ─── 日程归档为记忆 ─────────────────────────────────────────────────────────
