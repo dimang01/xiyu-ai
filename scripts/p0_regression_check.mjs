@@ -129,6 +129,15 @@ try {
   const { readFileSync } = await import('node:fs');
   const apiSrc = readFileSync(path.join(ROOT, 'src/api.mjs'), 'utf-8');
 
+  // v1.10.0 proactive bug 防回归：v2 拒发时必须 *不* 立刻 item.sent=true
+  const proSrc = readFileSync(path.join(ROOT, 'src/proactive.mjs'), 'utf-8');
+  check('proactive.mjs v2 拒发时延期重试（不立即标 sent）',
+    /_v2_deny_until/.test(proSrc),
+    !/_v2_deny_until/.test(proSrc) ? '缺 _v2_deny_until 字段，v2 拒发会浪费配额' : '');
+  check('proactive.mjs sendProactiveMessage 缺微信绑定时有 warn log',
+    /未绑定微信.*wechat_user_id 缺/.test(proSrc),
+    !/未绑定微信.*wechat_user_id 缺/.test(proSrc) ? '缺 silent return 日志' : '');
+
   // Count remaining bare requireCompanion call sites (excludes function definition)
   // A call site looks like "requireCompanion(res, id); if (!c) return;"
   const bareCallSites = (apiSrc.match(/requireCompanion\(res, id\); if \(!c\) return;/g) || []).length;

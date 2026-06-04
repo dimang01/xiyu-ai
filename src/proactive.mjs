@@ -149,12 +149,21 @@ async function tick(now = new Date()) {
         }
 
         const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, companion);
-        const dueItems = schedule.items.filter(item => !item.sent && item.minute <= minuteNow);
+        // v1.10.0 #BUG-FIX：原来不加 _v2_deny_until 字段时，v2 评估失败 + item.sent=true 顺序错位
+        // 让大量 items 在 motivation 还没积累起来时就被永久标记 sent。配额白白浪费，用户感知
+        // "主动消息明显比设置的少"。改法：
+        //   1) v2 拒绝时 *不* 标记 sent=true，但写 _v2_deny_until=now+15min 防抖；
+        //   2) 真正发送（含 wrapper silent return）才标记 sent；
+        //   3) 加结构化 reason log 便于排查。
+        const dueItems = schedule.items.filter(item =>
+          !item.sent
+          && item.minute <= minuteNow
+          && (!item._v2_deny_until || Date.now() >= item._v2_deny_until)
+        );
         for (const item of dueItems) {
           if (currentMinute(new Date()) > window.end) break;
-          item.sent = true;
 
-          // v2 mode: ask evaluateProactive() before sending
+          // v2 mode: ask evaluateProactive() before sending（NOT before marking sent）
           if (PROACTIVE_ENGINE_MODE === 'v2') {
             let v2Error = false;
             let decision = null;
@@ -164,14 +173,17 @@ async function tick(now = new Date()) {
               log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
               v2Error = true;
             }
-            // If v2 deliberately returned null (no error), suppress the send
+            // If v2 deliberately returned null (no error), defer this item without losing it
             if (!v2Error && decision === null) {
-              log('info', `[Proactive] v2 拒绝发送 companion=${companion.id} kind=${item.kind}`);
+              // 防抖：15 分钟内同 item 不再重复 v2 评估，避免日志噪音和反复无效计算
+              item._v2_deny_until = Date.now() + 15 * 60_000;
+              log('info', `[Proactive] v2 拒发，延期 15 分钟重试 companion=${companion.id} kind=${item.kind} minute=${item.minute}`);
               continue;
             }
             // v2Error → fall through to legacy send path
           }
 
+          item.sent = true;  // 进入 send wrapper 即标记，wrapper 内 silent return 也算"今日错过"
           await sendProactiveMessageGuarded(companion, item.kind, account);
         }
       } catch (e) {
@@ -364,7 +376,10 @@ function hasMinGap(minutes, minGap) {
 }
 
 async function sendProactiveMessage(companion, kind, account, opts = {}) {
-  if (!companion.wechat_user_id) return;
+  if (!companion.wechat_user_id) {
+    log('warn', `[Proactive] 跳过：companion=${companion.id} kind=${kind} 未绑定微信（wechat_user_id 缺）`);
+    return;
+  }
   const ctx = account
     ? { token: account.bot_token, botId: account.bot_id }
     : getBotContextForCompanion(companion.id);
