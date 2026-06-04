@@ -60,6 +60,34 @@ const BIND_CODE_RE = /(?:^绑定\s*)?(XYU-\d{6})$/i;
 //   长消息（50+字）：上限 15s（避免用户等太久）
 const REPLY_DELAY_MIN_MS = 2_000;
 const REPLY_DELAY_MAX_MS = 15_000;
+
+// v1.9.11: 破冰延迟（用户长时间沉默后第一条消息）
+// 阈值可调：默认沉默 ≥ 30 分钟视为"破冰场景"，下次回复加额外延迟。
+// 用 env 控：
+//   ICEBREAKER_SILENCE_MIN_MIN — 触发阈值（分钟，默认 30）
+//   ICEBREAKER_DELAY_MIN_MS / MAX_MS — 额外延迟范围（默认 5-20s）
+const ICEBREAKER_SILENCE_MIN_MIN = Math.max(0, Number(process.env.ICEBREAKER_SILENCE_MIN_MIN) || 30);
+const ICEBREAKER_DELAY_MIN_MS = Math.max(0, Number(process.env.ICEBREAKER_DELAY_MIN_MS) || 5_000);
+const ICEBREAKER_DELAY_MAX_MS = Math.max(ICEBREAKER_DELAY_MIN_MS, Number(process.env.ICEBREAKER_DELAY_MAX_MS) || 20_000);
+
+/**
+ * v1.9.11: 计算破冰延迟（用户沉默 N 分钟后第一条消息）
+ * 沉默时间越长延迟越长（但 cap 在 max）
+ * @returns ms 延迟。0 表示不需要破冰延迟。
+ */
+function computeIcebreakerDelay(lastUserReplyAt) {
+  if (!lastUserReplyAt) return 0;  // 全新对话不算破冰（用 typing 延迟就够）
+  const last = new Date(String(lastUserReplyAt).replace(' ', 'T')).getTime();
+  if (!Number.isFinite(last)) return 0;
+  const silenceMin = (Date.now() - last) / 60_000;
+  if (silenceMin < ICEBREAKER_SILENCE_MIN_MIN) return 0;
+  // 沉默 30min → min；沉默 24h+ → max。线性插值。
+  const t = Math.min(1, (silenceMin - ICEBREAKER_SILENCE_MIN_MIN) / (24 * 60));
+  const base = ICEBREAKER_DELAY_MIN_MS + (ICEBREAKER_DELAY_MAX_MS - ICEBREAKER_DELAY_MIN_MS) * t;
+  // ±25% jitter
+  const jitter = base * (Math.random() * 0.5 - 0.25);
+  return Math.max(ICEBREAKER_DELAY_MIN_MS, Math.round(base + jitter));
+}
 const REPLY_DELAY_PER_CHAR_MS = 150;
 function computeReplyDelay(text) {
   const len = (text || '').length;
@@ -587,6 +615,15 @@ export async function handleMessage(rawMsg, botContext = {}) {
       log('info', `[Bot] 段内去重：剪掉 ${droppedSegs.length} 段重复内容 companion=${companion.id}; ${droppedSegs.map(d => `"${d.text.slice(0,20)}"~"${d.similar_to.slice(0,20)}"(sim=${d.sim.toFixed(2)})`).join('; ')}`);
     }
     log('debug', `[Bot] reply 拆为 ${segments.length} 段：${segments.map(s => s.slice(0, 20)).join(' | ')}`);
+
+    // v1.9.11: 破冰延迟 — 用户长时间沉默后第一条消息，模拟"她刚看到、想想怎么回"
+    // 在所有段开始发送之前加一次性延迟（独立于 per-segment 打字延迟）
+    const icebreakerMs = computeIcebreakerDelay(companion.last_user_reply_at);
+    if (icebreakerMs > 0) {
+      log('info', `[Bot] icebreaker delay ${icebreakerMs}ms companion=${companion.id} (long silence)`);
+      await sendTyping(ctx, msg.fromUser, msg.contextToken);
+      await sleep(icebreakerMs);
+    }
 
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<!-- v1.9.11: 管理员用户画像页面
+     ⚠️ 仅供单实例自查诊断。详见 SECURITY.md "数据敏感性"段。
+     LLM 推断（年龄/依赖/消费/付出索取）每次实时算，不持久化，不导出。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>用户画像 · Admin · 溪语AI</title>
+  <link rel="icon" href="/logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/glass.css" />
+  <script>
+    tailwind.config = { theme: { extend: { colors: {
+      sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+      ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA', danger:'#FF4D4F',
+    }}}};
+  </script>
+  <style>
+    body { background:
+      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255,182,217,.25), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 100% 100%, rgba(255,182,217,.15), transparent 60%),
+      #FAFAFA; }
+    .card { background: rgba(255,255,255,.7); backdrop-filter: blur(20px); border: 1px solid #F0F0F2; border-radius: 24px; }
+    .heatmap-cell { transition: transform .1s; }
+    .heatmap-cell:hover { transform: scale(1.15); z-index: 1; }
+    .badge-llm { background: linear-gradient(90deg, #FFE8F2, #FFD1E5); color: #FF6FA3; }
+  </style>
+</head>
+
+<body class="min-h-screen font-sans text-ink antialiased">
+
+  <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
+    <div class="max-w-content mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2" style="max-width:1280px;">
+      <a href="/app/admin.html" class="flex items-center gap-2 flex-shrink-0">
+        <img src="/logo-256.webp" alt="" class="w-7 h-7 rounded-lg" />
+        <span class="text-[15px] font-semibold whitespace-nowrap">溪语AI · 用户画像</span>
+      </a>
+      <div class="flex items-center gap-2 sm:gap-4">
+        <a href="/app/admin.html" class="text-[13px] font-medium text-mute hover:text-ink">← 返回 Admin</a>
+        <button id="btn-logout" class="text-[13px] font-medium text-mute hover:text-ink">登出</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-content mx-auto p-4 sm:p-6 lg:p-8 space-y-6" style="max-width:1280px;">
+
+    <!-- 顶部 search + ⚠️ 提示 -->
+    <div class="card p-6">
+      <div class="flex items-end gap-3 flex-wrap">
+        <div class="flex-1 min-w-[180px]">
+          <label class="block text-[12px] font-semibold text-mute mb-1.5">账号 ID</label>
+          <input id="input-account-id" type="number" placeholder="1"
+                 class="w-full px-3 py-2 text-[14px] bg-cloud border border-line rounded-xl font-medium" />
+        </div>
+        <label class="flex items-center gap-2 text-[13px] font-medium text-mute">
+          <input id="chk-llm" type="checkbox" class="w-4 h-4 accent-sakura-deep" />
+          <span>启用 LLM 推断（年龄段 / 依赖程度，约 1-2s）</span>
+        </label>
+        <button id="btn-load" class="px-5 py-2 bg-sakura-deep text-white text-[13px] font-semibold rounded-full hover:opacity-90">
+          生成画像
+        </button>
+      </div>
+      <div class="mt-4 text-[11px] text-mute/80 font-medium leading-relaxed border-l-2 border-sakura/30 pl-3">
+        ⚠️ <strong>使用边界</strong>：本页面仅供单实例运营自查诊断。LLM 推断结果**不持久化、不导出**。
+        <strong>禁止</strong>用于商业用户画像 / 操纵 / 二次分析。<code>safety_events</code> 仅显示计数，不回放具体内容。
+        详见仓库 SECURITY.md "数据敏感性"段。
+      </div>
+    </div>
+
+    <div id="loading" class="hidden text-center py-12">
+      <div class="text-[15px] text-mute font-medium">正在生成画像…</div>
+    </div>
+    <div id="error" class="hidden card p-6 text-danger text-[14px] font-medium"></div>
+
+    <div id="result" class="hidden space-y-6">
+
+      <!-- 账号信息 -->
+      <div class="card p-6">
+        <h2 class="text-[18px] font-bold mb-3">账号</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">
+          <div><div class="text-mute font-medium">用户名</div><div id="acc-username" class="font-bold">—</div></div>
+          <div><div class="text-mute font-medium">邮箱</div><div id="acc-email" class="font-bold break-all">—</div></div>
+          <div><div class="text-mute font-medium">注册</div><div id="acc-created" class="font-bold">—</div></div>
+          <div><div class="text-mute font-medium">封禁</div><div id="acc-banned" class="font-bold">—</div></div>
+        </div>
+      </div>
+
+      <!-- 核心数据卡片网格 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">消息总量</div>
+          <div class="text-[26px] font-bold text-sakura-deep mt-1" id="m-total">—</div>
+          <div class="text-[11px] text-mute mt-0.5" id="m-breakdown">—</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">日均消息</div>
+          <div class="text-[26px] font-bold text-sakura-deep mt-1" id="m-daily">—</div>
+          <div class="text-[11px] text-mute mt-0.5" id="m-span">—</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">使用天数</div>
+          <div class="text-[26px] font-bold text-sakura-deep mt-1" id="m-active">—</div>
+          <div class="text-[11px] text-mute mt-0.5" id="m-gaps">—</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">主动率</div>
+          <div class="text-[26px] font-bold text-sakura-deep mt-1" id="m-init">—</div>
+          <div class="text-[11px] text-mute mt-0.5" id="m-init-raw">沉默 60min 后首消息占比</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">用户字数 / AI 字数</div>
+          <div class="text-[26px] font-bold text-sakura-deep mt-1" id="m-len">—</div>
+          <div class="text-[11px] text-mute mt-0.5">平均每条字符数</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">Open Loops</div>
+          <div class="text-[26px] font-bold text-sakura-deep mt-1" id="m-loops">—</div>
+          <div class="text-[11px] text-mute mt-0.5" id="m-loops-rate">完成率</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">Safety</div>
+          <div class="text-[26px] font-bold mt-1" id="m-safety">—</div>
+          <div class="text-[11px] text-mute mt-0.5">high / medium 计数</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-[11px] text-mute font-medium uppercase">AI 用量</div>
+          <div class="text-[26px] font-bold text-sakura-deep mt-1" id="m-tokens">—</div>
+          <div class="text-[11px] text-mute mt-0.5">累计 token</div>
+        </div>
+      </div>
+
+      <!-- 活跃热力图 -->
+      <div class="card p-6">
+        <h2 class="text-[18px] font-bold mb-1">活跃热力图</h2>
+        <p class="text-[12px] text-mute mb-4">7×24 用户消息分布（上海时区，越深越活跃）</p>
+        <div id="heatmap-wrap" class="overflow-x-auto">
+          <div id="heatmap" class="inline-block"></div>
+        </div>
+      </div>
+
+      <!-- 关系阶段进展 -->
+      <div class="card p-6">
+        <h2 class="text-[18px] font-bold mb-3">关系阶段</h2>
+        <div id="relationship-content" class="space-y-3 text-[13px]"></div>
+      </div>
+
+      <!-- 话题倾向 + 情绪基线 -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="card p-6">
+          <h2 class="text-[18px] font-bold mb-3">话题倾向</h2>
+          <p class="text-[12px] text-mute mb-4">用户消息关键词命中（粗略匹配）</p>
+          <div id="topics-bars" class="space-y-2"></div>
+        </div>
+        <div class="card p-6">
+          <h2 class="text-[18px] font-bold mb-3">情绪基线</h2>
+          <div id="emotion-content" class="text-[13px] space-y-3"></div>
+        </div>
+      </div>
+
+      <!-- LLM 推断 -->
+      <div id="llm-section" class="hidden">
+        <div class="card p-6">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-[18px] font-bold">AI 推断 <span class="badge-llm text-[11px] font-bold px-2 py-0.5 rounded-full ml-2">仅供参考 · 不持久化</span></h2>
+            <div class="text-[11px] text-mute" id="llm-sample">基于最近 N 条消息</div>
+          </div>
+          <div id="llm-content" class="grid grid-cols-2 gap-4 text-[13px]"></div>
+          <div id="llm-reason" class="mt-4 p-3 bg-cloud border border-line rounded-xl text-[12px] text-mute font-medium leading-relaxed"></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // ─── 鉴权（admin token 从 localStorage 拿）──────────────────────────
+    const token = localStorage.getItem('xiyu_admin_token') || '';
+    if (!token) { location.href = '/app/admin.html'; }
+    document.getElementById('btn-logout')?.addEventListener('click', () => {
+      localStorage.removeItem('xiyu_admin_token');
+      location.href = '/app/admin.html';
+    });
+
+    // ─── URL 参数预填 account_id ────────────────────────────────────────
+    const params = new URLSearchParams(location.search);
+    const presetAcc = params.get('account_id');
+    if (presetAcc) document.getElementById('input-account-id').value = presetAcc;
+
+    // ─── 加载画像 ────────────────────────────────────────────────────────
+    async function apiPost(path, body) {
+      try {
+        const r = await fetch(path, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify(body || {}),
+        });
+        const data = await r.json().catch(() => ({}));
+        return { ok: r.ok, status: r.status, data };
+      } catch (e) {
+        return { ok: false, status: 0, data: { message: '网络异常' } };
+      }
+    }
+    async function apiGet(path) {
+      try {
+        const r = await fetch(path, { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await r.json().catch(() => ({}));
+        return { ok: r.ok, status: r.status, data };
+      } catch (e) {
+        return { ok: false, status: 0, data: { message: '网络异常' } };
+      }
+    }
+
+    document.getElementById('btn-load').addEventListener('click', loadProfile);
+    document.getElementById('input-account-id').addEventListener('keydown', e => { if (e.key === 'Enter') loadProfile(); });
+
+    async function loadProfile() {
+      const id = Number(document.getElementById('input-account-id').value);
+      const withLlm = document.getElementById('chk-llm').checked;
+      if (!id || id <= 0) return showError('请输入有效的账号 ID');
+
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('error').classList.add('hidden');
+      document.getElementById('result').classList.add('hidden');
+
+      const url = `/api/admin/user-profile/${id}${withLlm ? '?with_llm=1' : ''}`;
+      const { ok, data } = await apiGet(url);
+
+      document.getElementById('loading').classList.add('hidden');
+      if (!ok || !data.ok) return showError(data.message || '加载失败');
+
+      renderProfile(data.data);
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function renderProfile(p) {
+      const result = document.getElementById('result');
+      result.classList.remove('hidden');
+
+      // ─── 账号信息 ──
+      document.getElementById('acc-username').textContent = p.account.username || '—';
+      document.getElementById('acc-email').textContent = p.account.email || '—';
+      document.getElementById('acc-created').textContent = (p.account.created_at || '').slice(0, 10);
+      document.getElementById('acc-banned').textContent = p.account.is_banned ? '✗ 是' : '✓ 否';
+
+      // ─── 核心卡片 ──
+      const s = p.sql;
+      document.getElementById('m-total').textContent = s.messages.total.toLocaleString();
+      document.getElementById('m-breakdown').textContent = `user ${s.messages.user_turns} · ai ${s.messages.ai_turns}`;
+      document.getElementById('m-daily').textContent = s.messages.daily_avg;
+      document.getElementById('m-span').textContent = `跨度 ${s.messages.span_days} 天`;
+      document.getElementById('m-active').textContent = s.usage_pattern.active_days;
+      document.getElementById('m-gaps').textContent = `中断 ${s.usage_pattern.gaps} 次 · 最长 ${s.usage_pattern.longest_gap_days} 天`;
+      document.getElementById('m-init').textContent = (s.initiation.ratio * 100).toFixed(0) + '%';
+      document.getElementById('m-init-raw').textContent = `${s.initiation.user_initiated} / ${s.initiation.total_user_messages} 条`;
+      document.getElementById('m-len').textContent = `${s.reply_length.user_avg} / ${s.reply_length.ai_avg}`;
+      document.getElementById('m-loops').textContent = `${s.open_loops.resolved}/${s.open_loops.total}`;
+      document.getElementById('m-loops-rate').textContent = `完成率 ${(s.open_loops.completion_rate * 100).toFixed(0)}%`;
+      const safe = s.safety;
+      document.getElementById('m-safety').innerHTML = safe.high > 0 || safe.medium > 0
+        ? `<span class="text-danger">${safe.high}</span> / <span class="text-mute">${safe.medium}</span>`
+        : '<span class="text-sakura-deep">0</span>';
+      document.getElementById('m-tokens').textContent = (s.ai_usage.total_tokens / 1000).toFixed(1) + 'K';
+
+      // ─── 热力图 ──
+      renderHeatmap(s.activity_heatmap);
+
+      // ─── 关系阶段 ──
+      renderRelationship(s.relationship);
+
+      // ─── 话题 ──
+      renderTopics(p.keywords.topics);
+
+      // ─── 情绪基线 ──
+      renderEmotion(p.keywords.emotion);
+
+      // ─── LLM ──
+      if (p.llm) renderLlm(p.llm);
+      else document.getElementById('llm-section').classList.add('hidden');
+    }
+
+    function renderHeatmap(hm) {
+      const wrap = document.getElementById('heatmap');
+      const max = Math.max(1, ...hm.grid.flat());
+      const dowLabels = ['日', '一', '二', '三', '四', '五', '六'];
+      let html = '<table class="text-[10px] font-medium text-mute" style="border-collapse:separate;border-spacing:2px"><tr><td></td>';
+      for (let h = 0; h < 24; h++) {
+        html += `<td class="text-center" style="width:18px">${h % 3 === 0 ? h : ''}</td>`;
+      }
+      html += '</tr>';
+      for (let d = 0; d < 7; d++) {
+        html += `<tr><td class="pr-2 text-right">${dowLabels[d]}</td>`;
+        for (let h = 0; h < 24; h++) {
+          const n = hm.grid[d]?.[h] || 0;
+          const intensity = n / max;
+          const hue = 330; // sakura
+          const lightness = 95 - intensity * 50;
+          const bg = n > 0 ? `hsl(${hue} 80% ${lightness}%)` : '#F5F5F7';
+          html += `<td class="heatmap-cell rounded" title="${dowLabels[d]} ${h}:00 — ${n} 条" style="width:18px;height:18px;background:${bg}"></td>`;
+        }
+        html += '</tr>';
+      }
+      html += '</table>';
+      wrap.innerHTML = html;
+    }
+
+    function renderRelationship(rel) {
+      const el = document.getElementById('relationship-content');
+      if (!rel.current_stages || rel.current_stages.length === 0) {
+        el.innerHTML = '<div class="text-mute">没有 companion</div>';
+        return;
+      }
+      const stageOrder = ['陌生人', '朋友', '暧昧', '恋人', '深爱'];
+      let html = '';
+      for (const c of rel.current_stages) {
+        const idx = stageOrder.indexOf(c.relationship_stage);
+        html += `<div class="border border-line rounded-xl p-3">
+          <div class="font-bold mb-1">${c.name || '溪语'} <span class="text-[11px] text-mute font-medium">id=${c.id}</span></div>
+          <div class="flex gap-1 text-[11px]">`;
+        for (let i = 0; i < stageOrder.length; i++) {
+          const active = i <= idx;
+          html += `<span class="flex-1 text-center py-1 rounded ${active ? 'bg-sakura-soft text-sakura-deep font-bold' : 'bg-cloud text-mute'}">${stageOrder[i]}</span>`;
+        }
+        html += `</div>
+          <div class="text-[11px] text-mute mt-1.5">好感度 ${c.affection_level || 0}/100</div>`;
+        // milestones for this companion
+        const ms = (rel.milestones || []).filter(m => m.companion_id === c.id);
+        if (ms.length > 0) {
+          html += '<div class="text-[11px] text-mute mt-2 space-y-0.5">';
+          for (const m of ms) {
+            html += `<div>· ${m.from_stage || '?'} → <span class="text-sakura-deep font-bold">${m.to_stage}</span> · 用了 ${m.days_since_meet} 天</div>`;
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function renderTopics(t) {
+      const labels = {
+        work: '工作', study: '学业', family: '家庭', romance: '亲密',
+        emotion_neg: '负面情绪', emotion_pos: '正面情绪',
+        health: '健康', food: '吃喝', travel: '旅行', finance: '理财',
+        hobby_game: '游戏', hobby_show: '剧综',
+      };
+      const sorted = Object.entries(t.topics).sort((a, b) => b[1].hits - a[1].hits);
+      const max = Math.max(1, ...sorted.map(s => s[1].hits));
+      let html = '';
+      for (const [key, v] of sorted) {
+        const pct = (v.hits / max * 100).toFixed(0);
+        const ratioPct = (v.ratio * 100).toFixed(1);
+        html += `<div>
+          <div class="flex items-center justify-between text-[12px] mb-0.5">
+            <span class="font-medium">${labels[key] || key}</span>
+            <span class="text-mute">${v.hits} · ${ratioPct}%</span>
+          </div>
+          <div class="bg-cloud rounded-full overflow-hidden h-2">
+            <div class="bg-sakura-deep h-full rounded-full" style="width:${pct}%"></div>
+          </div>
+        </div>`;
+      }
+      document.getElementById('topics-bars').innerHTML = html;
+    }
+
+    function renderEmotion(e) {
+      const polarity = e.polarity;
+      const polColor = polarity > 0.2 ? 'text-green-600' : polarity < -0.2 ? 'text-danger' : 'text-mute';
+      const polLabel = polarity > 0.2 ? '偏正面' : polarity < -0.2 ? '偏负面' : '中性';
+      let html = `<div>
+          <div class="text-mute">极性 (-1 ~ +1)</div>
+          <div class="text-[24px] font-bold ${polColor}">${polarity.toFixed(2)} <span class="text-[12px] font-medium">${polLabel}</span></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mt-2">
+          <div class="border border-line rounded-lg p-3">
+            <div class="text-[11px] text-mute font-medium">负面词命中</div>
+            <div class="text-[20px] font-bold text-danger">${e.negative_hits}</div>
+            <div class="text-[11px] text-mute">${(e.negative_ratio * 100).toFixed(1)}%</div>
+          </div>
+          <div class="border border-line rounded-lg p-3">
+            <div class="text-[11px] text-mute font-medium">正面词命中</div>
+            <div class="text-[20px] font-bold text-green-600">${e.positive_hits}</div>
+            <div class="text-[11px] text-mute">${(e.positive_ratio * 100).toFixed(1)}%</div>
+          </div>
+        </div>`;
+      document.getElementById('emotion-content').innerHTML = html;
+    }
+
+    function renderLlm(llm) {
+      const sec = document.getElementById('llm-section');
+      sec.classList.remove('hidden');
+      if (llm.error || llm.skipped) {
+        document.getElementById('llm-content').innerHTML =
+          `<div class="col-span-full text-mute font-medium">无法推断：${llm.error || llm.skipped}（sample=${llm.sample_size || 0}）</div>`;
+        return;
+      }
+      document.getElementById('llm-sample').textContent = `基于 ${llm.sample_size} 条样本 · 置信度 ${(llm.confidence * 100).toFixed(0)}%`;
+      document.getElementById('llm-content').innerHTML = `
+        <div>
+          <div class="text-[11px] text-mute font-medium uppercase">年龄段</div>
+          <div class="text-[20px] font-bold text-sakura-deep mt-1">${llm.age_range}</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-mute font-medium uppercase">依赖程度</div>
+          <div class="text-[20px] font-bold text-sakura-deep mt-1">${llm.dependency_score}/10</div>
+        </div>`;
+      const reasonEl = document.getElementById('llm-reason');
+      reasonEl.textContent = '💡 推断依据：' + (llm.reason || '（LLM 未给出说明）');
+    }
+
+    // 自动加载（如果有预设 account_id）
+    if (presetAcc) loadProfile();
+  </script>
+</body>
+</html>

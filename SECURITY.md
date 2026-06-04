@@ -31,6 +31,30 @@
   商业部署前请咨询法律
 - 自伤/危机信号记录（`safety_events`）极度敏感，**绝不能**用于商业画像或分析
 
+### 用户画像（v1.9.11 admin 工具）⚠️
+
+v1.9.11 提供 `/app/admin-user-profile.html`（admin 后台），可生成账号
+多维度画像：消息量 / 活跃热力图 / 话题倾向 / Open Loops 完成率 /
+情绪基线 / Safety 事件计数。**可选**调用 LLM 推断年龄段、依赖程度。
+
+**故意不做**的推断维度（边界明确）：
+- ❌ 消费档位推断 — 商业操纵风险，已从代码中排除
+- ❌ 付出索取经济学 — 同上
+- ❌ 性别推断 — 易错且敏感
+
+**使用边界（必读）**：
+
+- 本工具仅供**单实例自托管运营自查诊断**
+- LLM 推断的"年龄/依赖"是**粗略估算**，每次实时算，
+  **不持久化到 DB、不导出 CSV、不传给第三方**
+- `safety_events` 仅显示**计数**（high / medium），**不**回放具体
+  source_text 内容
+- **绝对禁止**：将本页输出用于商业用户画像 / 广告精准投放 / 任何
+  向用户隐瞒的二次决策
+
+如果你做公网商业部署，**请删除 `public/app/admin-user-profile.html`
+或在 nginx 配置 admin 路径 IP 白名单**。
+
 ### 数据加密计划
 
 当前（v1.9.0）所有数据以 SQLite 明文存储。如果需要更强的静态加密：
@@ -116,6 +140,34 @@ than a typical SaaS backend:
   counsel before commercial deployment
 - Self-harm / crisis signal records (`safety_events`) are extremely sensitive
   and **MUST NOT** be used for commercial profiling or analytics
+
+### User Profile Tool (v1.9.11 admin) ⚠️
+
+v1.9.11 ships `/app/admin-user-profile.html` (admin backoffice) which
+generates account profiles: message counts / activity heatmap /
+topic tendencies / open-loop completion / emotion baseline / safety
+event counts. **Optional** LLM inference for age range and
+dependency score only.
+
+**Intentionally excluded** inference dimensions (clear boundaries):
+- ❌ Spending tier inference — commercial-manipulation risk
+- ❌ Give-take "economics" — same
+- ❌ Gender inference — error-prone and sensitive
+
+**Boundaries (must read)**:
+
+- This tool is for **self-hosted single-instance operator diagnostics only**
+- LLM-inferred fields (age / dependency) are **rough estimates**,
+  computed live on each request, **never persisted, never exported,
+  never sent off-instance**
+- `safety_events` shows **only counts** (high / medium), **never**
+  replays specific `source_text`
+- **STRICTLY PROHIBITED**: using output of this page for commercial
+  user profiling / ad targeting / any covert secondary decision-making
+
+For public commercial deployment, **delete
+`public/app/admin-user-profile.html` or IP-allowlist the admin path
+in nginx**.
 
 ### Data Encryption Plans
 
