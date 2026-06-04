@@ -38,6 +38,7 @@ import { tryAchievement } from './achievements.mjs';
 import {
   listEnabledRows as listSleepEnabled,
   getOrRefreshTodaySchedule,
+  enterSleep,
   exitSleep,
   drainMissed,
   tryLockSchedule,
@@ -115,6 +116,13 @@ function runSleepTick(now) {
     try {
       // 重算今日 bed/wake（若已是今天则不动）
       const fresh = getOrRefreshTodaySchedule(row.companion_id, nowMs);
+      // 0) 到点入睡：now 进入睡眠窗口且还没睡 → enterSleep。睡前晚安由 proactive goodnight
+      //    先发（约 bed 前），这里才真正开始拦截，中间留出挽留窗口。
+      if (!fresh.is_sleeping && fresh.today_bed_at && fresh.today_wake_at
+          && nowMs >= fresh.today_bed_at && nowMs < fresh.today_wake_at) {
+        enterSleep(row.companion_id, nowMs);
+        log('info', `[Sleep] enterSleep at bed_at companion=${row.companion_id}`);
+      }
       // 1) 起床兜底：今天 wake 已过 + 还标记 is_sleeping → 强制 exit
       //    （proactive morning kind 通常已经 exitSleep；这里救场 proactive 失败/disabled 的情况）
       if (fresh.is_sleeping && fresh.today_wake_at && nowMs >= fresh.today_wake_at + 5 * 60_000) {

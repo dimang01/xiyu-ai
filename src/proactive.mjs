@@ -246,9 +246,11 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
     try {
       const todayKey = shanghaiDateKey();
       if (kind === 'goodnight') {
-        enterSleep(companion.id);
+        // v1.10.6: goodnight 只发"我要睡了 晚安"，不立即 enterSleep。
+        // 真正入睡交给 sleep tick 在 today_bed_at 触发，让睡前晚安与入睡之间留挽留窗口
+        // （用户说"再陪陪我"可延后）。
         upsertSleepSchedule(companion.id, { goodnight_sent_for_date: todayKey });
-        log('info', `[Sleep] enterSleep via goodnight companion=${companion.id}`);
+        log('info', `[Sleep] goodnight sent (enterSleep deferred to bed_at) companion=${companion.id}`);
       } else if (kind === 'morning') {
         exitSleep(companion.id);
         drainMissed(companion.id);
