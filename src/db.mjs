@@ -284,8 +284,8 @@ function initAiUsageTable() {
     -- learn_state='observing' 前 7 天纯观察用户作息，第 8 天 'locked' 固化。
     CREATE TABLE IF NOT EXISTS companion_sleep_schedule (
       companion_id INTEGER PRIMARY KEY,
-      enabled INTEGER NOT NULL DEFAULT 0,           -- v1.10.4: 默认关闭，opt-in（避免默认就让所有用户半夜静默不回复）
-      bed_time TEXT NOT NULL DEFAULT '23:00',           -- HH:MM 24h，上海时区
+      enabled INTEGER NOT NULL DEFAULT 1,           -- v1.10.5: 默认开启；默认作息 00:30 睡（避开晚间活跃时段，不打扰）
+      bed_time TEXT NOT NULL DEFAULT '00:30',           -- HH:MM 24h，上海/北京时区（v1.10.5: 23:00→00:30）
       wake_time TEXT NOT NULL DEFAULT '07:30',
       jitter_min INTEGER NOT NULL DEFAULT 30,           -- ±N 分钟随机抖动
       user_set INTEGER NOT NULL DEFAULT 0,              -- 0=默认/学习 1=用户手动设
@@ -4103,7 +4103,7 @@ export function ensureSleepRow(companionId) {
   const existing = getSleepRow(companionId);
   if (existing) return existing;
   getDb()
-    .prepare(`INSERT OR IGNORE INTO companion_sleep_schedule (companion_id, enabled) VALUES (?, 0)`)
+    .prepare(`INSERT OR IGNORE INTO companion_sleep_schedule (companion_id) VALUES (?)`)
     .run(companionId);
   return getSleepRow(companionId);
 }
