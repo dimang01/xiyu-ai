@@ -5,6 +5,7 @@
 -->
 <html lang="zh-CN">
 <head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>用户画像 · Admin · 溪语AI</title>
@@ -27,6 +28,7 @@
     .heatmap-cell:hover { transform: scale(1.15); z-index: 1; }
     .badge-llm { background: linear-gradient(90deg, #FFE8F2, #FFD1E5); color: #FF6FA3; }
   </style>
+  <script src="/app/theme.js" defer></script>
 </head>
 
 <body class="min-h-screen font-sans text-ink antialiased">

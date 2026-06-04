@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
-  <meta name="color-scheme" content="light only" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#FFB6D9" />
   <title>记忆管理 · 溪语AI</title>
   <link rel="icon" href="/logo.png" />
@@ -45,6 +46,7 @@
     .tag-btn.active { background:#FFB6D9; border-color:#FFB6D9; color:#fff; font-weight:600; }
     .tag-btn:hover:not(.active) { border-color:#FFB6D9; color:#FF8FB8; }
   </style>
+  <script src="/app/theme.js" defer></script>
 </head>
 <body class="min-h-screen font-sans text-ink">
 

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
-  <meta name="color-scheme" content="light only" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#FFB6D9" />
   <title>登录注册 · 溪语AI</title>
   <link rel="icon" href="/logo.png" />
@@ -53,6 +54,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     /* auth-card 玻璃质感由 glass.css 接管（class="glass" 命中） */
   </style>
+  <script src="/app/theme.js" defer></script>
 </head>
 
 <body class="min-h-screen bg-cloud font-sans text-ink antialiased flex flex-col">
