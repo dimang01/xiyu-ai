@@ -634,6 +634,40 @@ function giftReactionText(companion, gift, message) {
 // 邮箱验证码
 // ─────────────────────────────────────────────────────────────────────────────
 
+// v1.10.0: Cloudflare Turnstile 人机验证（service-side siteverify）
+// secret 走 .env，site key 可放前端。失败时返回明确错误，不消耗验证码额度。
+// 配置 TURNSTILE_SECRET 后才启用；未配置 → 退回旧行为（不强制人机验证），便于本地 dev。
+const TURNSTILE_SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+async function verifyTurnstile(token, remoteIp) {
+  const secret = process.env.TURNSTILE_SECRET;
+  if (!secret) return { ok: true, skipped: true };  // 未配置 secret → 不强制
+  if (!token || typeof token !== 'string') {
+    return { ok: false, code: 'missing-token', message: '请先完成人机验证' };
+  }
+  const form = new URLSearchParams();
+  form.append('secret', secret);
+  form.append('response', token);
+  if (remoteIp) form.append('remoteip', remoteIp);
+  try {
+    const resp = await fetch(TURNSTILE_SITEVERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (json?.success === true) return { ok: true };
+    return {
+      ok: false,
+      code: (json?.['error-codes'] || []).join(',') || 'verify-failed',
+      message: '人机验证失败，请重试',
+    };
+  } catch (e) {
+    log('warn', `[Turnstile] siteverify network error: ${e.message}`);
+    // 网络故障保守起见放行 OR 拦截？这里选择拦截，避免被绕过。
+    return { ok: false, code: 'verify-network-error', message: '人机验证服务暂时不可用，请稍后重试' };
+  }
+}
+
 // POST /api/auth/send-code
 router.post('/auth/send-code',
   rateLimit({ scope: 'send-code', maxPerWindow: 10, windowMs: 60 * 60 * 1000, message: '验证码请求过于频繁，请 1 小时后再试' }),
@@ -642,6 +676,16 @@ router.post('/auth/send-code',
   const purpose = req.body?.purpose || 'login';
   if (!EMAIL_RE.test(email)) return authErr(res, '邮箱格式不正确');
   if (!isValidPurpose(purpose)) return authErr(res, 'purpose 无效');
+
+  // v1.10.0: 先 Turnstile 校验（注册场景必须；secret 未配置时跳过）
+  const remoteIp = (req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '')
+    .toString().split(',')[0].trim();
+  const tsToken = typeof req.body?.turnstile_token === 'string' ? req.body.turnstile_token : '';
+  const ts = await verifyTurnstile(tsToken, remoteIp);
+  if (!ts.ok) {
+    log('info', `[API] send-code Turnstile 失败 code=${ts.code} ip=${remoteIp}`);
+    return authErr(res, ts.message || '人机验证失败', 400, { turnstile_failed: true });
+  }
 
   const now = Date.now();
   const lastSend = getLastVerificationSend(email);
