@@ -446,13 +446,34 @@ html[data-theme="dark"] .to-white { --tw-gradient-from: #1A1A1F !important; --tw
 html[data-theme="dark"] .glass-chip { color: #F4F4F6; }
 /* tab-active 下划线在 dark 下仍是樱粉，OK */
 
+/* ============================================================================
+ * v1.10.2 dark 覆盖加固 —— landing(index.html)仍有亮区的根因：
+ *   · nav 用 bg-white/70（透明度变体，.bg-white 选择器命中不到）
+ *   · 移动端展开菜单 bg-white/95
+ *   · hero 内联白色径向光晕（style 属性，需更高优先级压过）
+ *   · 角落装饰光斑 blob（from-sakura-soft to-transparent）
+ *   · daily-life 渐变卡片 from-sakura-soft/40 → white
+ * 用属性选择器一次性兜底所有变体。
+ * ========================================================================== */
+html[data-theme="dark"] [class*="bg-white"]      { background-color: #1A1A1F !important; }
+html[data-theme="dark"] nav[class*="bg-white"]   { background-color: rgba(18,18,22,0.72) !important; }
+html[data-theme="dark"] [class*="bg-white/95"]   { background-color: rgba(18,18,22,0.96) !important; }
+html[data-theme="dark"] #hero div[style*="radial-gradient"] {
+  background: radial-gradient(circle at 50% 30%, rgba(255,143,184,.12) 0%, rgba(15,15,18,0) 60%) !important;
+}
+html[data-theme="dark"] [class*="from-sakura-soft"] { --tw-gradient-from: rgba(255,143,184,0.10) !important; }
+html[data-theme="dark"] [class*="to-white"]         { --tw-gradient-to:   #1A1A1F !important; }
+html[data-theme="dark"] [class*="text-ink"]         { color: #ECECEF !important; }
+/* 深色 CTA 按钮（a.bg-ink）dark 下略提亮以与背景区分；手机 mockup 的 div.bg-ink 保持纯黑不动 */
+html[data-theme="dark"] a.bg-ink                    { background-color: #33333B !important; }
+
 /* 主题切换浮动按钮（由 theme.js 注入） */
 .xiyu-theme-toggle {
   position: fixed;
   right: 16px;
   bottom: 16px;
   z-index: 9999;
-  width: 44px; height: 44px; border-radius: 50%;
+  width: 50px; height: 50px; border-radius: 50%;
   background: var(--glass-bg-strong, rgba(255,255,255,0.85));
   backdrop-filter: blur(12px) saturate(160%);
   -webkit-backdrop-filter: blur(12px) saturate(160%);
@@ -460,7 +481,7 @@ html[data-theme="dark"] .glass-chip { color: #F4F4F6; }
   box-shadow: 0 8px 24px -6px rgba(0,0,0,0.15);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 22px;
   color: var(--ink, #1D1D1F);
   transition: transform 0.18s var(--ease-silk, ease), box-shadow 0.18s ease;
 }
@@ -470,3 +491,14 @@ html[data-theme="dark"] .xiyu-theme-toggle {
   border-color: rgba(255,255,255,0.08);
   color: #F4F4F6;
 }
+/* v1.10.2 主题切换引导气泡（首次访问 + 点击反馈） */
+.xiyu-theme-bubble {
+  position: fixed; right: 74px; bottom: 24px; z-index: 9999;
+  max-width: 220px; padding: 8px 12px; border-radius: 12px;
+  background: var(--sakura-deep, #FF8FB8); color: #fff;
+  font-size: 13px; font-weight: 600; line-height: 1.4;
+  box-shadow: 0 8px 24px -6px rgba(255,143,184,0.5);
+  opacity: 0; transform: translateX(8px); pointer-events: none;
+  transition: opacity .25s var(--ease-silk, ease), transform .25s var(--ease-silk, ease);
+}
+.xiyu-theme-bubble.show { opacity: 1; transform: translateX(0); }
