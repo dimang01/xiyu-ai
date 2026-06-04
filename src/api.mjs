@@ -634,6 +634,40 @@ function giftReactionText(companion, gift, message) {
 // 邮箱验证码
 // ─────────────────────────────────────────────────────────────────────────────
 
+// v1.10.0: Cloudflare Turnstile 人机验证（service-side siteverify）
+// secret 走 .env，site key 可放前端。失败时返回明确错误，不消耗验证码额度。
+// 配置 TURNSTILE_SECRET 后才启用；未配置 → 退回旧行为（不强制人机验证），便于本地 dev。
+const TURNSTILE_SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+async function verifyTurnstile(token, remoteIp) {
+  const secret = process.env.TURNSTILE_SECRET;
+  if (!secret) return { ok: true, skipped: true };  // 未配置 secret → 不强制
+  if (!token || typeof token !== 'string') {
+    return { ok: false, code: 'missing-token', message: '请先完成人机验证' };
+  }
+  const form = new URLSearchParams();
+  form.append('secret', secret);
+  form.append('response', token);
+  if (remoteIp) form.append('remoteip', remoteIp);
+  try {
+    const resp = await fetch(TURNSTILE_SITEVERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (json?.success === true) return { ok: true };
+    return {
+      ok: false,
+      code: (json?.['error-codes'] || []).join(',') || 'verify-failed',
+      message: '人机验证失败，请重试',
+    };
+  } catch (e) {
+    log('warn', `[Turnstile] siteverify network error: ${e.message}`);
+    // 网络故障保守起见放行 OR 拦截？这里选择拦截，避免被绕过。
+    return { ok: false, code: 'verify-network-error', message: '人机验证服务暂时不可用，请稍后重试' };
+  }
+}
+
 // POST /api/auth/send-code
 router.post('/auth/send-code',
   rateLimit({ scope: 'send-code', maxPerWindow: 10, windowMs: 60 * 60 * 1000, message: '验证码请求过于频繁，请 1 小时后再试' }),
@@ -642,6 +676,16 @@ router.post('/auth/send-code',
   const purpose = req.body?.purpose || 'login';
   if (!EMAIL_RE.test(email)) return authErr(res, '邮箱格式不正确');
   if (!isValidPurpose(purpose)) return authErr(res, 'purpose 无效');
+
+  // v1.10.0: 先 Turnstile 校验（注册场景必须；secret 未配置时跳过）
+  const remoteIp = (req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '')
+    .toString().split(',')[0].trim();
+  const tsToken = typeof req.body?.turnstile_token === 'string' ? req.body.turnstile_token : '';
+  const ts = await verifyTurnstile(tsToken, remoteIp);
+  if (!ts.ok) {
+    log('info', `[API] send-code Turnstile 失败 code=${ts.code} ip=${remoteIp}`);
+    return authErr(res, ts.message || '人机验证失败', 400, { turnstile_failed: true });
+  }
 
   const now = Date.now();
   const lastSend = getLastVerificationSend(email);
@@ -2722,6 +2766,110 @@ router.put('/companions/:id/scene', requireAuth, (req, res) => {
   patchCompanion(id, { current_scene: scene, scene_history: JSON.stringify(history) });
   log('info', `[API] 切换场景 id=${id} → ${scene}`);
   return ok(res, { companion_id: id, current_scene: scene, scene_history: history });
+});
+
+// ─── v1.10.0 作息与睡眠 ──────────────────────────────────────────────────────
+// GET /api/companions/:id/sleep — 当前作息 + 状态
+router.get('/companions/:id/sleep', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const { getSleepStatus } = await import('./sleep.mjs');
+    return ok(res, getSleepStatus(id));
+  } catch (e) {
+    log('error', `[Sleep] get failed id=${id}: ${e.message}`);
+    return err(res, e.message || '读取失败', 500);
+  }
+});
+
+// PUT /api/companions/:id/sleep — 用户手动设置作息
+//   body: { enabled?: boolean, bed_time?: "HH:MM", wake_time?: "HH:MM", jitter_min?: 0-90 }
+router.put('/companions/:id/sleep', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const { setUserSchedule, getSleepStatus } = await import('./sleep.mjs');
+    setUserSchedule(id, req.body || {});
+    log('info', `[Sleep] user set companion=${id} body=${JSON.stringify(req.body)}`);
+    return ok(res, getSleepStatus(id));
+  } catch (e) {
+    log('error', `[Sleep] put failed id=${id}: ${e.message}`);
+    return err(res, e.message || '保存失败', 400);
+  }
+});
+
+// POST /api/companions/:id/sleep/wake — 打电话叫醒
+router.post('/companions/:id/sleep/wake', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const { wakeUpByCall } = await import('./sleep.mjs');
+    const r = wakeUpByCall(id);
+    if (!r.ok) return err(res, r.message || '当前不能叫醒', 400);
+    // 情绪影响：annoyance/anger 上升，patience 下降
+    try {
+      const baseAnnoy = 8;
+      const baseAnger = 5;
+      const extra = Math.min(20, (r.woken_today - 1) * 4);  // 同天多次叫醒线性升级
+      upsertEmotionState(id, {});  // 触发 ensureRow
+      const { getEmotionState } = await import('./db.mjs');
+      const es = getEmotionState(id) || {};
+      upsertEmotionState(id, {
+        annoyance: Math.min(100, (es.annoyance || 0) + baseAnnoy + extra),
+        patience:  Math.max(0,   (es.patience  || 60) - 3 - extra),
+        mood: 'tired',
+      });
+    } catch (e) {
+      log('warn', `[Sleep] wake emotion update failed: ${e.message}`);
+    }
+    // 让 AI 立刻发一条"被吵醒"回执（异步，不阻塞响应）
+    (async () => {
+      try {
+        const { generateReply } = await import('./ai.mjs');
+        const { getCompanionById, getBotContextForCompanion, saveConversationTurn } = await import('./db.mjs');
+        const { sendTextMessage } = await import('./ilink.mjs');
+        const comp = getCompanionById(id);
+        if (!comp || !comp.wechat_user_id) return;
+        const ctx = getBotContextForCompanion(id);
+        if (!ctx?.token) return;
+        const sys = `你叫${comp.name || '溪语'}。当前场景：用户刚刚打电话把你从熟睡中吵醒。
+你必须以被吵醒的真实反应回复：含糊、不耐烦、抱怨、想再睡，但不骂人。
+${r.prompt_hint}`;
+        let reply = await generateReply(sys, [], '（铃声响起，你被吵醒）', {
+          temperature: 0.85,
+          max_tokens: 80,
+        });
+        reply = (reply || '').replace(/^["「『]+|["」』]+$/g, '').trim();
+        if (!reply) reply = '……几点啊';
+        for (const seg of reply.split('||').map(s => s.trim()).filter(Boolean).slice(0, 3)) {
+          await sendTextMessage(ctx, comp.wechat_user_id, seg, null);
+          await new Promise(r => setTimeout(r, 700 + Math.floor(Math.random() * 800)));
+        }
+        saveConversationTurn(id, 'assistant', reply, '被叫醒');
+      } catch (e) {
+        log('warn', `[Sleep] wake auto-reply failed companion=${id}: ${e.message}`);
+      }
+    })();
+    return ok(res, { woken_today: r.woken_today, hint: r.prompt_hint });
+  } catch (e) {
+    log('error', `[Sleep] wake failed id=${id}: ${e.message}`);
+    return err(res, e.message || '叫醒失败', 500);
+  }
+});
+
+// POST /api/companions/:id/sleep/reset-learn — 重置学习期（清空样本，回 observing）
+router.post('/companions/:id/sleep/reset-learn', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const { resetLearn, getSleepStatus } = await import('./sleep.mjs');
+    resetLearn(id);
+    log('info', `[Sleep] reset learn companion=${id}`);
+    return ok(res, getSleepStatus(id));
+  } catch (e) {
+    log('error', `[Sleep] reset-learn failed id=${id}: ${e.message}`);
+    return err(res, e.message || '重置失败', 500);
+  }
 });
 
 // POST /api/companions/:id/reset-to-crush  (v1.4.2)

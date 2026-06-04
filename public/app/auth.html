@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
-  <meta name="color-scheme" content="light only" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#FFB6D9" />
   <title>登录注册 · 溪语AI</title>
   <link rel="icon" href="/logo.png" />
@@ -53,6 +54,20 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     /* auth-card 玻璃质感由 glass.css 接管（class="glass" 命中） */
   </style>
+  <!-- v1.10.0: Cloudflare Turnstile（仅注册场景使用） -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <script>
+    // Turnstile token 缓存（widget callback 写入）。失败 / 过期 → 清空 → 提交时拦截。
+    window.__xiyuTurnstileToken = null;
+    function onTurnstileSuccess(token) {
+      window.__xiyuTurnstileToken = token || null;
+      var hint = document.getElementById('turnstile-hint');
+      if (hint) hint.classList.add('hidden');
+    }
+    function onTurnstileError()   { window.__xiyuTurnstileToken = null; }
+    function onTurnstileExpired() { window.__xiyuTurnstileToken = null; }
+  </script>
+  <script src="/app/theme.js" defer></script>
 </head>
 
 <body class="min-h-screen bg-cloud font-sans text-ink antialiased flex flex-col">
@@ -171,6 +186,15 @@
                 <span class="sm:hidden">发送</span>
               </button>
             </div>
+            <!-- v1.10.0: Cloudflare Turnstile（仅注册 tab；登录/重置走 .env 控制） -->
+            <div class="cf-turnstile mt-3"
+                 data-sitekey="0x4AAAAAADel_tofOpGBNdg4"
+                 data-theme="light"
+                 data-size="flexible"
+                 data-callback="onTurnstileSuccess"
+                 data-error-callback="onTurnstileError"
+                 data-expired-callback="onTurnstileExpired"></div>
+            <p id="turnstile-hint" class="hidden mt-1 text-[12px] text-red-500 font-medium">请先完成人机验证</p>
           </div>
           <div>
             <label class="block text-[13px] font-semibold text-ink mb-2">设置密码</label>
@@ -274,10 +298,21 @@
         return showMsg('msg-register', '请先填写正确的邮箱地址', 'error');
       }
 
+      // v1.10.0: Turnstile 前置拦截，避免无脑请求消耗邮件配额
+      const tsToken = window.__xiyuTurnstileToken;
+      if (!tsToken) {
+        const hint = document.getElementById('turnstile-hint');
+        if (hint) hint.classList.remove('hidden');
+        return showMsg('msg-register', '请先完成下方人机验证', 'error');
+      }
+
       btnSendCode.disabled = true;
       btnSendCode.textContent = '发送中...';
 
-      const { ok, data } = await apiPost('/api/auth/send-code', { email, purpose: 'register' });
+      const { ok, data } = await apiPost('/api/auth/send-code', { email, purpose: 'register', turnstile_token: tsToken });
+      // token 只能用一次，无论成功失败都重置 widget，下次点击需重新验证
+      window.__xiyuTurnstileToken = null;
+      try { if (window.turnstile) window.turnstile.reset(); } catch {}
       if (!ok) {
         showMsg('msg-register', data.message || '发送失败，请稍后再试', 'error');
         btnSendCode.disabled = false;

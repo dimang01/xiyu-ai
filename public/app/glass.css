@@ -387,3 +387,86 @@ html[data-theme="dark"] body {
 }
 html[data-theme="dark"] body::before  { opacity: 0.35; }
 html[data-theme="dark"] body::after   { opacity: 0.30; }
+
+/* ============================================================================
+ * v1.10.0 dark mode 覆盖 — Tailwind utilities + 表单元素 + 卡片细节
+ * 系统跟随 + 手动切换共用（auto 模式由 /app/theme.js 写 data-theme="dark"）
+ * ========================================================================== */
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+html[data-theme="dark"] body {
+  color: #F4F4F6;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255,143,184,.18), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 90% 100%, rgba(143,164,255,.12), transparent 70%),
+    #0F0F12 !important;
+}
+html[data-theme="dark"] .bg-cloud     { background-color: #0F0F12 !important; }
+html[data-theme="dark"] .bg-white     { background-color: #1A1A1F !important; }
+html[data-theme="dark"] .bg-gray-50,
+html[data-theme="dark"] .bg-neutral-50 { background-color: #16161B !important; }
+html[data-theme="dark"] .text-ink     { color: #F4F4F6 !important; }
+html[data-theme="dark"] .text-mute    { color: #A0A0A8 !important; }
+html[data-theme="dark"] .text-gray-500,
+html[data-theme="dark"] .text-gray-600 { color: #A0A0A8 !important; }
+html[data-theme="dark"] .text-gray-700,
+html[data-theme="dark"] .text-gray-800,
+html[data-theme="dark"] .text-gray-900 { color: #E8E8EC !important; }
+html[data-theme="dark"] .border-line  { border-color: #2A2A30 !important; }
+html[data-theme="dark"] .border-gray-100,
+html[data-theme="dark"] .border-gray-200 { border-color: #2A2A30 !important; }
+html[data-theme="dark"] .bg-sakura-soft\/30,
+html[data-theme="dark"] .bg-sakura-soft\/40,
+html[data-theme="dark"] .bg-sakura-soft\/60,
+html[data-theme="dark"] .bg-sakura-soft\/70 { background-color: rgba(255, 143, 184, 0.10) !important; }
+html[data-theme="dark"] .bg-sakura-soft     { background-color: rgba(255, 143, 184, 0.12) !important; }
+html[data-theme="dark"] .bg-emerald-50      { background-color: rgba(16, 185, 129, 0.12) !important; }
+html[data-theme="dark"] .bg-indigo-50       { background-color: rgba(99, 102, 241, 0.12) !important; }
+/* 表单元素 */
+html[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  background-color: #16161B !important;
+  border-color: #2A2A30 !important;
+  color: #F4F4F6 !important;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder { color: #6C6C72 !important; }
+html[data-theme="dark"] .placeholder\:text-mute\/60::placeholder { color: rgba(160,160,168,0.6) !important; }
+/* 卡片细节 — card 默认背景白；玻璃 class 自动跟变量走，但 .card（非 .glass）需手动 */
+html[data-theme="dark"] .card {
+  background-color: rgba(26, 26, 31, 0.78) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+/* Hero 渐变背景（landing） */
+html[data-theme="dark"] .from-white,
+html[data-theme="dark"] .to-white { --tw-gradient-from: #1A1A1F !important; --tw-gradient-to: #1A1A1F !important; }
+/* glass-chip / floating-card / 自适应 hover */
+html[data-theme="dark"] .glass-chip { color: #F4F4F6; }
+/* tab-active 下划线在 dark 下仍是樱粉，OK */
+
+/* 主题切换浮动按钮（由 theme.js 注入） */
+.xiyu-theme-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--glass-bg-strong, rgba(255,255,255,0.85));
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid var(--glass-border-soft, rgba(255,255,255,0.45));
+  box-shadow: 0 8px 24px -6px rgba(0,0,0,0.15);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--ink, #1D1D1F);
+  transition: transform 0.18s var(--ease-silk, ease), box-shadow 0.18s ease;
+}
+.xiyu-theme-toggle:hover { transform: translateY(-2px); box-shadow: 0 12px 32px -6px rgba(0,0,0,0.20); }
+html[data-theme="dark"] .xiyu-theme-toggle {
+  background: rgba(40,40,46,0.85);
+  border-color: rgba(255,255,255,0.08);
+  color: #F4F4F6;
+}

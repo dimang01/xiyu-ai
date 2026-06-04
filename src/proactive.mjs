@@ -33,6 +33,10 @@ import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel } from './emotion_state.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
 import { tryAchievement } from './achievements.mjs';
+import {
+  getSleepRow, getOrRefreshTodaySchedule, enterSleep, exitSleep,
+  drainMissed, upsertSleepSchedule,
+} from './sleep.mjs';
 
 // ─── Proactive Engine 版本选择 ────────────────────────────────────────────────
 // PROACTIVE_ENGINE=v2 启用 evaluateProactive() 决策层（推荐）
@@ -149,12 +153,21 @@ async function tick(now = new Date()) {
         }
 
         const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, companion);
-        const dueItems = schedule.items.filter(item => !item.sent && item.minute <= minuteNow);
+        // v1.10.0 #BUG-FIX：原来不加 _v2_deny_until 字段时，v2 评估失败 + item.sent=true 顺序错位
+        // 让大量 items 在 motivation 还没积累起来时就被永久标记 sent。配额白白浪费，用户感知
+        // "主动消息明显比设置的少"。改法：
+        //   1) v2 拒绝时 *不* 标记 sent=true，但写 _v2_deny_until=now+15min 防抖；
+        //   2) 真正发送（含 wrapper silent return）才标记 sent；
+        //   3) 加结构化 reason log 便于排查。
+        const dueItems = schedule.items.filter(item =>
+          !item.sent
+          && item.minute <= minuteNow
+          && (!item._v2_deny_until || Date.now() >= item._v2_deny_until)
+        );
         for (const item of dueItems) {
           if (currentMinute(new Date()) > window.end) break;
-          item.sent = true;
 
-          // v2 mode: ask evaluateProactive() before sending
+          // v2 mode: ask evaluateProactive() before sending（NOT before marking sent）
           if (PROACTIVE_ENGINE_MODE === 'v2') {
             let v2Error = false;
             let decision = null;
@@ -164,14 +177,17 @@ async function tick(now = new Date()) {
               log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
               v2Error = true;
             }
-            // If v2 deliberately returned null (no error), suppress the send
+            // If v2 deliberately returned null (no error), defer this item without losing it
             if (!v2Error && decision === null) {
-              log('info', `[Proactive] v2 拒绝发送 companion=${companion.id} kind=${item.kind}`);
+              // 防抖：15 分钟内同 item 不再重复 v2 评估，避免日志噪音和反复无效计算
+              item._v2_deny_until = Date.now() + 15 * 60_000;
+              log('info', `[Proactive] v2 拒发，延期 15 分钟重试 companion=${companion.id} kind=${item.kind} minute=${item.minute}`);
               continue;
             }
             // v2Error → fall through to legacy send path
           }
 
+          item.sent = true;  // 进入 send wrapper 即标记，wrapper 内 silent return 也算"今日错过"
           await sendProactiveMessageGuarded(companion, item.kind, account);
         }
       } catch (e) {
@@ -219,6 +235,23 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
     await sendProactiveMessage(companion, kind, account, opts);
     // 成功后记录（sendProactiveMessage 内部失败/早退也无伤大雅，下次仍会按间隔判断）
     recordProactiveSentTimestamp(companion.id, kind);
+
+    // v1.10.0 sleep 状态切换 hook
+    try {
+      const todayKey = shanghaiDateKey();
+      if (kind === 'goodnight') {
+        enterSleep(companion.id);
+        upsertSleepSchedule(companion.id, { goodnight_sent_for_date: todayKey });
+        log('info', `[Sleep] enterSleep via goodnight companion=${companion.id}`);
+      } else if (kind === 'morning') {
+        exitSleep(companion.id);
+        drainMissed(companion.id);
+        upsertSleepSchedule(companion.id, { goodmorning_sent_for_date: todayKey, woken_today: 0 });
+        log('info', `[Sleep] exitSleep via morning companion=${companion.id}`);
+      }
+    } catch (e) {
+      log('warn', `[Sleep] hook failed companion=${companion.id} kind=${kind}: ${e.message}`);
+    }
   } finally {
     _proactiveInFlight.delete(companion.id);
   }
@@ -271,11 +304,35 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
   const existing = schedules.get(companionId);
   if (existing?.dateKey === dateKey) return existing;
 
-  // ── 每天给早安/晚安一个 ±30min 的随机抖动，避免每天 7:30 / 23:00 太机械 ──
-  const morningOffset = jitterOffset(MORNING_JITTER_MIN);
-  const goodnightOffset = jitterOffset(GOODNIGHT_JITTER_MIN);
-  const jitteredStart = Math.max(0, startMinute + morningOffset);
-  const jitteredGoodnight = Math.min(LAST_MINUTE, GOODNIGHT_MINUTE + goodnightOffset);
+  // v1.10.0 接入 sleep 表：若 enabled，把基准 startMinute / GOODNIGHT_MINUTE 用
+  // 用户作息覆盖（学习固化或手动设置）。sleep 表自己做 jitter，proactive 此处不再额外抖。
+  let baselineMorning = startMinute;
+  let baselineGoodnight = GOODNIGHT_MINUTE;
+  let useSleepBase = false;
+  try {
+    const slpRow = getOrRefreshTodaySchedule(companionId);
+    if (slpRow && slpRow.enabled && slpRow.today_bed_at && slpRow.today_wake_at) {
+      // 把 today_bed_at / today_wake_at 转换为当天的"分钟数"
+      const minOfDay = ts => {
+        const d = new Date(ts + 8 * 3600_000);
+        return d.getUTCHours() * 60 + d.getUTCMinutes();
+      };
+      const bedMin  = minOfDay(slpRow.today_bed_at);
+      const wakeMin = minOfDay(slpRow.today_wake_at);
+      // 把基准设为 sleep 表的值；后续不再叠加 ±30 抖（sleep 已经抖过了）
+      baselineMorning   = wakeMin;
+      baselineGoodnight = bedMin >= 24 * 60 ? LAST_MINUTE : Math.min(LAST_MINUTE, bedMin);
+      useSleepBase = true;
+    }
+  } catch (e) {
+    log('warn', `[Proactive] sleep base read failed companion=${companionId}: ${e.message}`);
+  }
+
+  // ── sleep 关闭时给早安/晚安一个 ±30min 的随机抖动，避免每天 7:30 / 23:00 太机械 ──
+  const morningOffset = useSleepBase ? 0 : jitterOffset(MORNING_JITTER_MIN);
+  const goodnightOffset = useSleepBase ? 0 : jitterOffset(GOODNIGHT_JITTER_MIN);
+  const jitteredStart = Math.max(0, baselineMorning + morningOffset);
+  const jitteredGoodnight = Math.min(LAST_MINUTE, baselineGoodnight + goodnightOffset);
   // window end 跟随晚安抖动（防止 normal 消息延后到晚安之后）
   const jitteredEnd = Math.min(LAST_MINUTE,
     endMinute === GOODNIGHT_MINUTE ? jitteredGoodnight : Math.max(endMinute, jitteredGoodnight));
@@ -320,6 +377,7 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
 }
 
 // v1.3.4: 移除 isPro；所有 companion 在 goodnight 窗口内都会安排晚安
+// v1.10.0: 接入 sleep —— 第一条 normal 抬为 'morning' kind，触发起床流程
 function buildDailyItems(count, startMinute, endMinute, goodnightMinute = GOODNIGHT_MINUTE) {
   // Free 不发晚安专用消息；Pro 在抖动后的晚安时间发晚安
   const goodnight = (endMinute >= goodnightMinute && goodnightMinute >= startMinute) ? goodnightMinute : null;
@@ -328,7 +386,11 @@ function buildDailyItems(count, startMinute, endMinute, goodnightMinute = GOODNI
   const randomMinutes = pickRandomMinutes(randomCount, startMinute, lastRandom, MIN_GAP_MINUTES);
   const items = randomMinutes.map(minute => ({ minute, kind: 'normal', sent: false }));
   if (goodnight != null) items.push({ minute: goodnight, kind: 'goodnight', sent: false });
-  return items.sort((a, b) => a.minute - b.minute);
+  items.sort((a, b) => a.minute - b.minute);
+  // 第一条 normal item 抬为 'morning' kind（让 sleep wrapper 知道这是起床消息）
+  const firstNormalIdx = items.findIndex(it => it.kind === 'normal');
+  if (firstNormalIdx >= 0) items[firstNormalIdx] = { ...items[firstNormalIdx], kind: 'morning' };
+  return items;
 }
 
 function isWeekend(date) {
@@ -364,7 +426,10 @@ function hasMinGap(minutes, minGap) {
 }
 
 async function sendProactiveMessage(companion, kind, account, opts = {}) {
-  if (!companion.wechat_user_id) return;
+  if (!companion.wechat_user_id) {
+    log('warn', `[Proactive] 跳过：companion=${companion.id} kind=${kind} 未绑定微信（wechat_user_id 缺）`);
+    return;
+  }
   const ctx = account
     ? { token: account.bot_token, botId: account.bot_id }
     : getBotContextForCompanion(companion.id);
@@ -447,6 +512,25 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   }
 
   const reminderTitles = (opts.reminders || []).map(r => r.title).filter(Boolean).join('、');
+  // v1.10.0: morning kind 拼上昨晚 missed 摘要（不消费，由 wrapper 在发完后 drain）
+  let missedHint = '';
+  if (effectiveKind === 'morning') {
+    try {
+      // peek 不 consume —— 用 getUnconsumedMissed 内部 import 避免循环依赖
+      const { getUnconsumedMissed } = await import('./db.mjs');
+      const missed = getUnconsumedMissed(companion.id, 20) || [];
+      if (missed.length > 0) {
+        const preview = missed
+          .slice(0, 5)
+          .map(m => String(m.content || '').slice(0, 30))
+          .join('』『');
+        missedHint = `\n【昨晚他在你睡着后发了 ${missed.length} 条消息】内容片段：『${preview}』。\n你刚醒来看到，要自然地：1) 表达"刚醒"的迷糊；2) 不要装作没看到；3) 不要逐条回复，用一句"看到你昨晚发了好多 / 我刚看到 / 我睡着了对不起"概括；4) 然后选一条你最想回应的话题轻轻接一下。`;
+      }
+    } catch (e) {
+      log('warn', `[Proactive] morning missed peek failed: ${e.message}`);
+    }
+  }
+
   const userMessage = effectiveKind === 'reminder'
     ? `今天是一个对你们来说特别的日子：${reminderTitles || '一个值得纪念的日子'}。
 你要主动给他发一条温暖、走心的祝福消息：
@@ -455,7 +539,9 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
 - 可以带一点你此刻的小情绪（开心 / 感慨 / 害羞）
 - 如果是"认识100天""一周年"这类，可以轻轻回顾你们一路的相处`
     : effectiveKind === 'goodnight'
-    ? '你要主动给他发今天最后一条晚安消息。自然、温柔，适合 23:00 前后的语气，不要报时。结合你们最近聊过的事，体现你的人设和心情。'
+    ? '你要主动给他发今天最后一条晚安消息。自然、温柔，适合临睡前的语气，不要报时。结合你们最近聊过的事，体现你的人设和心情。说完晚安你就要去睡了。'
+    : effectiveKind === 'morning'
+    ? `你要主动给他发今天第一条早安消息。自然、带刚醒的迷糊感，1-2 段短消息（用 || 分隔），不要报时也不要像在播报。${missedHint}`
     : effectiveKind === 'recall'
     ? `【★ 主动 recall — 她记得他说过的事】
 他之前提过一件事：「${recallLoop.title}」${recallLoop.due_at ? `（${recallLoop.due_at}）` : ''}。
@@ -570,6 +656,7 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     }
   }
   const turnTopic = effectiveKind === 'goodnight' ? '晚安'
+    : effectiveKind === 'morning' ? '早安'
     : effectiveKind === 'confession' ? '主动告白'
     : effectiveKind === 'reminder' ? '纪念日祝福'
     : effectiveKind === 'recall' ? 'recall 关心'

@@ -9,9 +9,10 @@
 -->
 <html lang="zh-CN">
 <head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
-  <meta name="color-scheme" content="light only" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#FFB6D9" />
   <title>溪语AI · 开源 AI 陪伴框架 (Xiyu AI · Open-source AI Companion Framework)</title>
   <meta name="description" content="溪语 AI 是一个开源的 AI 陪伴框架（MIT 协议）— 把大模型当作有完整人生背景的虚拟个体来调度，支持 9 家 chat / 5 家 image provider 切换，自带浏览器 playground，可选微信网页扫码绑定。Xiyu AI: an open-source AI companion framework on GitHub (MIT)." />
@@ -128,6 +129,7 @@
     .nav-link:hover::after { transform: scaleX(1); }
   </style>
   <link rel="manifest" href="/manifest.webmanifest" />
+  <script src="/app/theme.js" defer></script>
 </head>
 
 <body class="bg-white text-ink font-sans antialiased selection:bg-sakura/30 selection:text-ink">
