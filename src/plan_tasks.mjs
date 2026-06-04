@@ -39,6 +39,7 @@ import {
   listEnabledRows as listSleepEnabled,
   getOrRefreshTodaySchedule,
   exitSleep,
+  drainMissed,
   tryLockSchedule,
 } from './sleep.mjs';
 
@@ -100,7 +101,7 @@ async function tick(now = new Date()) {
 
   // v1.10.0 sleep tick：每分钟跑（轻量，no LLM）
   try {
-    runSleepTick(now);
+    runSleepTick(now, parts);
   } catch (e) {
     log('warn', `[Sleep] tick failed: ${e.message}`);
   }

@@ -116,7 +116,6 @@ export function startProactiveScheduler() {
 async function tick(now = new Date()) {
   const dateKey = formatDateKey(now);
   const minuteNow = currentMinute(now);
-  if (minuteNow > LAST_MINUTE) return;
   const isWeekendDay = isWeekend(now);
   const defaultStart = isWeekendDay ? WEEKEND_START_MINUTE : WEEKDAY_START_MINUTE;
 
@@ -167,7 +166,7 @@ async function tick(now = new Date()) {
         for (const item of dueItems) {
           if (currentMinute(new Date()) > window.end) break;
 
-          // v2 mode: ask evaluateProactive() before sending（NOT before marking sent）
+          // v2 mode: ask evaluateProactive() before sending
           if (PROACTIVE_ENGINE_MODE === 'v2') {
             let v2Error = false;
             let decision = null;
@@ -177,18 +176,25 @@ async function tick(now = new Date()) {
               log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
               v2Error = true;
             }
-            // If v2 deliberately returned null (no error), defer this item without losing it
+            // v2 主动拒发（非异常）→ defer 15min 重试，不丢配额
             if (!v2Error && decision === null) {
-              // 防抖：15 分钟内同 item 不再重复 v2 评估，避免日志噪音和反复无效计算
               item._v2_deny_until = Date.now() + 15 * 60_000;
               log('info', `[Proactive] v2 拒发，延期 15 分钟重试 companion=${companion.id} kind=${item.kind} minute=${item.minute}`);
               continue;
             }
-            // v2Error → fall through to legacy send path
           }
 
-          item.sent = true;  // 进入 send wrapper 即标记，wrapper 内 silent return 也算"今日错过"
-          await sendProactiveMessageGuarded(companion, item.kind, account);
+          // v1.10.1 fix: guarded 返回投递状态。节流类（inflight/throttled/safety）不消耗配额，
+          // 改 defer 重试，避免实发条数 < target；只有真正发送 / 内部尝试过才标 sent。
+          const result = await sendProactiveMessageGuarded(companion, item.kind, account);
+          if (result === 'throttled' || result === 'inflight') {
+            item._v2_deny_until = Date.now() + 10 * 60_000;   // 10 分钟后重试
+          } else if (result === 'safety') {
+            item._v2_deny_until = Date.now() + 60 * 60_000;   // 安全门，1 小时后再评估
+          } else {
+            // 'sent' 或内部早退（撞车/无 ctx）都算今日已尝试
+            item.sent = true;
+          }
         }
       } catch (e) {
         // v1.5.2 B2 兜底：任何一个 companion 的本 tick 异常都不能中断后面的处理
@@ -205,7 +211,7 @@ async function tick(now = new Date()) {
 async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) {
   if (_proactiveInFlight.has(companion.id)) {
     log('info', `[Proactive] 跳过：companion=${companion.id} 已有发送在进行中（kind=${kind}）`);
-    return;
+    return 'inflight';
   }
   // ── v1.9.0 #1: 安全门 ─────────────────────────────────────────────────
   // 用户最近表达自伤/自杀/绝望信号时，不要发普通主动消息（包括纪念日/告白/想念）。
@@ -214,12 +220,12 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
     const risk = getRecentSafetyRisk(companion.id);
     if (risk.level === 'high' || risk.level === 'medium') {
       log('warn', `[Proactive] 安全门拦截 companion=${companion.id} kind=${kind} risk=${risk.level} signals=${(risk.signals || []).join(',')}`);
-      return;
+      return 'safety';
     }
   } catch (e) {
     // 查询失败不应阻塞 — 但也不静默继续发，保守起见同样跳过本次
     log('warn', `[Proactive] 安全门查询失败 companion=${companion.id}: ${e.message} → 保守跳过本次`);
-    return;
+    return 'safety';
   }
   // 持久化间隔检查
   const { lastAt } = getProactiveLastSent(companion.id);
@@ -228,7 +234,7 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
   const hardGap = (kind === 'reminder' || kind === 'confession') ? 5 * 60 : PROACTIVE_HARD_GAP_SECONDS;
   if (lastAt && elapsed < hardGap) {
     log('info', `[Proactive] 跳过：companion=${companion.id} kind=${kind} 距上次 ${elapsed}s < ${hardGap}s 硬间隔`);
-    return;
+    return 'throttled';
   }
   _proactiveInFlight.add(companion.id);
   try {
@@ -252,6 +258,7 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
     } catch (e) {
       log('warn', `[Sleep] hook failed companion=${companion.id} kind=${kind}: ${e.message}`);
     }
+    return 'sent';
   } finally {
     _proactiveInFlight.delete(companion.id);
   }
@@ -321,7 +328,11 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
       const wakeMin = minOfDay(slpRow.today_wake_at);
       // 把基准设为 sleep 表的值；后续不再叠加 ±30 抖（sleep 已经抖过了）
       baselineMorning   = wakeMin;
-      baselineGoodnight = bedMin >= 24 * 60 ? LAST_MINUTE : Math.min(LAST_MINUTE, bedMin);
+      // v1.10.1 fix: bedMin < wakeMin 说明入睡在凌晨（跨午夜，如 01:30 睡 / 09:00 起）。
+      // proactive 日程模型只覆盖当天 00:00-23:59，排不到次日凌晨，所以把晚安放到当天最晚
+      // （LAST_MINUTE），让她临近午夜说"快睡了"，并保证 buildDailyItems 仍会排晚安 → 能 enterSleep。
+      // 旧代码 `bedMin >= 24*60` 是死代码（minOfDay 已 mod 永远 <1440），晚睡用户当天不发晚安。
+      baselineGoodnight = bedMin < wakeMin ? LAST_MINUTE : Math.min(LAST_MINUTE, bedMin);
       useSleepBase = true;
     }
   } catch (e) {
@@ -358,6 +369,19 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
   const effectiveStart = Math.max(jitteredStart, minuteNow + 1);   // +1 避免 tick 同分钟立即触发
   const items = buildDailyItems(remainCount, effectiveStart, jitteredEnd, jitteredGoodnight);
 
+  // v1.10.1 fix: morning kind 只在 sleep enabled 且第一条 normal 落在起床窗口 [wake-15, wake+120] 内时赋予。
+  // 旧实现在 buildDailyItems 里无条件抬第一条 normal → 下午重启发"下午的早安"、sleep 关闭也发"刚醒"、
+  // 且 morning 发送成功会 exitSleep+drainMissed 误清 missed 队列。
+  if (useSleepBase) {
+    const wakeMin = baselineMorning;
+    const MORNING_WINDOW_MIN = 120;
+    const firstNormal = items.find(it => it.kind === 'normal');
+    if (firstNormal && firstNormal.minute >= wakeMin - 15 && firstNormal.minute <= wakeMin + MORNING_WINDOW_MIN) {
+      firstNormal.kind = 'morning';
+      log('info', `[Proactive] morning kind companion=${companionId} at ${minuteToHHMM(firstNormal.minute)} (wake≈${minuteToHHMM(wakeMin)})`);
+    }
+  }
+
   // v1.3.4: 场景照对所有 active companion 开放（旧版仅 Pro），仍限白天时段 09:00-21:00
   if (companion && shouldSendPhotoToday(companion)) {
     const candidates = items
@@ -387,9 +411,8 @@ function buildDailyItems(count, startMinute, endMinute, goodnightMinute = GOODNI
   const items = randomMinutes.map(minute => ({ minute, kind: 'normal', sent: false }));
   if (goodnight != null) items.push({ minute: goodnight, kind: 'goodnight', sent: false });
   items.sort((a, b) => a.minute - b.minute);
-  // 第一条 normal item 抬为 'morning' kind（让 sleep wrapper 知道这是起床消息）
-  const firstNormalIdx = items.findIndex(it => it.kind === 'normal');
-  if (firstNormalIdx >= 0) items[firstNormalIdx] = { ...items[firstNormalIdx], kind: 'morning' };
+  // v1.10.1 fix: morning kind 的判定移到 ensureTodaySchedule（需要 wake 时刻 + sleep enabled 上下文），
+  // 不再在这里无条件把第一条 normal 抬 morning。
   return items;
 }
 

@@ -138,6 +138,21 @@ try {
     /未绑定微信.*wechat_user_id 缺/.test(proSrc),
     !/未绑定微信.*wechat_user_id 缺/.test(proSrc) ? '缺 silent return 日志' : '');
 
+  // v1.10.1 proactive 审计防回归
+  // 1) morning kind 必须在 sleep enabled 守卫（useSleepBase）内判定，不能在 buildDailyItems 无条件抬第一条
+  check('proactive.mjs morning kind 受 useSleepBase 守卫（不无条件抬第一条 normal）',
+    !/findIndex\(it => it\.kind === 'normal'\)/.test(proSrc) && /useSleepBase[\s\S]{0,400}firstNormal\.kind = 'morning'/.test(proSrc),
+    '若失败：buildDailyItems 仍无条件抬 morning → 下午重启发"下午的早安" + 误清 missed');
+  // 2) guarded 返回投递状态，tick 据此 defer 而非消耗配额
+  check('proactive.mjs guarded 返回投递状态（throttled/inflight/safety/sent）',
+    /return 'throttled'/.test(proSrc) && /return 'inflight'/.test(proSrc)
+      && /return 'safety'/.test(proSrc) && /return 'sent'/.test(proSrc),
+    '若失败：节流类 silent return 仍消耗 item → 实发条数 < target');
+  // 3) 跨午夜晚安：用 bedMin < wakeMin 判定，不是死代码 bedMin >= 24*60
+  check('proactive.mjs 跨午夜晚安用 bedMin < wakeMin（非死代码 >=24*60）',
+    /bedMin < wakeMin \? LAST_MINUTE/.test(proSrc) && !/bedMin >= 24 \* 60/.test(proSrc),
+    '若失败：凌晨入睡用户当天不发晚安 → 不触发 enterSleep');
+
   // Count remaining bare requireCompanion call sites (excludes function definition)
   // A call site looks like "requireCompanion(res, id); if (!c) return;"
   const bareCallSites = (apiSrc.match(/requireCompanion\(res, id\); if \(!c\) return;/g) || []).length;
