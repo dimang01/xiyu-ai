@@ -257,6 +257,10 @@
         const d = await r.json();
         hideTyping();
         if (!r.ok || !d.ok) throw new Error(d.message || d.error || '请求失败');
+        if (d.data?.sleeping) {
+          appendSystem('💤 她睡着了，现在是她的睡眠时间。消息已收到，她起床后会回你～想现在叫醒她，去控制台点「📞 打电话叫醒她」。');
+          return;
+        }
         const segs = d.data?.segments || [];
         // 逐条展示，模拟"先发一条再发下一条"
         for (let i = 0; i < segs.length; i++) {

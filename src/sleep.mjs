@@ -71,9 +71,11 @@ export function getOrRefreshTodaySchedule(companionId, now = Date.now()) {
   if (row.today_date === todayKey && row.today_bed_at && row.today_wake_at) {
     return row;
   }
-  const jitter = Math.max(0, Number(row.jitter_min) || 0);
-  const jitterBedMs = jitter > 0 ? (Math.floor(Math.random() * (2 * jitter + 1)) - jitter) * 60_000 : 0;
-  const jitterWakeMs = jitter > 0 ? (Math.floor(Math.random() * (2 * jitter + 1)) - jitter) * 60_000 : 0;
+  // v1.10.6: 不对称抖动 —— 入睡偏晚（基准时间向前 15 / 向后 45 分钟），起床对称 ±10 分钟。
+  // 用户在 dashboard 设的 bed/wake 是基准，每天在此基础上波动，模拟真人作息不机械。
+  const randMin = (lo, hi) => (Math.floor(Math.random() * (hi - lo + 1)) + lo) * 60_000;
+  const jitterBedMs  = randMin(-15, 45);
+  const jitterWakeMs = randMin(-10, 10);
 
   let bedAt = shanghaiTodayTsForHHMM(row.bed_time, todayKey) + jitterBedMs;
   // 如果 bed_time < wake_time（如 22:00 / 07:30）说明跨天，wake 在 bed 后；
@@ -129,10 +131,18 @@ export function exitSleep(companionId) {
   return true;
 }
 
+// v1.10.6: 挽留延后参数（模拟真人"哎呀那再陪你一会"）
+const PLEA_GRACE_MS = 30 * 60_000;   // 刚入睡 30min 内挽留有效；再晚就睡熟了，要打电话叫
+const PLEA_EXTEND_MS = 20 * 60_000;  // 每次挽留续 20min 陪聊
+function isPleaToStay(text) {
+  return /陪陪|再陪|多陪|陪我|陪一?[会會]|别睡|別睡|不要睡|先别睡|别走|別走|等等|再聊|聊一?[会會]|留下|不困|再待|抱抱/.test(String(text || ''));
+}
+
 /**
- * 入口拦截：bot.mjs 收到消息后调用。
+ * 入口拦截：bot.mjs / playground 收到消息后调用。
  *   - 处于睡眠时段 → 入队 missed 表 + 返回 { blocked: true }
- *   - 否则 → 顺手记一笔学习样本（last_msg 更新）→ { blocked: false }
+ *   - 刚入睡 grace 期 + 挽留词 → 延后入睡继续陪聊，返回 { blocked: false, reason: 'plea_to_stay' }
+ *   - 否则 → 顺手记一笔学习样本 → { blocked: false }
  */
 export function maybeSleepBlock({ companionId, msgType, content, receivedAt = Date.now() }) {
   try {
@@ -142,6 +152,14 @@ export function maybeSleepBlock({ companionId, msgType, content, receivedAt = Da
       return { blocked: false, reason: 'disabled' };
     }
     if (receivedAt >= row.today_bed_at && receivedAt < row.today_wake_at) {
+      // 挽留延后：刚入睡 grace 期内 + 挽留词 → 延后 20min 继续陪聊
+      const sinceBed = receivedAt - row.today_bed_at;
+      if (sinceBed < PLEA_GRACE_MS && isPleaToStay(content)) {
+        upsertSleepSchedule(companionId, { today_bed_at: receivedAt + PLEA_EXTEND_MS, is_sleeping: 0 });
+        recordUserActivitySample(companionId, receivedAt);
+        log('info', `[Sleep] 挽留延后 companion=${companionId} +${PLEA_EXTEND_MS / 60000}min`);
+        return { blocked: false, reason: 'plea_to_stay' };
+      }
       enterSleep(companionId, receivedAt);
       queueMissedMessage(companionId, { msgType, content, receivedAt });
       return { blocked: true, reason: 'sleeping' };

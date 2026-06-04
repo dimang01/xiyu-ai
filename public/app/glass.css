@@ -502,3 +502,12 @@ html[data-theme="dark"] .xiyu-theme-toggle {
   transition: opacity .25s var(--ease-silk, ease), transform .25s var(--ease-silk, ease);
 }
 .xiyu-theme-bubble.show { opacity: 1; transform: translateX(0); }
+
+/* v1.10.6 叫醒按钮：睡眠中（按钮非 disabled）脉冲发光，更醒目 */
+#btn-sleep-call:not(:disabled) {
+  animation: xiyuWakePulse 1.5s ease-in-out infinite;
+}
+@keyframes xiyuWakePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 10px rgba(244, 63, 94, 0); transform: scale(1.04); }
+}

@@ -49,6 +49,18 @@ export async function playgroundChat(companion, userText) {
   if (!text) throw new Error('userText 不能为空');
   if (text.length > 2000) throw new Error('userText 过长（>2000）');
 
+  // v1.10.6: 睡眠拦截（与微信端 bot.mjs 一致）。睡着了网页也不回复，前端显示"睡眠中"。
+  // maybeSleepBlock 内含挽留延后逻辑：用户说"再陪陪我/别睡"等会延后入睡继续聊。
+  try {
+    const { maybeSleepBlock } = await import('./sleep.mjs');
+    const gate = maybeSleepBlock({ companionId: companion.id, msgType: 'text', content: text });
+    if (gate.blocked) {
+      return { sleeping: true, reply: null, segments: [], state: null };
+    }
+  } catch (e) {
+    log('warn', `[Playground] sleep gate error: ${e.message}`);
+  }
+
   // ── v1.9.0 #1 + v1.9.1: 安全风险检测 + 温度收紧 ──────────────────────────
   let userMsgSafetyLevel = 'none';
   try {
