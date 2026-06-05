@@ -717,6 +717,20 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
   log('info', `[Proactive] 已发送 companion=${companion.id} to=${companion.wechat_user_id} kind=${effectiveKind} segments=${segments.length} stickers=${totalStickers}`);
 }
 
+// v1.10.24: plan_tasks runSleepTick 进入 bed_at 前若 goodnight_sent_for_date 为空，
+// 紧急补发一次。原因：proactive 的 23:59 goodnight 在服务重启 / schedule 跨午夜 等
+// 情况下可能错过；sleep tick 直接 enterSleep 之前要兜底，避免她"没说晚安就睡了"。
+export async function dispatchUrgentGoodnight(companionId) {
+  const accounts = getActiveBotAccounts();
+  for (const account of accounts) {
+    const companions = listProactiveCompanionsForBot(account.bot_id);
+    const companion = companions.find(c => Number(c.id) === Number(companionId));
+    if (!companion) continue;
+    return await sendProactiveMessageGuarded(companion, 'goodnight', account);
+  }
+  return 'not_found';
+}
+
 // 手动触发场景照（管理员/测试用）
 export async function sendScenePhotoManually(companion) {
   if (!companion || !companion.wechat_user_id) {

@@ -80,7 +80,13 @@ export function syncUpdateCompanionState(companion, userMsg, botReply) {
   const raw    = (companion.affection_level ?? 0) + calcAffectionDelta(userMsg);
   const newAff = Math.min(Math.max(raw, 0), 100);
   const oldStage = companion.relationship_stage || '陌生人';
-  const newStage = computeRelationshipStage(newAff);
+  const rawStage = computeRelationshipStage(newAff);
+  // v1.10.24: "恋人"/"深爱"必须有表白事件（任一方），否则即使 affection 到了也卡在"暧昧"。
+  // 旧逻辑只看分数，从朋友→暧昧→恋人完全自动，给用户"莫名其妙就成恋人了"的诡异感。
+  const hasConfession = Boolean(companion.confessed_at || companion.user_confessed_at);
+  const newStage = (!hasConfession && (rawStage === '恋人' || rawStage === '深爱'))
+    ? '暧昧'
+    : rawStage;
   fields.affection_level   = newAff;
   fields.relationship_stage = newStage;
 
