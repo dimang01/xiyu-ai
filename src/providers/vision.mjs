@@ -156,34 +156,55 @@ async function anthropicVision({ apiKey, model, base64, mimeType, signal }) {
   return (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
 }
 
+// v1.10.26: 判断错误是否是配额 / 限额 / 429 / 余额不足类，触发 fallback retry
+function isQuotaLikeError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return /429|rate.?limit|quota|insufficient|exceed|too.?many.?request|余额不足|超限|配额|限额|账户余额|资源已耗尽/.test(msg);
+}
+
+async function callVisionWithProvider(name, base64, dataUrl, mimeType, imageSize) {
+  const entry = REGISTRY[name];
+  if (!entry) throw new Error(`未知 vision provider: ${name}`);
+  const apiKey = getApiKeyForEntry(entry);
+  if (!apiKey) throw new Error(`${entry.apiKeyEnv || name} 未配置`);
+  const model = getModelFor(entry);
+  if (!model) throw new Error(`${entry.label || name} 未指定模型`);
+  log('debug', `[vision] provider=${name} model=${model} size=${imageSize}`);
+  if (entry.kind === 'anthropic-native') {
+    return await anthropicVision({ apiKey, model, base64, mimeType });
+  }
+  return await openaiCompatVision({ baseURL: entry.baseURL, apiKey, model, dataUrl });
+}
+
 export async function visionRecognize(imageBuffer, mimeType = 'image/jpeg') {
   const name = getActiveProviderName();
-  const entry = REGISTRY[name];
-  if (!entry) {
+  if (!REGISTRY[name]) {
     log('error', `[vision] 未知 VISION_PROVIDER=${name}`);
     return '[图片识别失败]';
   }
-  const apiKey = getApiKeyForEntry(entry);
-  if (!apiKey) {
-    log('error', `[vision] ${entry.apiKeyEnv} 未配置`);
-    return '[图片识别失败]';
-  }
-  const model = getModelFor(entry);
-  if (!model) {
-    log('error', `[vision] ${entry.label} 未指定模型`);
-    return '[图片识别失败]';
-  }
-
   const base64 = imageBuffer.toString('base64');
   const dataUrl = `data:${mimeType};base64,${base64}`;
-  log('debug', `[vision] provider=${name} model=${model} size=${imageBuffer.length}`);
+
   try {
-    if (entry.kind === 'anthropic-native') {
-      return await anthropicVision({ apiKey, model, base64, mimeType });
-    }
-    return await openaiCompatVision({ baseURL: entry.baseURL, apiKey, model, dataUrl });
+    return await callVisionWithProvider(name, base64, dataUrl, mimeType, imageBuffer.length);
   } catch (err) {
-    log('error', `[vision] 失败: ${err.message}`);
+    // v1.10.26: 限额类错误 → 自动 fallback 到 VISION_FALLBACK_PROVIDER（默认 minimax）
+    const fallbackName = (process.env.VISION_FALLBACK_PROVIDER || 'minimax').toLowerCase();
+    const isQuota = isQuotaLikeError(err);
+    if (isQuota && fallbackName && fallbackName !== name && REGISTRY[fallbackName]) {
+      log('warn', `[vision] 主 provider=${name} 触发限额/配额错误 (${String(err.message).slice(0, 120)}) → fallback ${fallbackName}`);
+      try {
+        const result = await callVisionWithProvider(fallbackName, base64, dataUrl, mimeType, imageBuffer.length);
+        log('info', `[vision] fallback ${fallbackName} 成功`);
+        return result;
+      } catch (err2) {
+        log('error', `[vision] fallback ${fallbackName} 也失败: ${err2.message}`);
+      }
+    } else if (!isQuota) {
+      log('error', `[vision] 失败 (非限额类，不 fallback): ${err.message}`);
+    } else {
+      log('error', `[vision] 限额但无可用 fallback (config=${fallbackName}, active=${name}): ${err.message}`);
+    }
     return '[图片识别失败]';
   }
 }
