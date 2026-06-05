@@ -1045,6 +1045,10 @@
 
     let user = JSON.parse(localStorage.getItem('xiyu_user') || 'null');
     const token = localStorage.getItem('xiyu_token') || '';
+    // v1.10.28: companionId 升到 script 顶层全局，让 sleep/wake/reset handler 等
+    // 在 load() 外定义的函数能访问。原先在 load() 内 let，是 latent ReferenceError
+    // —— 之前 sleep-card 默认 hidden 没人点保存所以没暴露。
+    let companionId = null;
     if (!token) { location.href = '/app/auth.html'; }
     // 兼容老 setup wizard 漏存 xiyu_user 的场景：从 /api/auth/me 回填
     if (token && !user) {
@@ -1241,7 +1245,8 @@
     }
 
     async function load() {
-      let companionId = null;
+      // v1.10.28: companionId 已在 script 顶层声明，这里只赋值
+      companionId = null;
       let c = null;
 
       try {
