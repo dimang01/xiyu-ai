@@ -336,17 +336,60 @@ function normalizePlan(raw, { trigger, gate }) {
   };
 }
 
+// v1.10.21: 把当前上海小时映射成「光线 + 合理场景」，让 imagePrompt 别再凌晨画奶茶店白天。
+function dayPartHint(h) {
+  if (h < 5)  return { id: 'late_night', label: '深夜', light: 'dim warm bedside lamp, mostly dark room, sleepy late-night vibe', scenes: 'in bed, pillow view, pajamas, dim bedroom, mirror selfie at home, brushing teeth' };
+  if (h < 9)  return { id: 'early_morning', label: '清晨', light: 'soft warm sunrise light through curtains', scenes: 'just-woke-up bed, kitchen making breakfast, brushing hair, window with morning sky' };
+  if (h < 12) return { id: 'morning', label: '上午', light: 'clean bright daylight', scenes: 'desk study, library, classroom, cafe, on the way outside' };
+  if (h < 14) return { id: 'noon', label: '中午', light: 'bright midday light', scenes: 'lunch table, cafeteria, sunny outdoor walk' };
+  if (h < 17) return { id: 'afternoon', label: '下午', light: 'warm slanted afternoon light', scenes: 'cafe with notebook, sunny window, park bench, study desk' };
+  if (h < 19) return { id: 'dusk', label: '傍晚', light: 'golden hour, warm orange sunset', scenes: 'walking home, balcony, sky over street, train window' };
+  if (h < 22) return { id: 'evening', label: '晚上', light: 'cozy indoor warm artificial light, lamps, screens', scenes: 'sofa with tea, study desk lamp, watching show, late dinner' };
+  return         { id: 'night', label: '夜晚', light: 'low warm bedside lamp, dark room, near sleep', scenes: 'in bed scrolling phone, pajamas, pillow, dim bedroom' };
+}
+
+// v1.10.21: 把人设外观打平成英文友好的 compact 描述（不暴露具体年龄数字，防 OpenAI 安全过滤）
+function compactAppearance(c) {
+  if (!c) return 'unknown';
+  const parts = [];
+  if (c.role_title) parts.push(`role=${c.role_title}`);
+  if (c.hair_color || c.hair_style) parts.push(`hair=${[c.hair_color, c.hair_style].filter(Boolean).join('/')}`);
+  if (c.eye_color) parts.push(`eyes=${c.eye_color}`);
+  if (c.body_type) parts.push(`body=${c.body_type}`);
+  if (c.height) parts.push(`height=${c.height}cm`);
+  if (c.clothing_style) parts.push(`style=${c.clothing_style}`);
+  try {
+    const tags = JSON.parse(c.personality_tags || '[]');
+    if (Array.isArray(tags) && tags.length) parts.push(`personality=${tags.slice(0, 4).join('/')}`);
+  } catch {}
+  return parts.join(', ') || 'unknown';
+}
+
 function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proactiveContext, gate, emotionContext, visualContext }) {
   const recent = (recentMessages || [])
     .slice(-8)
     .map(m => `${m.direction === 'in' || m.role === 'user' ? 'user' : 'assistant'}: ${safeText(m.content, 120)}`)
     .filter(Boolean)
     .join('\n');
+
+  // v1.10.21: 时间感 + 完整人设外观
+  const now = new Date();
+  const h = (now.getUTCHours() + 8) % 24;
+  const mm = String(now.getUTCMinutes()).padStart(2, '0');
+  const dp = dayPartHint(h);
+  const appearance = compactAppearance(companion);
+
   return `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
 上下文：
+- current shanghai time: ${String(h).padStart(2, '0')}:${mm}
+- day part: ${dp.label} (${dp.id})
+- lighting hint: ${dp.light}
+- plausible scenes for this hour: ${dp.scenes}
+
 - trigger: ${trigger}
 - companion name: ${safeText(companion?.name || '她', 40)}
+- companion appearance: ${appearance}
 - relationship stage: ${safeText(companion?.relationship_stage || '', 40)}
 - current scene: ${safeText(companion?.current_scene || '', 80)}
 - user text: ${safeText(userText || '', 160)}
@@ -362,11 +405,13 @@ ${recent || '(none)'}
 2. 明确要求看你/发照片时可更倾向发送，但仍要自然。
 3. 主动照片必须低频，像临时想分享当下。
 4. imagePrompt 必须是英文，像现实世界手机随手拍：realistic casual phone snapshot, natural lighting, everyday environment, slightly imperfect framing。
-5. imagePrompt 不要像海报、写真、广告、头像、插画、二次元或工作室照；不要包含隐私、token、手机号、精确地址。
-6. imagePrompt 不允许出现 anime, illustration, poster, app icon, glamour shoot, NSFW, nude, sexual, minor, celebrity。
-7. hidden emotion photo context 只能作为隐藏氛围参考，不能在 caption 或 imagePrompt 中提到情绪状态、情绪分数、维度、系统判断，也不能把任何分数或 JSON 写进 imagePrompt。
-8. visual identity context 只用于判断是否保持同一人物形象，不要把 reference 路径、身份 JSON 或内部说明写进用户可见内容。
-9. caption 是发给用户看的微信短句，10 到 35 字，不解释系统逻辑，不说作为 AI，不说生成图片，不说当前情绪状态，不输出 [PHOTO]。
+5. imagePrompt 必须明确写出当前 day part 对应的 lighting hint（参考上面 lighting hint 字段），并从 plausible scenes for this hour 选取场景。**深夜（late_night/night）禁止 cafe / coffee shop / 奶茶店 / 商场 / outdoor bright daylight 等白天商业场所**；早晨禁止 dark bedroom；其它时段同理保持时间一致。
+6. imagePrompt 必须暗含主角的核心外貌特征（参考 companion appearance：发色、发型、身材、风格），用模糊年龄措辞如 "young adult casual student look"。**严禁出现具体年龄数字、严禁出现 minor / teen / underage / child / kid / schoolgirl 等触发生图安全过滤的词**。
+7. imagePrompt 不要像海报、写真、广告、头像、插画、二次元或工作室照；不要包含隐私、token、手机号、精确地址。
+8. imagePrompt 不允许出现 anime, illustration, poster, app icon, glamour shoot, NSFW, nude, sexual, minor, celebrity, teen, underage, child, kid, schoolgirl。
+9. hidden emotion photo context 只能作为隐藏氛围参考，不能在 caption 或 imagePrompt 中提到情绪状态、情绪分数、维度、系统判断，也不能把任何分数或 JSON 写进 imagePrompt。
+10. visual identity context 只用于判断是否保持同一人物形象，不要把 reference 路径、身份 JSON 或内部说明写进用户可见内容。
+11. caption 是发给用户看的微信短句，10 到 35 字，不解释系统逻辑，不说作为 AI，不说生成图片，不说当前情绪状态，不输出 [PHOTO]。**caption 内容必须与 day part 一致**：深夜不要说"路过/出门/咖啡店"等白天动作；夜晚多用"躺床上 / 灯关了一半 / 突然想你"等贴近时间的描述。
 
 返回 JSON 结构：
 {

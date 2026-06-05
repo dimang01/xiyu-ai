@@ -416,10 +416,17 @@ try {
   check('/api/setup/status 不泄露 secret', !hasApiKey);
 
   // provider-status 匿名访问：不含 masked_key、source，不含完整 key
+  // v1.10.20: HOSTED_MODE=true 时此端点应该 404（防 curl 抓技术栈），其它情况期望 200
+  const hostedModeOn = setupStatusBody?.data?.hosted_mode === true;
   const psResp = await fetch(`${BASE}/api/setup/provider-status`, { signal: AbortSignal.timeout(3000) });
-  check('/api/setup/provider-status 返回 200', psResp.status === 200);
-  const psBody = await psResp.json();
-  if (psBody.ok && psBody.data?.providers) {
+  check(
+    hostedModeOn
+      ? '/api/setup/provider-status hosted 模式返 404'
+      : '/api/setup/provider-status 返回 200',
+    hostedModeOn ? psResp.status === 404 : psResp.status === 200,
+  );
+  const psBody = psResp.status === 200 ? await psResp.json() : null;
+  if (psBody?.ok && psBody.data?.providers) {
     let leaksFullKey = false;
     let hasMaskedKey = false;
     let hasSource = false;
