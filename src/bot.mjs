@@ -345,19 +345,59 @@ export async function handleMessage(rawMsg, botContext = {}) {
       }
 
     } else if (msg.msgType === 'voice') {
-      // v1.10.14 探针：dump 入站 voiceItem 真实字段结构（cdn_url/url 之外 iLink 协议可能改了字段名）
+      // v1.10.14/15 探针：dump 入站 voiceItem 真实字段结构 + 试探 CDN download endpoint。
+      // 现在已知字段是 media.encrypt_query_param（不是 cdn_url）。猜测两个 endpoint 之一可行：
+      //   1. https://novac2c.cdn.weixin.qq.com/c2c/download?encrypt_query_param=...
+      //   2. .../downloadrequest（出站 upload 的对称 endpoint）
       try {
-        log('info', `[Bot] voiceItem dump=${JSON.stringify(msg.voiceItem || {}).slice(0, 600)}`);
+        log('info', `[Bot] voiceItem dump=${JSON.stringify(msg.voiceItem || {}).slice(0, 5000)}`);
       } catch {}
-      const cdnUrl = msg.voiceItem?.cdn_url ?? msg.voiceItem?.url ?? null;
-      if (cdnUrl) {
-        log('info', `[Bot] 下载语音 ${cdnUrl.slice(0, 60)}`);
-        const buf = await fetchBuffer(cdnUrl);
-        userText = buf
-          ? `[用户发了语音，内容：${await recognizeVoice(buf, 'audio/ogg')}]`
-          : '[用户发了语音，但下载失败]';
+
+      const enc = msg.voiceItem?.media?.encrypt_query_param ?? null;
+      const legacyCdnUrl = msg.voiceItem?.cdn_url ?? msg.voiceItem?.url ?? null;
+      let voiceText = null;
+
+      if (enc) {
+        const CDN_BASE = 'https://novac2c.cdn.weixin.qq.com/c2c';
+        const candidates = [
+          `${CDN_BASE}/download?encrypt_query_param=${encodeURIComponent(enc)}`,
+          `${CDN_BASE}/download?encrypted_query_param=${encodeURIComponent(enc)}`,
+        ];
+        for (const url of candidates) {
+          try {
+            log('info', `[Bot] voice probe ${url.slice(0, 80)}...`);
+            const resp = await fetch(url, { method: 'GET' });
+            const ct = resp.headers.get('content-type') || '';
+            const cl = resp.headers.get('content-length') || '';
+            log('info', `[Bot] voice probe status=${resp.status} ct=${ct} cl=${cl}`);
+            if (resp.ok) {
+              const buf = Buffer.from(await resp.arrayBuffer());
+              const head = buf.slice(0, 32).toString('hex');
+              log('info', `[Bot] voice probe bytes=${buf.length} head32=${head}`);
+              // 若不需要解密（server 直返明文 silk/opus），可直接 ASR
+              if (buf.length > 256) {
+                try {
+                  voiceText = await recognizeVoice(buf, ct || 'audio/ogg');
+                  log('info', `[Bot] voice probe ASR ok: ${String(voiceText).slice(0, 80)}`);
+                } catch (e) {
+                  log('warn', `[Bot] voice probe ASR 失败: ${e.message}`);
+                }
+                break;
+              }
+            }
+          } catch (e) {
+            log('warn', `[Bot] voice probe 请求失败: ${e.message}`);
+          }
+        }
+      } else if (legacyCdnUrl) {
+        log('info', `[Bot] 下载语音 ${legacyCdnUrl.slice(0, 60)}`);
+        const buf = await fetchBuffer(legacyCdnUrl);
+        if (buf) voiceText = await recognizeVoice(buf, 'audio/ogg');
+      }
+
+      if (voiceText && voiceText !== '[语音识别失败]') {
+        userText = `[用户发了语音，内容：${voiceText}]`;
       } else {
-        // v1.10.14: 入站 voice 暂未接通解密，给 AI 一个明确的"听不到"信号，避免 hallucinate "听到了"。
         userText = '[系统提示：用户发了一段语音消息，但我目前无法听到语音内容；请用自然口吻提醒用户改用文字告诉我]';
       }
 
