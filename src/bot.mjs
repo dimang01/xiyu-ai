@@ -345,60 +345,18 @@ export async function handleMessage(rawMsg, botContext = {}) {
       }
 
     } else if (msg.msgType === 'voice') {
-      // v1.10.14/15 探针：dump 入站 voiceItem 真实字段结构 + 试探 CDN download endpoint。
-      // 现在已知字段是 media.encrypt_query_param（不是 cdn_url）。猜测两个 endpoint 之一可行：
-      //   1. https://novac2c.cdn.weixin.qq.com/c2c/download?encrypt_query_param=...
-      //   2. .../downloadrequest（出站 upload 的对称 endpoint）
-      try {
-        log('info', `[Bot] voiceItem dump=${JSON.stringify(msg.voiceItem || {}).slice(0, 5000)}`);
-      } catch {}
-
-      const enc = msg.voiceItem?.media?.encrypt_query_param ?? null;
-      const legacyCdnUrl = msg.voiceItem?.cdn_url ?? msg.voiceItem?.url ?? null;
-      let voiceText = null;
-
-      if (enc) {
-        const CDN_BASE = 'https://novac2c.cdn.weixin.qq.com/c2c';
-        const candidates = [
-          `${CDN_BASE}/download?encrypt_query_param=${encodeURIComponent(enc)}`,
-          `${CDN_BASE}/download?encrypted_query_param=${encodeURIComponent(enc)}`,
-        ];
-        for (const url of candidates) {
-          try {
-            log('info', `[Bot] voice probe ${url.slice(0, 80)}...`);
-            const resp = await fetch(url, { method: 'GET' });
-            const ct = resp.headers.get('content-type') || '';
-            const cl = resp.headers.get('content-length') || '';
-            log('info', `[Bot] voice probe status=${resp.status} ct=${ct} cl=${cl}`);
-            if (resp.ok) {
-              const buf = Buffer.from(await resp.arrayBuffer());
-              const head = buf.slice(0, 32).toString('hex');
-              log('info', `[Bot] voice probe bytes=${buf.length} head32=${head}`);
-              // 若不需要解密（server 直返明文 silk/opus），可直接 ASR
-              if (buf.length > 256) {
-                try {
-                  voiceText = await recognizeVoice(buf, ct || 'audio/ogg');
-                  log('info', `[Bot] voice probe ASR ok: ${String(voiceText).slice(0, 80)}`);
-                } catch (e) {
-                  log('warn', `[Bot] voice probe ASR 失败: ${e.message}`);
-                }
-                break;
-              }
-            }
-          } catch (e) {
-            log('warn', `[Bot] voice probe 请求失败: ${e.message}`);
-          }
-        }
-      } else if (legacyCdnUrl) {
-        log('info', `[Bot] 下载语音 ${legacyCdnUrl.slice(0, 60)}`);
-        const buf = await fetchBuffer(legacyCdnUrl);
-        if (buf) voiceText = await recognizeVoice(buf, 'audio/ogg');
-      }
-
-      if (voiceText && voiceText !== '[语音识别失败]') {
-        userText = `[用户发了语音，内容：${voiceText}]`;
+      // v1.10.16: iLink 服务端已对入站语音做 ASR，结果直接在 voiceItem.text。
+      // 不再走「下载 + 自己 ASR」 — 旧代码假设 cdn_url 是裸 URL，从来没匹配过、一直落 fallback。
+      // 若 text 字段缺失（极短语音/服务端 ASR 失败），用 media.full_url + aes_key 自己下载解密兜底。
+      const transcribed = (msg.voiceItem?.text || '').trim();
+      const playtimeMs = Number(msg.voiceItem?.playtime || 0);
+      if (transcribed) {
+        userText = `[用户发了一段 ${Math.round(playtimeMs / 1000) || '?'} 秒语音，内容：${transcribed}]`;
+        log('info', `[Bot] 入站语音 text=${transcribed.slice(0, 80)}`);
       } else {
-        userText = '[系统提示：用户发了一段语音消息，但我目前无法听到语音内容；请用自然口吻提醒用户改用文字告诉我]';
+        // 服务端没给转写 —— 大多是没人声的极短录音；告诉 AI 实情，避免她编"听到了"。
+        log('warn', `[Bot] 入站语音缺 text 字段 voiceItem keys=${Object.keys(msg.voiceItem || {}).join(',')}`);
+        userText = '[系统提示：用户发了一段语音，但服务端转写为空（可能没说话或杂音）；请用自然口吻问用户说了什么]';
       }
 
     } else {
