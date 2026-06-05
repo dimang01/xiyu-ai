@@ -479,8 +479,14 @@ try {
     body: JSON.stringify({ chat_provider: 'deepseek', api_key: 'test' }),
     signal: AbortSignal.timeout(3000),
   });
-  check('未登录 POST /api/setup/provider-config 返回 401/403', pcResp.status === 401 || pcResp.status === 403,
-    `status=${pcResp.status}`);
+  // v1.10.22: HOSTED_MODE=true 时 blockIfHosted 在 requireAuth 之前返 404
+  check(
+    hostedModeOn
+      ? '未登录 POST /api/setup/provider-config hosted 返 404'
+      : '未登录 POST /api/setup/provider-config 返回 401/403',
+    hostedModeOn ? pcResp.status === 404 : (pcResp.status === 401 || pcResp.status === 403),
+    `status=${pcResp.status}`,
+  );
 
   // test-provider：已初始化或非本地时未登录应返回 401/403（不是 500）；友好返回不是 500
   const tpResp = await fetch(`${BASE}/api/setup/test-provider`, {

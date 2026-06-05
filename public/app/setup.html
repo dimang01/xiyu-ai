@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
+  <script>(function(){fetch('/api/setup/status').then(function(r){return r.json();}).then(function(d){if(d&&d.data&&d.data.hosted_mode){location.replace('/app/dashboard.html');}}).catch(function(){});})();</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
   <meta name="color-scheme" content="light dark" />
