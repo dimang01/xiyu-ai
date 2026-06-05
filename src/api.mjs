@@ -1962,14 +1962,17 @@ router.get('/setup/status', (_req, res) => {
   const authMode = (process.env.AUTH_MODE || 'local').toLowerCase() === 'email' ? 'email' : 'local';
   // v1.5.1: SINGLE_USER 单用户模式 — 跳过登录页，自动注册/复用 owner 账号
   const singleUser = String(process.env.SINGLE_USER || '').toLowerCase() === 'true';
+  // v1.10.20: HOSTED_MODE = 部署版（SaaS）。前端不渲染"模型设置"和"开源版"等暴露技术栈的 UI。
+  const hostedMode = String(process.env.HOSTED_MODE || '').toLowerCase() === 'true';
   return ok(res, {
     setup_required: !configured,
-    chat_provider: chat.id,
-    chat_label: chat.label,
+    chat_provider: hostedMode ? null : chat.id,
+    chat_label: hostedMode ? null : chat.label,
     configured,
-    source: hasEnvKey ? 'env' : hasDbKey ? 'app_settings' : 'missing',
+    source: hostedMode ? null : (hasEnvKey ? 'env' : hasDbKey ? 'app_settings' : 'missing'),
     auth_mode: authMode,
     single_user: singleUser,
+    hosted_mode: hostedMode,
     initialized,
   });
 });
@@ -1978,6 +1981,10 @@ router.get('/setup/status', (_req, res) => {
 // 未登录：只返回 configured 布尔值，不返回 masked_key / source（防信息泄露）
 // 已登录：额外返回 masked_key 和 source
 router.get('/setup/provider-status', softAuth, (req, res) => {
+  // v1.10.20: 部署版（HOSTED_MODE=true）完全屏蔽 provider 状态，避免暴露技术栈
+  if (String(process.env.HOSTED_MODE || '').toLowerCase() === 'true') {
+    return res.status(404).json({ ok: false, message: 'not available' });
+  }
   const isAuthed = Boolean(req.authUser);
   const active = getActiveChatProvider();
   const providers = {};

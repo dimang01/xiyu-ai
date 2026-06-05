@@ -1099,10 +1099,21 @@
       location.href = '/app/auth.html';
     });
     // v1.5.1: SINGLE_USER 模式下隐藏"登出"按钮（登出后自动又会被登回，按钮无意义）
+    // v1.10.20: HOSTED_MODE 下隐藏"模型设置"入口 + provider 名 + "开源版"徽章（部署版不应暴露技术栈）
     fetch('/api/setup/status').then(r => r.json()).then(d => {
       if (d?.data?.single_user) {
         const btn = document.getElementById('btn-logout');
         if (btn) btn.style.display = 'none';
+      }
+      if (d?.data?.hosted_mode) {
+        const openBtn = document.getElementById('btn-open-model');
+        if (openBtn) openBtn.remove();
+        const drawer = document.getElementById('model-drawer');
+        if (drawer) drawer.remove();
+        const mask = document.getElementById('model-mask');
+        if (mask) mask.remove();
+        const badge = document.getElementById('plan-badge');
+        if (badge) badge.remove();
       }
     }).catch(() => {});
 
