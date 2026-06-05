@@ -43,6 +43,7 @@ import {
   drainMissed,
   tryLockSchedule,
 } from './sleep.mjs';
+import { dispatchUrgentGoodnight } from './proactive.mjs';
 
 const TZ = 'Asia/Shanghai';
 const TICK_MS = 60_000;
@@ -120,6 +121,15 @@ function runSleepTick(now) {
       //    先发（约 bed 前），这里才真正开始拦截，中间留出挽留窗口。
       if (!fresh.is_sleeping && fresh.today_bed_at && fresh.today_wake_at
           && nowMs >= fresh.today_bed_at && nowMs < fresh.today_wake_at) {
+        // v1.10.24 兜底：proactive 在 23:59 没发出晚安（服务重启 / schedule 跨午夜
+        // 等情况）就直接进了 bed_at → 用户感知"没说晚安就睡了"。先 fire-and-forget
+        // 紧急补发，再 enterSleep，体感"她说了晚安后入睡"。
+        const todayKey = shanghaiDateKey(now);
+        if (fresh.goodnight_sent_for_date !== todayKey) {
+          dispatchUrgentGoodnight(row.companion_id)
+            .then(r => log('info', `[Sleep] urgent goodnight companion=${row.companion_id} result=${r}`))
+            .catch(e => log('warn', `[Sleep] urgent goodnight failed companion=${row.companion_id}: ${e.message}`));
+        }
         enterSleep(row.companion_id, nowMs);
         log('info', `[Sleep] enterSleep at bed_at companion=${row.companion_id}`);
       }
