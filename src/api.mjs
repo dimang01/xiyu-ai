@@ -209,6 +209,14 @@ function authOk(res, message, code = 200) { return res.status(code).json({ succe
 function authErr(res, message, code = 400, extra = {}) { return res.status(code).json({ success: false, message, ...extra }); }
 function noStore(res) { res.set('Cache-Control', 'no-store'); return res; }
 
+// v1.10.22: 部署版屏蔽所有 setup/* 写端点和 provider 改动入口，避免用户改自托管 key
+function blockIfHosted(_req, res, next) {
+  if (String(process.env.HOSTED_MODE || '').toLowerCase() === 'true') {
+    return res.status(404).json({ ok: false, message: 'not available' });
+  }
+  next();
+}
+
 const VERIFICATION_PURPOSES = new Set(['login', 'register', 'reset_password']);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,32}$/;
@@ -2104,6 +2112,7 @@ router.get('/setup/provider-status', softAuth, (req, res) => {
 
 // POST /api/setup/provider-config — 保存 chat provider + API key（需登录）
 router.post('/setup/provider-config',
+  blockIfHosted,
   requireAuth,
   async (req, res) => {
     const capability = (req.body?.capability || 'chat').toLowerCase();
@@ -2294,6 +2303,7 @@ router.post('/setup/provider-config',
 // 允许匿名访问的唯一场景：AUTH_MODE!=email + user_count=0 + 请求来自 localhost
 // 其他情况一律 requireAuth
 router.post('/setup/test-provider',
+  blockIfHosted,
   rateLimit({ scope: 'test-provider', maxPerWindow: 10, windowMs: 60_000, message: '测试过于频繁，请稍后再试' }),
   softAuth,
   async (req, res) => {
@@ -2343,6 +2353,7 @@ router.post('/setup/test-provider',
 // 仅允许：AUTH_MODE=local 且 user_count=0，默认必须来自 localhost。
 // 如需远程初始化，可设置 XIYU_SETUP_TOKEN，并通过 xiyu-setup-token header 或 body.setup_token 传入。
 router.post('/setup/local-account',
+  blockIfHosted,
   rateLimit({ scope: 'local-account', maxPerWindow: 5, windowMs: 60 * 60 * 1000, message: '操作过于频繁，请稍后再试' }),
   async (req, res) => {
     const authMode = (process.env.AUTH_MODE || 'local').toLowerCase();
@@ -2403,6 +2414,7 @@ router.post('/setup/local-account',
 // 当前 CHAT_PROVIDER + 对应的 API key 是否能跑通。
 // 匿名访问仅限首次本机初始化阶段，其他情况必须登录。
 router.post('/setup/test-chat',
+  blockIfHosted,
   rateLimit({ scope: 'test-chat', maxPerWindow: 10, windowMs: 60_000, message: '测试过于频繁，请稍后再试' }),
   softAuth,
   async (req, res) => {
