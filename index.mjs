@@ -13,6 +13,7 @@ import {
   getUpdates,
   notifyStart,
   readLegacyCredentials,
+  startIlinkSendDrainLoop,
   DEFAULT_BASE_URL,
 } from './src/ilink.mjs';
 import { handleMessage } from './src/bot.mjs';
@@ -168,6 +169,8 @@ async function bootstrap() {
   // 主动消息 + 计划任务
   startProactiveScheduler();
   startPlanTasks();
+  // v1.10.12: iLink send 限速队列 drain loop（撞 quota 时延后重发，不丢消息）
+  startIlinkSendDrainLoop();
 
   // 加载 DB 里所有 active 绑定
   const accounts = getActiveBotAccounts();

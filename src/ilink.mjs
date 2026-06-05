@@ -83,6 +83,71 @@ function consumeSendQuota(botId) {
   return true;
 }
 
+// v1.10.12: 不消耗 quota 看一眼是否能发（drain loop 用）。
+function peekSendQuota(botId) {
+  if (!botId) return true;
+  const now = Date.now();
+  const arr = sendHistoryByBot.get(botId) || [];
+  return arr.filter(t => now - t < SEND_RATE_WINDOW_MS).length < SEND_RATE_LIMIT;
+}
+
+// v1.10.12: 撞限速时把消息入 per-bot FIFO 队列，drain loop 每 30s 在 quota 恢复后重发。
+// 之前 sendMessage / sendMessageItem 撞限速直接 return false → AI 回复凭空消失。
+// 内存队列（不持久化），restart 会丢；考虑到 iLink session 也是内存态、restart 本来就要重新建立，可接受。
+const pendingSendByBot = new Map(); // botId -> [{ kind, ctx, msg|toUserId|item|text|contextToken, addedAt }]
+const MAX_PENDING_PER_BOT = 50;
+const PENDING_TTL_MS = 30 * 60 * 1000;
+const DRAIN_INTERVAL_MS = 30 * 1000;
+
+function enqueuePendingSend(botId, payload) {
+  const q = pendingSendByBot.get(botId) || [];
+  if (q.length >= MAX_PENDING_PER_BOT) {
+    const dropped = q.shift();
+    log('warn', `[iLink] pending queue full bot=${shortBot(botId)} dropping oldest kind=${dropped.kind}`);
+  }
+  q.push({ ...payload, addedAt: Date.now() });
+  pendingSendByBot.set(botId, q);
+  log('info', `[iLink] sendMessage queued (rate limit) bot=${shortBot(botId)} kind=${payload.kind} size=${q.length}`);
+}
+
+async function drainPendingForBot(botId) {
+  const q = pendingSendByBot.get(botId);
+  if (!q || !q.length) return;
+  while (q.length) {
+    const now = Date.now();
+    if (now - q[0].addedAt > PENDING_TTL_MS) {
+      const dropped = q.shift();
+      log('warn', `[iLink] pending expired bot=${shortBot(botId)} kind=${dropped.kind} age=${Math.round((now - dropped.addedAt) / 1000)}s`);
+      continue;
+    }
+    if (!peekSendQuota(botId)) break;
+    const head = q.shift();
+    try {
+      if (head.kind === 'text') {
+        await sendMessage(head.ctx, head.msg, head.text, { _allowQueue: false });
+      } else if (head.kind === 'item') {
+        await sendMessageItem(head.ctx, head.toUserId, head.item, head.contextToken, { _allowQueue: false });
+      }
+      log('info', `[iLink] drained pending bot=${shortBot(botId)} kind=${head.kind} remaining=${q.length}`);
+    } catch (e) {
+      log('warn', `[iLink] drain send failed bot=${shortBot(botId)}: ${e.message}`);
+    }
+  }
+  pendingSendByBot.set(botId, q);
+}
+
+let _drainLoopHandle = null;
+export function startIlinkSendDrainLoop() {
+  if (_drainLoopHandle) return _drainLoopHandle;
+  _drainLoopHandle = setInterval(() => {
+    for (const botId of [...pendingSendByBot.keys()]) {
+      drainPendingForBot(botId).catch(err => log('warn', `[iLink] drain loop error bot=${shortBot(botId)}: ${err.message}`));
+    }
+  }, DRAIN_INTERVAL_MS);
+  log('info', `[iLink] send drain loop started interval=${DRAIN_INTERVAL_MS}ms`);
+  return _drainLoopHandle;
+}
+
 function stableWechatUin(seed) {
   const key = seed || randomBytes(4).readUInt32BE(0);
   if (!seed) return Buffer.from(String(key), 'utf-8').toString('base64');
@@ -303,7 +368,7 @@ export async function getUpdates(ctx, buf, abortSignal) {
   }
 }
 
-export async function sendMessage(ctx, msg, text) {
+export async function sendMessage(ctx, msg, text, opts = {}) {
   const contextToken = msg?.context_token ?? msg?.contextToken ?? null;
   const toUserId = msg?.to_user_id ?? msg?.toUserId ?? msg?.from_user_id ?? msg?.fromUser ?? null;
   if (!toUserId) {
@@ -315,6 +380,11 @@ export async function sendMessage(ctx, msg, text) {
   }
 
   if (!consumeSendQuota(ctx.botId)) {
+    // v1.10.12: 入队 + drain loop backoff 重发，避免直接吞消息。_allowQueue=false 是 drain 回调，避免递归入队。
+    if (opts._allowQueue !== false) {
+      enqueuePendingSend(ctx.botId, { kind: 'text', ctx, msg, text });
+      return true;
+    }
     log('warn', `[iLink] sendMessage skipped (rate limit) bot=${shortBot(ctx.botId)} to=${toUserId}`);
     return false;
   }
@@ -420,12 +490,17 @@ export async function sendVoiceMessage(ctx, toUserId, silk, durationMs, contextT
 /**
  * 发送一个 messageItem（图片 / 文件 / 视频），由 media.mjs uploadFile 产出。
  */
-export async function sendMessageItem(ctx, toUserId, item, contextToken) {
+export async function sendMessageItem(ctx, toUserId, item, contextToken, opts = {}) {
   if (!toUserId) {
     log('warn', `[iLink] sendMessageItem failed missing to_user_id bot=${shortBot(ctx.botId)}`);
     return false;
   }
   if (!consumeSendQuota(ctx.botId)) {
+    // v1.10.12: 同 sendMessage — 入队让 drain loop 重发。
+    if (opts._allowQueue !== false) {
+      enqueuePendingSend(ctx.botId, { kind: 'item', ctx, toUserId, item, contextToken });
+      return true;
+    }
     log('warn', `[iLink] sendMessageItem skipped (rate limit) bot=${shortBot(ctx.botId)} to=${toUserId}`);
     return false;
   }
