@@ -412,7 +412,7 @@
         </div>
 
         <!-- v1.10.0 作息与睡眠 -->
-        <div class="card p-7" id="sleep-card" style="display:none;">
+        <div class="card p-7" id="sleep-card">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
@@ -2409,13 +2409,25 @@
 
     // v1.10.0 作息与睡眠
     async function loadSleep() {
+      const pill = document.getElementById('sleep-status-pill');
       try {
+        if (!companionId) {
+          if (pill) { pill.textContent = '未绑定'; pill.className = 'text-[11px] font-bold px-2 py-1 rounded-full bg-gray-100 text-gray-500'; }
+          return;
+        }
         const r = await fetch('/api/companions/' + companionId + '/sleep', { headers: { Authorization: 'Bearer ' + token } });
-        const d = await r.json();
-        if (!r.ok || !d.ok) return;
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) {
+          // v1.10.27: 即使 API 失败也保留 card 可见 + 给错误 pill 而不是隐藏整个卡片
+          if (pill) {
+            pill.textContent = '加载失败 (' + r.status + ')';
+            pill.className = 'text-[11px] font-bold px-2 py-1 rounded-full bg-red-50 text-red-600';
+          }
+          return;
+        }
         const s = d.data;
         const card = document.getElementById('sleep-card');
-        card.style.display = 'block';
+        if (card) card.style.display = 'block';
         if (window._sleepDial) window._sleepDial.set(s.bed_time, s.wake_time);
         document.getElementById('sleep-enabled').checked = !!s.enabled;
         const pill = document.getElementById('sleep-status-pill');
