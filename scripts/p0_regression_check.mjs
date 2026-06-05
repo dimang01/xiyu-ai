@@ -329,10 +329,8 @@ try {
   check('api.mjs /setup/provider-status 不返回完整 key',
     !apiSrc.includes('apiKey') || apiSrc.includes('maskApiKey'));
   check('api.mjs /setup/provider-config 要求 requireAuth',
-    /provider-config.*\n.*requireAuth|requireAuth.*\n.*provider-config/.test(apiSrc) ||
-    apiSrc.includes("'/setup/provider-config',\n  requireAuth") ||
-    apiSrc.includes("'/setup/provider-config',\n  requireAuth,") ||
-    apiSrc.includes("provider-config',\n  requireAuth"));
+    // v1.10.22: 允许中间夹 blockIfHosted 等其它 middleware
+    /provider-config'[\s\S]{0,200}requireAuth/.test(apiSrc));
   check('api.mjs /setup/provider-status 使用 softAuth',
     apiSrc.includes("'/setup/provider-status', softAuth") ||
     apiSrc.includes("'/setup/provider-status',\n  softAuth"));
