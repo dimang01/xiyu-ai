@@ -27,7 +27,7 @@ async function readQwenKey() {
 
 const TONE_PROMPT = '请识别这段语音并输出严格 JSON：'
   + '{"transcript":"逐字内容","tone":"语气一句话不超过15字","emotion":"主要情绪一个词，如 开心/低落/疲惫/激动/温柔/撒娇/严肃/中性","energy":"高|中|低"}。'
-  + '只输出 JSON，不要 markdown / 代码块 / 多余解释。';
+  + '硬性要求：所有字符串和键名必须用双引号 "，不要用单引号 \'。不要 markdown / 代码块 / 多余解释，只输出一行 JSON。';
 
 function tryParseJson(raw) {
   if (!raw) return null;
@@ -39,7 +39,15 @@ function tryParseJson(raw) {
     const m = s.match(/\{[\s\S]*\}/);
     if (m) s = m[0];
   }
-  try { return JSON.parse(s); } catch { return null; }
+  try { return JSON.parse(s); } catch {}
+
+  // v1.10.18 兜底：qwen-audio 经常返 Python dict 风格 {'k': 'v', ...}（单引号）。
+  // 转双引号再试。仅对外层换；如果值里有 ASCII 单引号会被误换 — 但中文/普通转写
+  // 几乎不会出现 ASCII '，先这么挡着，看实际故障再加 escape 状态机。
+  const swapped = s.replace(/'/g, '"');
+  try { return JSON.parse(swapped); } catch {}
+
+  return null;
 }
 
 function extractTextFromContent(content) {
