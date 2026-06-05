@@ -7,8 +7,9 @@
  *   - doubao      豆包 (火山方舟)    （OpenAI 兼容 image generation）
  *   - wenxin      百度文心一格      （AI Studio / 千帆 image API）
  *   - openai      OpenAI DALL-E/gpt-image-1
+ *   - openrouter  OpenRouter 聚合（默认 openai/gpt-image-1；走 chat/completions+modalities=['image']）
  *
- * 切换方式：.env 中 IMAGE_PROVIDER=zhipu/qwen/doubao/wenxin/openai
+ * 切换方式：.env 中 IMAGE_PROVIDER=zhipu/qwen/doubao/wenxin/openai/openrouter
  *
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
@@ -135,12 +136,61 @@ async function openaiGenerate(prompt, size) {
   throw new Error('OpenAI 响应无 URL/base64');
 }
 
+// ─── OpenRouter 聚合（图像生成走 chat completions + modalities） ──────────
+// OpenRouter 不暴露原生 /v1/images/generations，要靠图像能力的 chat 模型
+// 配合 modalities: ['image', 'text']，响应里 message.images[].image_url.url 是结果。
+// 默认 model openai/gpt-image-1（GPT-Image-1，ChatGPT 最新生图）；可换 google/gemini-2.5-flash-image 等。
+async function openrouterGenerate(prompt, size) {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) throw new Error('OPENROUTER_API_KEY 未配置');
+  const model = process.env.IMAGE_MODEL || 'openai/gpt-image-1';
+  // OpenRouter 不直接吃 size 参数，拼到 prompt 末尾让模型尽量遵守
+  const sizedPrompt = size ? `${prompt}\n\n[尺寸要求: ${size}]` : prompt;
+
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': process.env.OPENROUTER_REFERRER || 'https://xiyuai.cc',
+      'X-Title': 'xiyu-ai',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: sizedPrompt }],
+      modalities: ['image', 'text'],
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+  const data = await resp.json();
+  const msg = data?.choices?.[0]?.message;
+
+  // 主路径：message.images[]
+  const imgs = Array.isArray(msg?.images) ? msg.images : [];
+  for (const it of imgs) {
+    const u = it?.image_url?.url || it?.url || (typeof it === 'string' ? it : null);
+    if (u) return u;
+  }
+  // 备用：content 里可能是 markdown ![](url) 或直链或 base64
+  const ct = typeof msg?.content === 'string' ? msg.content : '';
+  const md = ct.match(/!\[[^\]]*\]\(([^)]+)\)/);
+  if (md) return md[1];
+  const link = ct.match(/(https?:\/\/[^\s)]+\.(?:png|jpg|jpeg|webp|gif))/i);
+  if (link) return link[1];
+  const b64 = ct.match(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+/);
+  if (b64) return b64[0];
+
+  throw new Error(`OpenRouter 响应无图像: ${JSON.stringify(data).slice(0, 300)}`);
+}
+
 const REGISTRY = {
   zhipu: zhipuGenerate,
   qwen: qwenGenerate,
   doubao: doubaoGenerate,
   wenxin: wenxinGenerate,
   openai: openaiGenerate,
+  openrouter: openrouterGenerate,
 };
 
 /**
