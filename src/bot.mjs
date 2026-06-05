@@ -345,6 +345,10 @@ export async function handleMessage(rawMsg, botContext = {}) {
       }
 
     } else if (msg.msgType === 'voice') {
+      // v1.10.14 探针：dump 入站 voiceItem 真实字段结构（cdn_url/url 之外 iLink 协议可能改了字段名）
+      try {
+        log('info', `[Bot] voiceItem dump=${JSON.stringify(msg.voiceItem || {}).slice(0, 600)}`);
+      } catch {}
       const cdnUrl = msg.voiceItem?.cdn_url ?? msg.voiceItem?.url ?? null;
       if (cdnUrl) {
         log('info', `[Bot] 下载语音 ${cdnUrl.slice(0, 60)}`);
@@ -353,7 +357,8 @@ export async function handleMessage(rawMsg, botContext = {}) {
           ? `[用户发了语音，内容：${await recognizeVoice(buf, 'audio/ogg')}]`
           : '[用户发了语音，但下载失败]';
       } else {
-        userText = '[用户发了语音消息]';
+        // v1.10.14: 入站 voice 暂未接通解密，给 AI 一个明确的"听不到"信号，避免 hallucinate "听到了"。
+        userText = '[系统提示：用户发了一段语音消息，但我目前无法听到语音内容；请用自然口吻提醒用户改用文字告诉我]';
       }
 
     } else {
