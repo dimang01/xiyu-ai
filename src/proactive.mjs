@@ -731,6 +731,22 @@ export async function dispatchUrgentGoodnight(companionId) {
   return 'not_found';
 }
 
+// v1.10.29: 对称版本 — sleep tick 起床兜底分支若 goodmorning_sent_for_date 为空，
+// 紧急补发一次。proactive 的 morning kind 在 [wake-15, wake+120] 内没匹配第一条
+// normal 时永远不会被抬出，用户起床后也收不到早安。这里兜底。
+// sendProactiveMessageGuarded 内部的 morning hook 会自动 exitSleep + drainMissed
+// + mark goodmorning_sent_for_date，跟主 morning 路径完全一致。
+export async function dispatchUrgentMorning(companionId) {
+  const accounts = getActiveBotAccounts();
+  for (const account of accounts) {
+    const companions = listProactiveCompanionsForBot(account.bot_id);
+    const companion = companions.find(c => Number(c.id) === Number(companionId));
+    if (!companion) continue;
+    return await sendProactiveMessageGuarded(companion, 'morning', account);
+  }
+  return 'not_found';
+}
+
 // 手动触发场景照（管理员/测试用）
 export async function sendScenePhotoManually(companion) {
   if (!companion || !companion.wechat_user_id) {

@@ -43,7 +43,7 @@ import {
   drainMissed,
   tryLockSchedule,
 } from './sleep.mjs';
-import { dispatchUrgentGoodnight } from './proactive.mjs';
+import { dispatchUrgentGoodnight, dispatchUrgentMorning } from './proactive.mjs';
 
 const TZ = 'Asia/Shanghai';
 const TICK_MS = 60_000;
@@ -136,6 +136,16 @@ function runSleepTick(now) {
       // 1) 起床兜底：今天 wake 已过 + 还标记 is_sleeping → 强制 exit
       //    （proactive morning kind 通常已经 exitSleep；这里救场 proactive 失败/disabled 的情况）
       if (fresh.is_sleeping && fresh.today_wake_at && nowMs >= fresh.today_wake_at + 5 * 60_000) {
+        // v1.10.29 兜底（对称 goodnight v1.10.24）：proactive morning 没在
+        // [wake-15, wake+120] 内匹配第一条 normal 时不会被抬出，用户起床收不到早安。
+        // 进入 fallback exitSleep 前先 fire-and-forget 紧急补发 morning；
+        // morning hook 自己会 exitSleep + drainMissed + 标 goodmorning_sent_for_date。
+        const todayKey = shanghaiDateKey(now);
+        if (fresh.goodmorning_sent_for_date !== todayKey) {
+          dispatchUrgentMorning(row.companion_id)
+            .then(r => log('info', `[Sleep] urgent morning companion=${row.companion_id} result=${r}`))
+            .catch(e => log('warn', `[Sleep] urgent morning failed companion=${row.companion_id}: ${e.message}`));
+        }
         exitSleep(row.companion_id);
         log('info', `[Sleep] fallback exitSleep companion=${row.companion_id} (no morning sent within 5min of wake)`);
       }
