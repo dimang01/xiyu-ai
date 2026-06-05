@@ -131,7 +131,20 @@ function postProcessReply(reply) {
   text = text.replace(/[?？]{2,}/g, '？');
   text = text.replace(/[…\.]{4,}/g, '…');
   text = text.replace(/～+/g, '～').replace(/~+/g, '~');  // 波浪线归一
-  text = text.replace(/  +/g, ' ').trim();
+  // 注意：换行先保留 — v1.10.13 用它做最高优先级分段
+  text = text.replace(/[ \t]+/g, ' ').replace(/^[ \t]+|[ \t]+$/gm, '').trim();
+
+  // v1.10.13: 优先用 AI 输出的换行作为段落分隔（最自然、最少破坏语义）。
+  // 之前 postProcessReply 完全不看 \n —— AI 用换行分了完美 3 段，被整串塞进
+  // splitReplySegments 二次处理 → 没 || 也没句末标点 → 落到按 25 字硬切 →
+  // 把「怎么一点都不|听话」这种短语腰斩成两段。
+  if (/\n/.test(text) && !/\|\|/.test(text)) {
+    const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    if (lines.length >= 2 && lines.length <= MAX_SEGMENTS && lines.every(l => l.length <= 60)) {
+      return lines.join('||');
+    }
+  }
+
   // 没有 || 但 > 20 字 → 按句尾自动拆
   if (!/\|\|/.test(text) && text.length > 20) {
     const parts = text.split(/(?<=[。！？!?])/).map(s => s.trim()).filter(Boolean);
@@ -150,11 +163,13 @@ function splitReplySegments(reply) {
   let raw = processed.split(/\s*(?:\|\||｜｜)\s*/g).map(s => s.trim()).filter(Boolean);
   if (raw.length === 0) return [processed.trim()];
 
-  // 二次强制：每段超过 MAX_SEG_LEN 字 → 按内部句号再拆
+  // 二次强制：每段超过 MAX_SEG_LEN 字 → 按内部句末标点再拆
+  // v1.10.13: 取消按 `，`/`,` 拆 —— 中文逗号是子句分隔，按它切会腰斩主谓宾
+  // （比如「她说，他来了」会被切成「她说，」「他来了」）。
   const expanded = [];
   for (const seg of raw) {
     if (seg.length <= MAX_SEG_LEN) { expanded.push(seg); continue; }
-    const subs = seg.split(/(?<=[。！？!?，,])/).map(s => s.trim()).filter(Boolean);
+    const subs = seg.split(/(?<=[。！？!?])/).map(s => s.trim()).filter(Boolean);
     if (subs.length > 1) {
       // 累计拼回去，每个 sub 不超过 MAX
       let cur = '';
@@ -168,13 +183,20 @@ function splitReplySegments(reply) {
       }
       if (cur) expanded.push(cur);
     } else {
-      // 没分隔符的长段，硬切
-      for (let i = 0; i < seg.length; i += MAX_SEG_LEN) {
-        expanded.push(seg.slice(i, i + MAX_SEG_LEN));
-      }
+      // v1.10.13: 没分隔符的长段，宁愿整段发也不腰斩 —— 用户看一条长消息
+      // 比看「怎么一点都不」「听话」这种诡异腰斩好得多。
+      expanded.push(seg);
     }
   }
   raw = expanded;
+
+  // v1.10.13: 兜底合并 — 末段 < 3 字时合并到上一段，避免「听话」式 hard-slice 残尾。
+  // 阈值刻意保守，让 AI 主动用 || 分的「好的」「明白了」这种短确认段能保留。
+  while (raw.length >= 2 && raw[raw.length - 1].length < 3) {
+    const tail = raw.pop();
+    raw[raw.length - 1] = `${raw[raw.length - 1]}${tail}`;
+  }
+
   if (raw.length > MAX_SEGMENTS) {
     return [...raw.slice(0, MAX_SEGMENTS - 1), raw.slice(MAX_SEGMENTS - 1).join('')];
   }
