@@ -30,8 +30,13 @@ function loadManifest() {
   try {
     const raw = JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8'));
     const list = Array.isArray(raw.stickers) ? raw.stickers : [];
+    let disabledCount = 0;
     const filtered = list.filter(s => {
       if (!s?.file) return false;
+      // v1.10.25: 支持 disabled:true 跳过不合人设的 sticker（如儿童形象 BQB
+      // 被 16 岁高中生人设 [STICKER:shy] 选中显然别扭）。manifest 里给整组
+      // 加 "disabled": true 即可全跳。
+      if (s.disabled === true) { disabledCount++; return false; }
       const full = path.join(STICKERS_DIR, s.file);
       const ok = existsSync(full);
       if (!ok) log('warn', `[Stickers] missing file: ${s.file}`);
@@ -48,7 +53,7 @@ function loadManifest() {
         byTag.get(tag).push(s);
       }
     }
-    log('info', `[Stickers] loaded count=${filtered.length} tags=${byTag.size}`);
+    log('info', `[Stickers] loaded count=${filtered.length} tags=${byTag.size} disabled=${disabledCount}`);
     return { stickers: filtered, byTag };
   } catch (err) {
     log('warn', `[Stickers] manifest 解析失败: ${err.message}`);
