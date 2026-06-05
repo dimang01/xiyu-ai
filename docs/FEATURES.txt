@@ -353,6 +353,34 @@ ai_usage_daily            AI 用量统计
 #29  v1.3.4  全面去 Pro/Free 分级
 #28  v1.4.0  Sprint plan 文档
 
-最新已发布 release tag：v1.3.4
-v1.4.0 / v1.4.1 代码已合并 main 但**没打 tag、没发 release**（package.json
-还停在 1.3.4）—— 下次发版应该统一升到 1.4.1 + tag + release。
+最新已发布 release tag：v1.10.10（截至 2026-06-05）
+
+
+════════════════════════════════════════════════════════════════════════
+  v1.10.x · 睡眠系统 + 体验打磨
+  （本文件上半部分是 v1.4 时期快照；以下为 v1.10 系列增量，
+   完整细节见 README 版本历史 + GitHub Releases）
+════════════════════════════════════════════════════════════════════════
+
+【睡眠 / 作息系统】src/sleep.mjs + companion_sleep_schedule / companion_missed_messages
+  · 默认 00:30 睡 / 07:30 起，每天不对称抖动（睡 -15/+45、起 ±10 分钟）
+  · 睡眠时段 微信(bot.mjs) + 网页(playground.mjs) 都静默拦截，消息入 missed 队列
+  · 睡前发"我睡了"晚安 → 挽留窗口（用户"再陪陪我"延后 20min）→ sleep tick 在 bed_at 真入睡
+  · 起床 proactive morning：早安 + "昨晚睡着了"未读摘要补回
+  · 📞 打电话叫醒她（dashboard，脉冲发光）：立刻 exitSleep + 起床气，AI 发被吵醒短消息
+  · dashboard iOS 风格圆形拨盘（拖 🌙☀️ 双把手 + 睡眠时长，松手自动保存）
+  · 前 7 天观察用户作息 → 第 8 天中位数固化（可手动设/关闭）
+
+【安全 / 防刷】Cloudflare Turnstile
+  · 注册页(auth.html) + 找回密码页(forgot.html) 发邮箱验证码前先人机验证
+  · 后端 send-code 先 verifyTurnstile(token, remoteIp) → 官方 siteverify
+  · secret 仅 .env(TURNSTILE_SECRET)，site key 前端硬编码；未配置则跳过（dev 友好）
+
+【前端 / 视觉】
+  · 全站夜间模式：theme.js（auto 跟随系统 / 手动 🌓→☀️→🌙）+ glass.css dark 覆盖加固
+  · 登录页/落地页插图：OpenRouter gpt-image 生成的二次元美少女（无水印，?v 缓存刷新）
+
+【主动消息修复】proactive.mjs
+  · 修 v2 拒发吞配额（item.sent 时序）、sleep 集成 3 个回归（morning 误判/晚睡晚安/跨午夜）
+
+【Provider】.env 接好 MiniMax / Tavily / 千问 即用（chat/tts/asr/vision/search/embedding）

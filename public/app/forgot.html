@@ -46,6 +46,18 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .auth-card { backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); }
   </style>
+  <!-- v1.10.10: Cloudflare Turnstile（找回密码发码同样需要人机验证） -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <script>
+    window.__xiyuTurnstileToken = null;
+    function onTurnstileSuccess(token) {
+      window.__xiyuTurnstileToken = token || null;
+      var hint = document.getElementById('turnstile-hint');
+      if (hint) hint.classList.add('hidden');
+    }
+    function onTurnstileError()   { window.__xiyuTurnstileToken = null; }
+    function onTurnstileExpired() { window.__xiyuTurnstileToken = null; }
+  </script>
   <script src="/app/theme.js" defer></script>
 </head>
 
@@ -118,6 +130,14 @@
                 <span class="sm:hidden">发送</span>
               </button>
             </div>
+            <!-- v1.10.10: Turnstile 人机验证 -->
+            <div class="cf-turnstile mt-3"
+                 data-sitekey="0x4AAAAAADel_tofOpGBNdg4"
+                 data-theme="light" data-size="flexible"
+                 data-callback="onTurnstileSuccess"
+                 data-error-callback="onTurnstileError"
+                 data-expired-callback="onTurnstileExpired"></div>
+            <p id="turnstile-hint" class="hidden mt-1 text-[12px] text-red-500 font-medium">请先完成人机验证</p>
           </div>
 
           <div>
@@ -207,12 +227,23 @@
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return showMsg('请先填写正确的邮箱地址', 'error');
       }
+      // v1.10.10: Turnstile 前置（后端 send-code 配了 secret 后会校验所有发码请求）
+      const tsToken = window.__xiyuTurnstileToken;
+      if (!tsToken) {
+        const hint = document.getElementById('turnstile-hint');
+        if (hint) hint.classList.remove('hidden');
+        return showMsg('请先完成下方人机验证', 'error');
+      }
+
       btnSendCode.disabled = true;
       const originalLabel = btnSendCode.innerHTML;
       btnSendCode.textContent = '发送中...';
 
-      const { ok, data } = await apiPost('/api/auth/send-code', { email, purpose: 'reset_password' });
+      const { ok, data } = await apiPost('/api/auth/send-code', { email, purpose: 'reset_password', turnstile_token: tsToken });
       if (!ok) {
+        // 失败重置人机验证，下次重试需重验
+        window.__xiyuTurnstileToken = null;
+        try { if (window.turnstile) window.turnstile.reset(); } catch {}
         showMsg(data.message || '发送失败，请稍后再试', 'error');
         btnSendCode.disabled = false;
         btnSendCode.innerHTML = originalLabel;
