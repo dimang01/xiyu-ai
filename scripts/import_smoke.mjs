@@ -31,6 +31,8 @@ const MODULES = [
   'src/proactive_engine.mjs',
   'src/plan_tasks.mjs',
   'src/playground.mjs',
+  'src/voice_inbound.mjs',
+  'src/voice_emotion.mjs',
   'src/bot.mjs',
   'src/api.mjs',
 ];

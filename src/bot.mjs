@@ -11,6 +11,8 @@
 
 import { parseMessage, sendTextMessage, sendTyping, sendMessageItem, rememberContextToken } from './ilink.mjs';
 import { generateReply, recognizeImage, recognizeVoice, embedText } from './ai.mjs';
+import { downloadInboundVoiceToMp3 } from './voice_inbound.mjs';
+import { analyzeVoiceWithQwen } from './voice_emotion.mjs';
 import { dedupSegments } from './text_similarity.mjs';
 import {
   saveMessage, getRecentHistory, getUserProfile, recallMemories, recallMemoriesSemantic,
@@ -345,18 +347,34 @@ export async function handleMessage(rawMsg, botContext = {}) {
       }
 
     } else if (msg.msgType === 'voice') {
-      // v1.10.16: iLink 服务端已对入站语音做 ASR，结果直接在 voiceItem.text。
-      // 不再走「下载 + 自己 ASR」 — 旧代码假设 cdn_url 是裸 URL，从来没匹配过、一直落 fallback。
-      // 若 text 字段缺失（极短语音/服务端 ASR 失败），用 media.full_url + aes_key 自己下载解密兜底。
-      const transcribed = (msg.voiceItem?.text || '').trim();
-      const playtimeMs = Number(msg.voiceItem?.playtime || 0);
-      if (transcribed) {
-        userText = `[用户发了一段 ${Math.round(playtimeMs / 1000) || '?'} 秒语音，内容：${transcribed}]`;
-        log('info', `[Bot] 入站语音 text=${transcribed.slice(0, 80)}`);
+      // v1.10.17：默认走 download + AES 解密 + silk decode + qwen-audio 情绪识别，
+      // 任一步失败自动 fallback 到 iLink 服务端给的 voiceItem.text（纯转写，无情绪）。
+      const fallbackTranscript = (msg.voiceItem?.text || '').trim();
+      const playtimeSec = Math.round((Number(msg.voiceItem?.playtime) || 0) / 1000);
+      let voiceMeta = null;
+      try {
+        const t0 = Date.now();
+        const { mp3, mp3Bytes, cipherBytes } = await downloadInboundVoiceToMp3(msg.voiceItem);
+        log('debug', `[Bot] 入站语音 download+decrypt+decode ok cipher=${cipherBytes} mp3=${mp3Bytes} ${Date.now() - t0}ms`);
+        voiceMeta = await analyzeVoiceWithQwen(mp3);
+        log('info', `[Bot] 入站语音 qwen-audio ok tone="${voiceMeta.tone}" emotion="${voiceMeta.emotion}" energy="${voiceMeta.energy}" transcript="${voiceMeta.transcript.slice(0, 40)}" ${Date.now() - t0}ms`);
+      } catch (e) {
+        log('warn', `[Bot] 入站语音情绪识别失败，降级 voiceItem.text: ${e.message}`);
+      }
+
+      if (voiceMeta && voiceMeta.transcript) {
+        const meta = [];
+        if (voiceMeta.emotion) meta.push(`情绪：${voiceMeta.emotion}`);
+        if (voiceMeta.tone) meta.push(`语气：${voiceMeta.tone}`);
+        if (voiceMeta.energy) meta.push(`声音强度：${voiceMeta.energy}`);
+        const metaStr = meta.length ? `（${meta.join('，')}）` : '';
+        userText = `[用户发了一段 ${playtimeSec || '?'} 秒语音${metaStr}，内容：${voiceMeta.transcript}]`;
+      } else if (fallbackTranscript) {
+        userText = `[用户发了一段 ${playtimeSec || '?'} 秒语音，内容：${fallbackTranscript}]`;
+        log('info', `[Bot] 入站语音 fallback text=${fallbackTranscript.slice(0, 80)}`);
       } else {
-        // 服务端没给转写 —— 大多是没人声的极短录音；告诉 AI 实情，避免她编"听到了"。
-        log('warn', `[Bot] 入站语音缺 text 字段 voiceItem keys=${Object.keys(msg.voiceItem || {}).join(',')}`);
-        userText = '[系统提示：用户发了一段语音，但服务端转写为空（可能没说话或杂音）；请用自然口吻问用户说了什么]';
+        log('warn', `[Bot] 入站语音两条路径都没拿到内容 voiceItem keys=${Object.keys(msg.voiceItem || {}).join(',')}`);
+        userText = '[系统提示：用户发了一段语音，但内容为空或无法识别；请用自然口吻问用户说了什么]';
       }
 
     } else {
