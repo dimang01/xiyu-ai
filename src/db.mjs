@@ -1971,7 +1971,7 @@ function getActiveBindingByWechat(db, wechatUserId, botId) {
   `).get(wechatUserId, botId);
 }
 
-function findCurrentCompanionForAccount(db, accountId, botId) {
+export function findCurrentCompanionForAccount(db, accountId, botId) {
   // v1.9.6 安全修复：绑定流程"找回当前 companion"时，去掉
   // `wa_by_user.wechat_user_id = u.wechat_user_id` 隐式匹配 —— 该匹配让
   // "account A 曾绑过 B 的微信号" 在重新绑定时关联到 B 的 companion（越权）。
@@ -1998,7 +1998,7 @@ function findCurrentCompanionForAccount(db, accountId, botId) {
   `).get(accountId, accountId, botId);
 }
 
-function ensureCompanionBot(db, companionId, botId) {
+export function ensureCompanionBot(db, companionId, botId) {
   if (!companionId || !botId) return;
   db.prepare(`
     UPDATE companions

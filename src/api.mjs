@@ -161,6 +161,7 @@ import {
   getAccountUsageSummary, getAccountUsageHistory, getGlobalUsageToday,
   bindWechatAccount, rebindWechatAccount, getWechatAccountByAccountId, getCompanionByAccountId,
   createPendingBindSession, getPendingBindSession,
+  findCurrentCompanionForAccount, ensureCompanionBot,
   deleteCompanionForAccount,
   getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, touchMemory,
   isCompanionOwnedByAccount,
@@ -1468,20 +1469,12 @@ function consumeQrcodeBindSession({ sessionId, accountId, wechatUserId, botId, b
     `).get(sessionId, accountId);
     if (!session) throw new Error('pending bind session not found');
 
-    // 停用该账号下旧的绑定
-    db.prepare(`
-      UPDATE wechat_accounts
-      SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-      WHERE account_id = ? AND is_active = 1
-    `).run(accountId);
-
-    // 取/创 companion
-    const existingCompanion = db.prepare(`
-      SELECT c.id FROM companions c
-      JOIN users u ON u.id = c.user_id
-      WHERE u.wechat_user_id = ? AND c.bot_id = ?
-      LIMIT 1
-    `).get(wechatUserId, botId);
+    // v1.10.11 fix: 用 accountId 找当前 companion（对齐 rebindWechatAccount / consumePendingBindSessionForWechat）。
+    // 旧实现按 (wechatUserId, botId) 反查 existingCompanion — 但每次扫码 iLink 都会
+    // 分到新 bot，老 companion 的 bot_id 还是旧的 → 查不到 → wa.companion_id 写 NULL，
+    // companion 与活跃 bot 脱钩，proactive SQL JOIN 不上，主动消息永久静默。
+    const currentCompanion = findCurrentCompanionForAccount(db, accountId, botId);
+    const companionId = currentCompanion?.id ?? null;
 
     // 同步 users 表
     db.prepare(`
@@ -1490,12 +1483,22 @@ function consumeQrcodeBindSession({ sessionId, accountId, wechatUserId, botId, b
       ON CONFLICT(wechat_user_id) DO UPDATE SET last_active = CURRENT_TIMESTAMP
     `).run(wechatUserId);
 
+    // 把当前 companion 的 bot_id 同步到新 bot（防御性兜底，避免孤儿化）
+    ensureCompanionBot(db, companionId, botId);
+
+    // 停用该账号下旧的绑定
+    db.prepare(`
+      UPDATE wechat_accounts
+      SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+      WHERE account_id = ? AND is_active = 1
+    `).run(accountId);
+
     // 创建新绑定记录
     db.prepare(`
       INSERT INTO wechat_accounts
         (account_id, user_id, wechat_user_id, bot_id, bot_token, companion_id, login_session_id, is_active, bound_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).run(accountId, accountId, wechatUserId, botId, botToken, existingCompanion?.id ?? null, sessionId);
+    `).run(accountId, accountId, wechatUserId, botId, botToken, companionId, sessionId);
 
     // 标记 pending session 成功
     db.prepare(`
@@ -1505,10 +1508,10 @@ function consumeQrcodeBindSession({ sessionId, accountId, wechatUserId, botId, b
           companion_id = ?,
           consumed_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(wechatUserId, existingCompanion?.id ?? null, sessionId);
+    `).run(wechatUserId, companionId, sessionId);
 
     return {
-      companionId: existingCompanion?.id ?? null,
+      companionId,
       binding: db.prepare('SELECT * FROM wechat_accounts WHERE account_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1').get(accountId),
     };
   });
