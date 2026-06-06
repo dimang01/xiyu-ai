@@ -139,12 +139,11 @@ async function openaiGenerate(prompt, size) {
 // ─── OpenRouter 聚合（图像生成走 chat completions + modalities） ──────────
 // OpenRouter 不暴露原生 /v1/images/generations，要靠图像能力的 chat 模型
 // 配合 modalities: ['image', 'text']，响应里 message.images[].image_url.url 是结果。
-// 默认 model openai/gpt-image-1（GPT-Image-1，ChatGPT 最新生图）；可换 google/gemini-2.5-flash-image 等。
-async function openrouterGenerate(prompt, size) {
+// 默认 model openai/gpt-5.4-image-2（ChatGPT 最新生图）；可换 google/gemini-2.5-flash-image 等。
+// v1.10.31 fallback chain：主 model → IMAGE_MODEL_FALLBACK_1 → IMAGE_MODEL_FALLBACK_2 / 内置默认
+async function openrouterCall(prompt, size, model) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('OPENROUTER_API_KEY 未配置');
-  const model = process.env.IMAGE_MODEL || 'openai/gpt-image-1';
-  // OpenRouter 不直接吃 size 参数，拼到 prompt 末尾让模型尽量遵守
   const sizedPrompt = size ? `${prompt}\n\n[尺寸要求: ${size}]` : prompt;
 
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -182,6 +181,26 @@ async function openrouterGenerate(prompt, size) {
   if (b64) return b64[0];
 
   throw new Error(`OpenRouter 响应无图像: ${JSON.stringify(data).slice(0, 300)}`);
+}
+
+async function openrouterGenerate(prompt, size) {
+  const chain = [
+    process.env.IMAGE_MODEL || 'openai/gpt-5.4-image-2',
+    process.env.IMAGE_MODEL_FALLBACK_1 || 'openai/gpt-5-image-mini',
+    process.env.IMAGE_MODEL_FALLBACK_2 || 'google/gemini-2.5-flash-image',
+  ].filter((m, i, arr) => m && arr.indexOf(m) === i);  // 去重
+  let lastErr = null;
+  for (const m of chain) {
+    try {
+      const url = await openrouterCall(prompt, size, m);
+      if (chain.indexOf(m) > 0) log('warn', `[image] openrouter fallback 命中 model=${m}`);
+      return url;
+    } catch (e) {
+      lastErr = e;
+      log('warn', `[image] openrouter model=${m} 失败: ${e.message.slice(0, 120)}`);
+    }
+  }
+  throw new Error(`OpenRouter 全链失败 (${chain.length} 个 model): ${lastErr?.message || 'unknown'}`);
 }
 
 const REGISTRY = {
