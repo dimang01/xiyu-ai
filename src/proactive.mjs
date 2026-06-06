@@ -358,7 +358,14 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
   const target = Number.isFinite(rawTarget) ? Math.min(30, Math.max(0, Math.floor(rawTarget))) : 10;
   const lo = Math.max(0, Math.floor(target * 0.8));
   const hi = Math.max(lo, Math.ceil(target * 1.2));
-  const fullCount = target === 0 ? 0 : lo + Math.floor(Math.random() * (hi - lo + 1));
+  // v1.12.0「她也有自己的日子」：约 1/5 的日子她忙自己的生活、主动消息明显变少，
+  // 让她的出现有起伏——来的那天才更像"真的想起了你"，而不是闹钟到点。
+  // 按 (companionId + dateKey) 稳定取值，同一天重启不变。
+  let _h = 2166136261; const _s = `${companionId}|${dateKey}|busy`;
+  for (let i = 0; i < _s.length; i++) { _h ^= _s.charCodeAt(i); _h = Math.imul(_h, 16777619); }
+  const busyFactor = (((_h >>> 0) % 1000) / 1000) < 0.2 ? 0.35 : 1.0;
+  const baseCount = target === 0 ? 0 : lo + Math.floor(Math.random() * (hi - lo + 1));
+  const fullCount = Math.round(baseCount * busyFactor);
 
   // 关键修复：重启后只从「现在 → 结束」区间挑随机时间，否则前半天的时间点全被标 sent 浪费配额
   // 等比例缩放：若已过去 60%，则今天剩余配额按 40% × fullCount 来挑
@@ -425,13 +432,32 @@ function isWeekend(date) {
   return parts.weekday === 'Sat' || parts.weekday === 'Sun';
 }
 
+// v1.12.0「在空隙给温柔」：真人会在一天的"空隙"里看手机/想起人——刚醒、饭点、
+// 午后犯困、傍晚、睡前。主动消息锚到这些窗口，而不是全天均匀乱撒。(分钟 of day)
+const GAP_WINDOWS = [
+  [7 * 60, 9 * 60],            // 早上刚醒
+  [11 * 60 + 30, 13 * 60 + 30], // 午饭 / 午休
+  [15 * 60, 16 * 60 + 30],      // 午后犯困的空当
+  [18 * 60, 19 * 60 + 30],      // 傍晚下班 / 晚饭
+  [20 * 60 + 30, 22 * 60 + 30], // 晚上窝着
+  [22 * 60 + 30, 23 * 60 + 30], // 睡前
+];
+function gapWeightedMinute(start, end) {
+  const usable = GAP_WINDOWS
+    .map(([a, b]) => [Math.max(a, start), Math.min(b, end)])
+    .filter(([a, b]) => a <= b);
+  if (usable.length === 0) return start + Math.floor(Math.random() * (end - start + 1));
+  const [a, b] = usable[Math.floor(Math.random() * usable.length)];
+  return a + Math.floor(Math.random() * (b - a + 1));
+}
+
 function pickRandomMinutes(count, start, end, minGap) {
   if (count <= 0) return [];
 
   for (let attempt = 0; attempt < 2000; attempt++) {
     const minutes = [];
     for (let i = 0; i < count; i++) {
-      minutes.push(start + Math.floor(Math.random() * (end - start + 1)));
+      minutes.push(gapWeightedMinute(start, end));   // v1.12.0: 锚到生活空隙，不再全天均匀
     }
     minutes.sort((a, b) => a - b);
     if (hasMinGap(minutes, minGap)) return minutes;
