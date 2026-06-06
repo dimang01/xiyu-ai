@@ -368,6 +368,31 @@ function compactAppearance(c) {
   return parts.join(', ') || 'unknown';
 }
 
+// v1.10.34: 当前情绪 → 英文表情/氛围词，让生图模型给出贴合情绪的表情
+function moodToFacialCue(mood) {
+  const m = String(mood || '').toLowerCase();
+  if (/开心|happy|joy|excited|兴奋/.test(m)) return 'bright warm smile, soft cheerful eyes, fresh lively expression';
+  if (/害羞|shy|bashful|羞涩/.test(m)) return 'soft shy smile, slightly looking away, faint blush, gentle eyes';
+  if (/温柔|gentle|calm|平静/.test(m)) return 'soft warm gentle smile, peaceful eyes, calm relaxed expression';
+  if (/疲惫|tired|累/.test(m)) return 'subtle tired warm smile, slightly sleepy soft eyes, still gentle and pretty';
+  if (/思念|想念|miss|melancholy/.test(m)) return 'soft thoughtful gentle expression, distant warm eyes, faint smile, still beautiful';
+  if (/sad|难过|低落/.test(m)) return 'subtle melancholy but soft expression, gentle warm eyes, faint pensive smile';
+  if (/撒娇|pout|coy/.test(m)) return 'playful pouty smile, big bright eyes, slightly tilted head, very cute';
+  if (/恼|生气|angry/.test(m)) return 'mild pouty annoyed expression but still soft and cute, no harsh face';
+  return 'soft warm natural smile, gentle bright eyes, fresh young expression';
+}
+
+// v1.10.34: clothing_style → 英文具体着装关键词
+function clothingStyleToEnglish(style) {
+  const s = String(style || '').toLowerCase();
+  if (/甜美|sweet|cute|可爱/.test(s)) return 'cute casual outfit, light pastel hoodie or knit cardigan, fresh and youthful';
+  if (/清新|elegant|fresh/.test(s)) return 'fresh clean casual outfit, light blouse or simple tee, natural minimalist';
+  if (/酷|cool|street/.test(s)) return 'cool casual streetwear, oversized hoodie or graphic tee, effortless cool';
+  if (/性感|sexy|mature/.test(s)) return 'soft elegant casual outfit, simple tasteful, not revealing';
+  if (/学院|preppy|学生/.test(s)) return 'preppy youthful casual outfit, light cardigan or hoodie, fresh and clean';
+  return 'casual cute youthful outfit, light comfortable home or daily wear';
+}
+
 function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proactiveContext, gate, emotionContext, visualContext }) {
   const recent = (recentMessages || [])
     .slice(-8)
@@ -375,12 +400,16 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
     .filter(Boolean)
     .join('\n');
 
-  // v1.10.21: 时间感 + 完整人设外观
+  // v1.10.21/34: 时间感 + 完整人设外观 + 美学层
   const now = new Date();
   const h = (now.getUTCHours() + 8) % 24;
   const mm = String(now.getUTCMinutes()).padStart(2, '0');
   const dp = dayPartHint(h);
   const appearance = compactAppearance(companion);
+  const facialCue = moodToFacialCue(companion?.current_mood);
+  const clothingEn = clothingStyleToEnglish(companion?.clothing_style);
+  // selfie vs candid：用户主动要照片 (request) 或主动 selfie 类 trigger → 自拍角度
+  const isSelfie = trigger === 'user_request' || trigger === 'request' || trigger === 'selfie' || /自拍|看看你|看一下你|你的样子/.test(userText || '');
 
   return `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
@@ -391,8 +420,11 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - plausible scenes for this hour: ${dp.scenes}
 
 - trigger: ${trigger}
+- shot mode: ${isSelfie ? 'SELFIE (smartphone front camera, arm partially visible, slight upward angle)' : 'CANDID (someone else might take it, or set on table)'}
 - companion name: ${safeText(companion?.name || '她', 40)}
 - companion appearance: ${appearance}
+- companion clothing in english: ${clothingEn}
+- companion current mood / facial cue (英文): ${facialCue}
 - relationship stage: ${safeText(companion?.relationship_stage || '', 40)}
 - current scene: ${safeText(companion?.current_scene || '', 80)}
 - user text: ${safeText(userText || '', 160)}
@@ -407,14 +439,19 @@ ${recent || '(none)'}
 1. 你只判断是否应发一张现实生活感图片，不要每次暗示都发。
 2. 明确要求看你/发照片时可更倾向发送，但仍要自然。
 3. 主动照片必须低频，像临时想分享当下。
-4. imagePrompt 必须是英文，像现实世界手机随手拍：realistic casual phone snapshot, natural lighting, everyday environment, slightly imperfect framing。
-5. imagePrompt 必须明确写出当前 day part 对应的 lighting hint（参考上面 lighting hint 字段），并从 plausible scenes for this hour 选取场景。**深夜（late_night/night）禁止 cafe / coffee shop / 奶茶店 / 商场 / outdoor bright daylight 等白天商业场所**；早晨禁止 dark bedroom；其它时段同理保持时间一致。
-6. imagePrompt 必须暗含主角的核心外貌特征（参考 companion appearance：发色、发型、身材、风格），用模糊年龄措辞如 "young adult casual student look"。**严禁出现具体年龄数字、严禁出现 minor / teen / underage / child / kid / schoolgirl 等触发生图安全过滤的词**。
-7. imagePrompt 不要像海报、写真、广告、头像、插画、二次元或工作室照；不要包含隐私、token、手机号、精确地址。
-8. imagePrompt 不允许出现 anime, illustration, poster, app icon, glamour shoot, NSFW, nude, sexual, minor, celebrity, teen, underage, child, kid, schoolgirl。
-9. hidden emotion photo context 只能作为隐藏氛围参考，不能在 caption 或 imagePrompt 中提到情绪状态、情绪分数、维度、系统判断，也不能把任何分数或 JSON 写进 imagePrompt。
-10. visual identity context 只用于判断是否保持同一人物形象，不要把 reference 路径、身份 JSON 或内部说明写进用户可见内容。
-11. caption 是发给用户看的微信短句，10 到 35 字，不解释系统逻辑，不说作为 AI，不说生成图片，不说当前情绪状态，不输出 [PHOTO]。**caption 内容必须与 day part 一致**：深夜不要说"路过/出门/咖啡店"等白天动作；夜晚多用"躺床上 / 灯关了一半 / 突然想你"等贴近时间的描述。
+★★★ imagePrompt 美学强约束（v1.10.34）★★★
+4. imagePrompt 必须是英文。**主角必须是 naturally pretty young woman, fresh and photogenic, gentle delicate facial features, soft warm smile, clear soft skin, well-groomed natural beauty**（不要 plain / haggard / exhausted / tired）。
+5. imagePrompt 必须显式包含上面 "companion current mood / facial cue" 给的英文表情描述（如 "bright warm smile, soft cheerful eyes"），不允许 expressionless 或 sad-looking。
+6. imagePrompt 必须显式包含上面 "companion clothing in english" 的英文着装关键词。**禁止 navy office sweater / formal collar shirt / professional attire**。
+7. **如果 shot mode 是 SELFIE**：imagePrompt 必须写 "smartphone selfie POV, front-facing camera, arm partially visible at edge of frame, slight upward angle, casual home setting"，不要中距离肖像。**如果是 CANDID**：写 "candid phone snapshot, slightly imperfect framing, natural everyday moment"。
+8. imagePrompt 必须写当前 day part 对应的 lighting hint 并选 plausible scenes 范围内的场景。**深夜禁 cafe / 奶茶店 / outdoor daylight**；清晨禁 dark bedroom。
+9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft round face, small delicate chin, slim youthful build" 如果人设没特别指定。用模糊年龄措辞 "fresh young face, college freshman vibe, late teens to early twenties look"。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl** 等触发安全过滤的词。
+10. imagePrompt **必须显式排除**（用 "no ..." 或 negative 句式）：no professional studio portrait, no 35mm cinematic, no dramatic shadow, no harsh contrast, no glamour shoot, no oily skin, no plain or haggard face, no tired exhausted expression, no unkempt hair, no navy office sweater, no formal collar shirt, no anime, no illustration, no poster, no app icon, no NSFW, no nude, no sexual, no celebrity, no minor, no teen, no underage, no child, no kid, no schoolgirl。
+11. imagePrompt 不要包含隐私、token、手机号、精确地址。
+12. hidden emotion / visual identity context 只作为隐藏参考，不要把内部 JSON 字段或分数写进 imagePrompt 或 caption。
+
+caption：
+13. caption 是发给用户看的微信短句，10 到 35 字，不解释系统逻辑，不说作为 AI，不说生成图片，不说当前情绪状态，不输出 [PHOTO]。caption 内容必须与 day part 一致（深夜不要说"路过咖啡店"等白天动作；夜晚多用"躺床上 / 灯关了一半 / 突然想你"等贴近时间的描述）。
 
 返回 JSON 结构：
 {
