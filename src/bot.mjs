@@ -19,13 +19,13 @@ import {
   getConversationContext, saveConversationTurn,
   getActiveWechatBinding, getCompanionById, consumePendingBindSessionForWechat,
   isAccountBanned, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
-  markUserConfessed, patchCompanion,
+  markUserConfessed, markCompanionConfessed, patchCompanion,
   getCompanionPreferencesForPrompt,
   recordSafetyEvent,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
-import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectIntimacyOvereach } from './memory.mjs';
+import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach } from './memory.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
@@ -836,6 +836,18 @@ async function sendStickerAndRecord(ctx, toUser, picked, contextToken) {
  * 3. 异步用户画像更新（调用 AI）
  */
 async function postProcess(companion, userMsg, botReply) {
+  // v1.10.32: 检测 AI 是否在日常对话里"突然表白" — proactive confession kind 之外的
+  // 自然路径。命中即 markCompanionConfessed，让后续 syncUpdateCompanionState 的
+  // hasConfession gate（v1.10.24）能放行升"恋人"。
+  // 顺序：必须在 syncUpdateCompanionState 之前，否则那一步看不到刚写的 confessed_at。
+  try {
+    if (!companion.confessed_at && detectCompanionConfession(botReply)) {
+      markCompanionConfessed(companion.id);
+      companion.confessed_at = new Date().toISOString();  // 让本轮 sync 看到
+      log('info', `[Bot] ★ AI 在日常对话中表白 companion=${companion.id}`);
+    }
+  } catch (e) { log('warn', `[Bot] companion confession detect failed: ${e.message}`); }
+
   // 同步：好感度 + 心情更新（规则驱动，不调 AI）
   const changed = syncUpdateCompanionState(companion, userMsg, botReply);
 
