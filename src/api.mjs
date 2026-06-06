@@ -2896,7 +2896,11 @@ router.post('/companions/:id/sleep/reset-learn', requireAuth, async (req, res) =
 
 // v1.10.43: 一次生成 4 张候选自拍 — 让用户挑最满意的一张锁为 reference，
 // 避免第一张丑图永久指挥后续生图。
-router.post('/companions/:id/visual-identity/generate-candidates', requireAuth, async (req, res) => {
+// v1.10.45: 限流 5 次/小时（每次 4 个并发 openrouter image gen，必须防刷）
+router.post('/companions/:id/visual-identity/generate-candidates',
+  rateLimit({ scope: 'identity-candidates', maxPerWindow: 5, windowMs: 60 * 60 * 1000, message: '形象重生请求过于频繁，请 1 小时后再试' }),
+  requireAuth,
+  async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
   const c = requireOwnedCompanion(req, res, id); if (!c) return;
   try {
@@ -2915,7 +2919,11 @@ router.post('/companions/:id/visual-identity/generate-candidates', requireAuth, 
 });
 
 // v1.10.43: 用户选定一张 → 重置旧 identity + 把这张写为 ref_001.png
-router.post('/companions/:id/visual-identity/lock', requireAuth, async (req, res) => {
+// v1.10.45: 限流 20 次/小时（lock 本身便宜但仍防刷）
+router.post('/companions/:id/visual-identity/lock',
+  rateLimit({ scope: 'identity-lock', maxPerWindow: 20, windowMs: 60 * 60 * 1000, message: '锁定请求过于频繁，请稍后再试' }),
+  requireAuth,
+  async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
   const c = requireOwnedCompanion(req, res, id); if (!c) return;
   const url = String(req.body?.url || '').trim();
