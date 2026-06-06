@@ -159,7 +159,7 @@ async function openrouterCall(prompt, size, model) {
       messages: [{ role: 'user', content: sizedPrompt }],
       modalities: ['image', 'text'],
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
   const data = await resp.json();
