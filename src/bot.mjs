@@ -34,7 +34,7 @@ import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel } from './emotion_state.mjs';
-import { detectPhotoIntent, hasUnsafePhotoContent } from './photo_intent.mjs';
+import { detectPhotoIntent, detectPhotoIntentSmart, hasUnsafePhotoContent } from './photo_intent.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
@@ -384,7 +384,9 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
     if (!userText) return;
 
-    const photoIntent = detectPhotoIntent(userText);
+    // v1.10.38: regex fast path + LLM 兜底。regex 命中 strong → 直接 strong；
+    // 不命中 → LLM 二分类（轻量短 token）兜底，终结 regex 漏识别循环。
+    const photoIntent = await detectPhotoIntentSmart(userText, getRecentHistory(msg.fromUser, botId, 6));
     if (photoIntent.type === 'weak_photo_context') {
       log('debug', `[Bot] weak photo context companion=${companion.id} reason=${photoIntent.reason}`);
     }
