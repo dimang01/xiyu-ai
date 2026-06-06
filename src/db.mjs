@@ -830,6 +830,10 @@ function migrateDailyScheduleV2() {
 function migrateConfessionFields() {
   addColIfMissing('companions', 'confessed_at', 'DATETIME');
   addColIfMissing('companions', 'user_confessed_at', 'DATETIME');
+  // v1.x 关系节奏：每日好感上限 + 升恋人时间（深爱时间门槛用）
+  addColIfMissing('companions', 'affection_day', 'TEXT');
+  addColIfMissing('companions', 'affection_today', 'INTEGER DEFAULT 0');
+  addColIfMissing('companions', 'became_lover_at', 'DATETIME');
   addColIfMissing('companions', 'last_photo_at', 'DATETIME');
   addColIfMissing('companions', 'last_photo_caption', 'TEXT');
 }
