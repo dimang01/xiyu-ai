@@ -19,6 +19,8 @@
 (function () {
   const KEY = 'xiyu_lang';
   const DICT = Object.assign({}, window.XIYU_I18N_BASE || {}, window.XIYU_I18N || {});
+  const TEXT_MAP = window.XIYU_I18N_TEXT || {};   // 「中文原文 → English」整页批量翻译（大页面用，免逐元素加 data-i18n）
+  const hasTextMap = Object.keys(TEXT_MAP).length > 0;
   const listeners = [];
 
   function getLang() {
@@ -58,6 +60,41 @@
     ['[data-i18n-aria]', 'data-i18n-aria', 'aria'],
   ];
 
+  // 「按中文原文整页翻译」——大页面用：提供 window.XIYU_I18N_TEXT={中文:'English'} 即可，
+  // 无需逐元素加 data-i18n。en 时把匹配的文本节点 / 常见属性换成英文，zh 时还原。
+  const SKIP_TAGS = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, NOSCRIPT: 1 };
+  function walkText(lang) {
+    if (!hasTextMap || !document.body) return;
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        const p = n.parentNode;
+        if (!p || SKIP_TAGS[p.nodeName]) return NodeFilter.FILTER_REJECT;
+        if (p.closest && p.closest('[data-i18n],[data-i18n-html],#xiyu-lang-toggle,#xiyu-theme-toggle,#xiyu-theme-bubble')) return NodeFilter.FILTER_REJECT;
+        return (n.nodeValue && n.nodeValue.trim()) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const nodes = [];
+    let n; while ((n = w.nextNode())) nodes.push(n);
+    nodes.forEach((node) => {
+      if (node._i18nOrig === undefined) node._i18nOrig = node.nodeValue;
+      const orig = node._i18nOrig, key = orig.trim();
+      node.nodeValue = (lang === 'en' && TEXT_MAP[key] != null) ? orig.replace(key, () => TEXT_MAP[key]) : orig;
+    });
+  }
+  function walkAttrs(lang) {
+    if (!hasTextMap) return;
+    document.querySelectorAll('[placeholder],[title],[aria-label]').forEach((el) => {
+      ['placeholder', 'title', 'aria-label'].forEach((a) => {
+        if (!el.hasAttribute(a)) return;
+        const sk = '_i18nAttr_' + a;
+        if (el[sk] === undefined) el[sk] = el.getAttribute(a);
+        const orig = el[sk]; if (orig == null) return;
+        const key = orig.trim();
+        el.setAttribute(a, (lang === 'en' && TEXT_MAP[key] != null) ? orig.replace(key, () => TEXT_MAP[key]) : orig);
+      });
+    });
+  }
+
   function apply(lang) {
     for (const [sel, attr, prop] of SPECS) {
       document.querySelectorAll(sel).forEach((el) => {
@@ -67,6 +104,8 @@
         setProp(el, prop, lang === 'en' ? (DICT[key] != null ? DICT[key] : zh) : zh);
       });
     }
+    walkText(lang);
+    walkAttrs(lang);
     document.documentElement.setAttribute('lang', lang === 'en' ? 'en' : 'zh-CN');
   }
 
