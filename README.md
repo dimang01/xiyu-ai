@@ -143,9 +143,9 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 `minimax` speech-02 · **`openai`** tts-1 / tts-1-hd · **`azure`** Speech（SSML）· **`doubao`** 火山引擎 · **`qwen`** CosyVoice / Qwen-TTS
 
-### Image（5 家）
+### Image（6 家）
 
-`zhipu` CogView-4 · `qwen` Wanx · `doubao` · `wenxin` · `openai` gpt-image-1 / DALL·E
+`zhipu` CogView-4 · `qwen` Wanx · `doubao` · `wenxin` · `openai` gpt-image-1 / DALL·E · `openrouter` 聚合（gpt-image / gemini-2.5-flash-image，**支持参考图 image-to-image**）
 
 ### Embedding（4 家）· Search（4 家）
 
@@ -266,7 +266,7 @@ systemctl restart zhaohy-wechat
 
 ```bash
 npm run doctor          # Node/SQLite/key/iLink/端口/服务健康，一键诊断
-npm run check:p0        # P0/P1 回归 126 项（v1.10.0 起含 proactive 防回归）
+npm run check:p0        # P0/P1 回归 125 项（v1.10.0 起含 proactive 防回归）
 npm run check:imports   # ESM 循环依赖 / 死 import 检查
 npm run check:field-drift  # daily_summary 字段名漂移
 npm run smoke           # release smoke 10 项
@@ -366,7 +366,7 @@ SINGLE_USER=true
 │   └── db.mjs               SQLite + 全部 migrateXxx() 注册点
 ├── public/app/              15 个前端页面（dashboard 1800+ 行，含 ⚙ 模型抽屉）
 ├── deploy/                  systemd + nginx 模板
-├── scripts/                 16 个：setup / doctor / check:p0 / backup / smoke / ...
+├── scripts/                 26 个：setup / doctor / check:p0 / backup / smoke / ...
 ├── docs/
 │   ├── FEATURES.txt         完整功能清单（最权威）
 │   ├── HANDOFF.md           新对话交接提示词

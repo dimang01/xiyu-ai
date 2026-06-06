@@ -214,6 +214,15 @@ function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabiliti
   return sanitizePhotoPrompt(prompt);
 }
 
+// v1.10.53: 由扩展名推 data URL 的 mime（ref 图 saveReferenceImage 保留原扩展名）
+function refMimeFromPath(p) {
+  const ext = String(p).toLowerCase().match(/\.(png|jpe?g|webp|gif)$/)?.[1];
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'image/png';
+}
+
 export async function sendCompanionPhoto({
   companion,
   user = null,
@@ -288,7 +297,19 @@ export async function sendCompanionPhoto({
     if (!finalPrompt) {
       return { ok: false, code: 'invalid_prompt', error: '照片 prompt 不合规', caption: finalCaption, activity: finalActivity };
     }
-    generated = { url: await generateImage(finalPrompt, { size: '1024x1024' }), prompt: finalPrompt };
+    // v1.10.53: image-to-image —— provider 支持参考图且有锁定/自动 ref 时，把 ref
+    // 图字节作为 input image 喂进生图，真正锚定同一张脸（不再只塞进文字 note）。
+    let referenceImage = null;
+    if (visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
+      try {
+        const refBuf = await readFile(visual.referenceImagePath);
+        referenceImage = `data:${refMimeFromPath(visual.referenceImagePath)};base64,${refBuf.toString('base64')}`;
+        log('debug', `[Photo] i2i 参考图已载入 companion=${companion.id} bytes=${refBuf.length}`);
+      } catch (e) {
+        log('warn', `[Photo] 读取参考图失败 companion=${companion.id}: ${e.message}`);
+      }
+    }
+    generated = { url: await generateImage(finalPrompt, { size: '1024x1024', referenceImage }), prompt: finalPrompt };
   } catch (e) {
     log('warn', `[Photo] 生成照片失败 companion=${companion.id}: ${e.message}`);
     return { ok: false, code: 'generate_failed', error: e.message, caption: finalCaption, activity: finalActivity };

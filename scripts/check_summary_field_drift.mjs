@@ -65,6 +65,8 @@ const KNOWN_LOCAL_NOISE = new Set([
   'mime', 'ondataavailable', 'onstop',
   // 其他常见局部
   'label', 'val', 'com', 'name', 'id', 'type', 'data',
+  // v1.10.53: 候选图循环变量 c（candidate），c.fname 是候选图文件名非 companion 字段
+  'fname',
 ]);
 
 // dashboard 真正"期待 companion 字段"的集合 = 全部读取 - 已知噪音

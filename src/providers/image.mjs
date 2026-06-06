@@ -141,22 +141,32 @@ async function openaiGenerate(prompt, size) {
 // 配合 modalities: ['image', 'text']，响应里 message.images[].image_url.url 是结果。
 // 默认 model openai/gpt-5.4-image-2（ChatGPT 最新生图）；可换 google/gemini-2.5-flash-image 等。
 // v1.10.31 fallback chain：主 model → IMAGE_MODEL_FALLBACK_1 → IMAGE_MODEL_FALLBACK_2 / 内置默认
-async function openrouterCall(prompt, size, model) {
+async function openrouterCall(prompt, size, model, refImage = null) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('OPENROUTER_API_KEY 未配置');
   const sizedPrompt = size ? `${prompt}\n\n[尺寸要求: ${size}]` : prompt;
+
+  // v1.10.53: image-to-image —— 有参考图时把它作为 input image 一起传，
+  // 让 gpt-image / gemini-2.5-flash-image 锚定同一张脸；否则走纯文生图。
+  const content = refImage
+    ? [
+        { type: 'text', text: sizedPrompt },
+        { type: 'image_url', image_url: { url: refImage } },
+      ]
+    : sizedPrompt;
 
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.OPENROUTER_REFERRER || 'https://xiyuai.cc',
+      // 开源默认用仓库地址；生产用 .env OPENROUTER_REFERRER 注入自有域名
+      'HTTP-Referer': process.env.OPENROUTER_REFERRER || 'https://github.com/dimang01/xiyu-ai',
       'X-Title': 'xiyu-ai',
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: 'user', content: sizedPrompt }],
+      messages: [{ role: 'user', content }],
       modalities: ['image', 'text'],
     }),
     signal: AbortSignal.timeout(60_000),
@@ -183,7 +193,7 @@ async function openrouterCall(prompt, size, model) {
   throw new Error(`OpenRouter 响应无图像: ${JSON.stringify(data).slice(0, 300)}`);
 }
 
-async function openrouterGenerate(prompt, size) {
+async function openrouterGenerate(prompt, size, refImage = null) {
   const chain = [
     process.env.IMAGE_MODEL || 'openai/gpt-5.4-image-2',
     process.env.IMAGE_MODEL_FALLBACK_1 || 'openai/gpt-5-image-mini',
@@ -192,7 +202,7 @@ async function openrouterGenerate(prompt, size) {
   let lastErr = null;
   for (const m of chain) {
     try {
-      const url = await openrouterCall(prompt, size, m);
+      const url = await openrouterCall(prompt, size, m, refImage);
       if (chain.indexOf(m) > 0) log('warn', `[image] openrouter fallback 命中 model=${m}`);
       return url;
     } catch (e) {
@@ -216,11 +226,12 @@ const REGISTRY = {
  * 统一生图接口。返回图片 URL（或 base64 data URL）。
  * v1.10.52: 所有 provider 输出后自动过 beautify 滤镜（可 IMAGE_BEAUTIFY_ENABLED=false 关）。
  */
-export async function imageGenerate(prompt, { size = '1024x1024' } = {}) {
+export async function imageGenerate(prompt, { size = '1024x1024', referenceImage = null } = {}) {
   const fn = REGISTRY[ACTIVE];
   if (!fn) throw new Error(`未知 IMAGE_PROVIDER=${ACTIVE}。可选：${Object.keys(REGISTRY).join(', ')}`);
-  log('debug', `[image] provider=${ACTIVE} size=${size}`);
-  const rawUrl = await fn(prompt, size);
+  log('debug', `[image] provider=${ACTIVE} size=${size}${referenceImage ? ' (i2i)' : ''}`);
+  // v1.10.53: 第三参 referenceImage 仅 openrouter 消费，其它 provider 忽略
+  const rawUrl = await fn(prompt, size, referenceImage);
   // v1.10.52: 全局美颜后处理。失败时静默返回原 url。
   try {
     const { beautifyImageUrl } = await import('../image_beautify.mjs');
@@ -237,10 +248,13 @@ export function getActiveImageProvider() {
 
 export function getImageProviderCapabilities(providerName = ACTIVE) {
   const id = String(providerName || ACTIVE || '').toLowerCase();
+  // v1.10.53: openrouter 走 chat/completions 多模态，可吃 input image 做
+  // image-to-image（gpt-image / gemini-2.5-flash-image）。其它 provider 暂只文生图。
+  const supportsRef = id === 'openrouter';
   return {
     provider: id,
     textToImage: Boolean(REGISTRY[id]),
-    imageToImage: false,
-    referenceImage: false,
+    imageToImage: supportsRef,
+    referenceImage: supportsRef,
   };
 }
