@@ -62,9 +62,39 @@ function ensureDirs(companionId) {
   const dir = companionDir(companionId);
   const referencesDir = path.join(dir, 'references');
   const generatedDir = path.join(dir, 'generated');
+  const candidatesDir = path.join(dir, 'candidates');
   mkdirSync(referencesDir, { recursive: true });
   mkdirSync(generatedDir, { recursive: true });
-  return { dir, referencesDir, generatedDir };
+  mkdirSync(candidatesDir, { recursive: true });
+  return { dir, referencesDir, generatedDir, candidatesDir };
+}
+
+// v1.10.46: 候选图存磁盘 + 返回相对路径，避免大 base64 在 JSON response 里
+// 撑爆前端解析（iOS Safari ~4-12MB JSON 会出 "string did not match expected pattern"）。
+export function saveCandidateImage(companionId, base64OrBuf, seed) {
+  if (!companionId) return null;
+  const { candidatesDir } = ensureDirs(companionId);
+  let buf;
+  if (Buffer.isBuffer(base64OrBuf)) buf = base64OrBuf;
+  else if (typeof base64OrBuf === 'string') {
+    const m = base64OrBuf.match(/^data:image\/[a-z+]+;base64,(.+)$/i);
+    buf = m ? Buffer.from(m[1], 'base64') : Buffer.from(base64OrBuf, 'base64');
+  } else return null;
+  if (!buf || buf.length < 256) return null;
+  const fname = `cand_${seed || 's0'}_${Date.now()}.png`;
+  const dest = path.join(candidatesDir, fname);
+  writeFileSync(dest, buf);
+  return { absPath: dest, fname };
+}
+
+// v1.10.46: GET 端点用 — 由 fname 拿回路径，做安全检查防穿越
+export function candidatePath(companionId, fname) {
+  if (!companionId || !fname) return null;
+  if (!/^cand_[a-z0-9]+_\d+\.(png|jpg|webp)$/i.test(fname)) return null;
+  const { candidatesDir } = ensureDirs(companionId);
+  const full = path.join(candidatesDir, fname);
+  if (!full.startsWith(candidatesDir)) return null;
+  return existsSync(full) ? full : null;
 }
 
 function identityPath(companionId) {

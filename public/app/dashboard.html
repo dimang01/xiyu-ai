@@ -943,9 +943,16 @@
         <button id="regen-close" class="text-mute hover:text-ink text-xl leading-none">×</button>
       </div>
       <p class="text-[13px] text-mute mb-4">下面 4 张是按当前人设生成的候选自拍。挑一张你最满意的，它会作为后续所有照片的基准形象。</p>
-      <div id="regen-loading" class="text-center py-12 text-[13px] text-mute">
-        <div class="inline-block w-8 h-8 border-2 border-sakura-deep border-t-transparent rounded-full animate-spin mb-3"></div>
-        <div>正在生成 4 张候选…（约 30-90 秒）</div>
+      <div id="regen-loading" class="text-center py-8 text-[13px] text-mute">
+        <div class="inline-block w-10 h-10 border-2 border-sakura-deep border-t-transparent rounded-full animate-spin mb-3"></div>
+        <!-- v1.10.46: 进度条 + 倒计时 -->
+        <div id="regen-status" class="font-medium mb-2">正在生成 4 张候选自拍…</div>
+        <div class="w-full h-1.5 bg-cloud rounded-full overflow-hidden mb-2 max-w-xs mx-auto">
+          <div id="regen-progress" class="h-full bg-gradient-to-r from-sakura-deep to-pink-400 transition-all duration-500" style="width:0%"></div>
+        </div>
+        <div class="text-[11px] text-mute">
+          <span id="regen-elapsed">0</span> / <span id="regen-eta">90</span> 秒
+        </div>
       </div>
       <div id="regen-grid" class="hidden grid grid-cols-2 gap-3 mb-3"></div>
       <div id="regen-msg" class="hidden text-[12px] text-center px-3 py-2 rounded-xl"></div>
@@ -2578,19 +2585,43 @@
       } catch (e) { alert('重置失败：' + e.message); }
     });
 
-    // v1.10.43: 重生形象 — 4 候选选 1 锁定
+    // v1.10.43/46: 重生形象 — 4 候选选 1 锁定
     let regenCandidates = [];
+    let regenTimer = null;
+    function startRegenProgress(etaSec) {
+      const eta = etaSec || 90;
+      const startT = Date.now();
+      document.getElementById('regen-eta').textContent = String(eta);
+      if (regenTimer) clearInterval(regenTimer);
+      regenTimer = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startT) / 1000);
+        const pct = Math.min(95, Math.round(elapsed / eta * 100));
+        const elEl = document.getElementById('regen-elapsed');
+        const prEl = document.getElementById('regen-progress');
+        if (elEl) elEl.textContent = String(elapsed);
+        if (prEl) prEl.style.width = pct + '%';
+        if (elapsed >= eta + 60) { clearInterval(regenTimer); regenTimer = null; }
+      }, 500);
+    }
+    function stopRegenProgress(done) {
+      if (regenTimer) { clearInterval(regenTimer); regenTimer = null; }
+      const prEl = document.getElementById('regen-progress');
+      if (prEl && done) prEl.style.width = '100%';
+    }
     function openRegenModal() {
       const m = document.getElementById('regen-modal'); if (m) m.classList.remove('hidden');
       document.getElementById('regen-loading').classList.remove('hidden');
       document.getElementById('regen-grid').classList.add('hidden');
       document.getElementById('regen-msg').classList.add('hidden');
       document.getElementById('regen-refresh').classList.add('hidden');
+      document.getElementById('regen-progress').style.width = '0%';
       regenCandidates = [];
+      startRegenProgress(90);
       fetchRegenCandidates();
     }
     function closeRegenModal() {
       const m = document.getElementById('regen-modal'); if (m) m.classList.add('hidden');
+      stopRegenProgress(false);
     }
     async function fetchRegenCandidates() {
       try {
@@ -2598,14 +2629,17 @@
           method: 'POST',
           headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
         });
-        const d = await r.json();
-        if (!r.ok || !d.ok) throw new Error(d.message || '生成失败');
+        const d = await r.json().catch(() => ({ ok: false, message: 'JSON 解析失败' }));
+        if (!r.ok || !d.ok) throw new Error(d.message || ('HTTP ' + r.status));
         regenCandidates = (d.data && d.data.candidates) || [];
+        stopRegenProgress(true);
+        if (!regenCandidates.length) throw new Error('候选图全部生成失败');
         renderRegenGrid();
       } catch (e) {
+        stopRegenProgress(false);
         document.getElementById('regen-loading').classList.add('hidden');
         const msg = document.getElementById('regen-msg');
-        msg.textContent = '生成失败：' + e.message;
+        msg.textContent = '生成失败：' + (e.message || '未知错误');
         msg.className = 'text-[12px] text-center px-3 py-2 rounded-xl bg-red-50 text-red-600';
         msg.classList.remove('hidden');
         document.getElementById('regen-refresh').classList.remove('hidden');
@@ -2617,10 +2651,26 @@
       grid.innerHTML = '';
       for (const c of regenCandidates) {
         const div = document.createElement('div');
-        div.className = 'relative rounded-2xl overflow-hidden cursor-pointer border-2 border-line hover:border-sakura-deep transition-colors';
-        div.innerHTML = '<img src="' + c.url + '" class="w-full aspect-square object-cover"/><div class="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[11px] text-center py-1.5 font-medium">选这张</div>';
+        div.className = 'relative rounded-2xl overflow-hidden cursor-pointer border-2 border-line hover:border-sakura-deep transition-colors bg-cloud';
+        // 占位 + 异步 fetch with Bearer token → blob URL → <img>
+        div.innerHTML = '<div class="w-full aspect-square flex items-center justify-center text-[11px] text-mute">加载中…</div><div class="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[11px] text-center py-1.5 font-medium">选这张</div>';
         div.addEventListener('click', () => lockRegen(c));
         grid.appendChild(div);
+        // 异步加载图片
+        (async () => {
+          try {
+            const r = await fetch('/api/companions/' + companionId + '/visual-identity/candidate-image/' + encodeURIComponent(c.fname), {
+              headers: { Authorization: 'Bearer ' + token },
+            });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const blob = await r.blob();
+            const url = URL.createObjectURL(blob);
+            div.querySelector('div:first-child').outerHTML = '<img src="' + url + '" class="w-full aspect-square object-cover"/>';
+          } catch (e) {
+            const placeholder = div.querySelector('div:first-child');
+            if (placeholder) placeholder.textContent = '加载失败';
+          }
+        })();
       }
       grid.classList.remove('hidden');
       document.getElementById('regen-refresh').classList.remove('hidden');
@@ -2634,10 +2684,10 @@
         const r = await fetch('/api/companions/' + companionId + '/visual-identity/lock', {
           method: 'POST',
           headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: candidate.url }),
+          body: JSON.stringify({ fname: candidate.fname }),
         });
-        const d = await r.json();
-        if (!r.ok || !d.ok) throw new Error(d.message || '锁定失败');
+        const d = await r.json().catch(() => ({ ok: false, message: 'JSON 解析失败' }));
+        if (!r.ok || !d.ok) throw new Error(d.message || ('HTTP ' + r.status));
         msg.textContent = '✓ 已锁定为基准形象。下次她发自拍就按这张走。';
         msg.className = 'text-[12px] text-center px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700';
         setTimeout(closeRegenModal, 1800);
