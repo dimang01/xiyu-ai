@@ -322,6 +322,11 @@ export async function handleMessage(rawMsg, botContext = {}) {
   if (msg.msgType === 'text') {
     log('info', `[Bot] inbound text preview="${previewText(msg.text)}"`);
   }
+  // v1.12.1 引用诊断：置 LOG_RAW_INBOUND=true 时 dump 原始入站包，用来确认 iLink 到底
+  // 给不给"被引用的那条"（微信引用回复）。默认关，确诊完即关。
+  if (String(process.env.LOG_RAW_INBOUND || '').toLowerCase() === 'true') {
+    try { log('info', `[Bot] RAW_INBOUND=${JSON.stringify(rawMsg).slice(0, 1800)}`); } catch { /* ignore */ }
+  }
 
   // 入库（即使被合并跳过也要存）
   saveMessage({

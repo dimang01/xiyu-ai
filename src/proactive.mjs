@@ -527,12 +527,15 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   // 条件：normal 时段 + 好感度>=50 + 双方都没表白过 + 认识>=5 天
   let effectiveKind = kind;
   const aff = companion.affection_level || 0;
+  // v1.12.1：AI 主动表白只在深夜 22:30 之后——这个点人感情最敏感、最像真人鼓起勇气说出口的时刻
+  const _nowMin = ((new Date().getUTCHours() + 8) % 24) * 60 + new Date().getUTCMinutes();
   if (kind === 'normal'
+      && _nowMin >= 22 * 60 + 30
       && !companion.confessed_at
       && !companion.user_confessed_at
-      && canAcceptConfession(companion)) {   // v1.x: 对齐 v1.11.1 节奏闸门（好感≥55 + 认识≥14天），不再 50分/5天 过早表白
+      && canAcceptConfession(companion)) {   // 节奏闸门（好感≥55 + 认识≥14天）+ 深夜窗口
     effectiveKind = 'confession';
-    log('info', `[Proactive] ★ 触发 AI 主动告白 companion=${companion.id} affection=${aff}`);
+    log('info', `[Proactive] ★ 触发 AI 主动告白(深夜) companion=${companion.id} affection=${aff} min=${_nowMin}`);
   }
 
   // v1.8.0 #5: proactive hidden_reason — 把 due open loops 升级为 'recall' kind
