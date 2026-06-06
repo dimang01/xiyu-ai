@@ -74,6 +74,9 @@ function pickImageProviderKey(provider) {
     doubao: ['DOUBAO_API_KEY'],
     wenxin: ['WENXIN_API_KEY'],
     openai: ['OPENAI_API_KEY'],
+    // v1.10.30: 补 openrouter — v1.10.19 加了 image provider 但没同步这里，
+    // 导致 isImageProviderConfigured 返 false，photo gate 拒绝所有照片请求。
+    openrouter: ['OPENROUTER_API_KEY'],
   };
   return { provider: name, keys: map[name] || [] };
 }
