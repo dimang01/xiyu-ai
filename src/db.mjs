@@ -910,6 +910,8 @@ function migrateEmotionState() {
 // ─── Proactive Engine v2 ───────────────────────────────────────────────────────
 function migrateProactiveEngineV2() {
   addColIfMissing('companions', 'proactive_intensity',    "TEXT DEFAULT 'normal'");
+  // v1.13 双语：界面/AI 语言（'zh' | 'en'），默认中文
+  addColIfMissing('companions', 'locale',                 "TEXT DEFAULT 'zh'");
   addColIfMissing('companions', 'last_user_reply_at',     'TEXT');
   addColIfMissing('companions', 'last_proactive_reply_at','TEXT');
   addColIfMissing('companions', 'missing_score',          'REAL DEFAULT 0');
