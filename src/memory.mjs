@@ -12,7 +12,7 @@ import { log } from './logger.mjs';
 import {
   saveMemories, recallMemories as dbRecall,
   patchCompanion, getUserProfile, upsertUserProfile,
-  saveStageMilestone,
+  saveStageMilestone, shanghaiDateKey,
 } from './db.mjs';
 import { extractStructuredInfo, embedText } from './ai.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -25,6 +25,35 @@ export function computeRelationshipStage(affection) {
   if (affection >= 30) return '暧昧';
   if (affection >= 15) return '朋友';
   return '陌生人';
+}
+
+// ─── 关系节奏（参考真实关系，偏真实/慢；env 可调）──────────────────────────
+// 暧昧→恋人：affection≥LOVER + 已表白 + 认识≥DAYS_TO_LOVER 天
+// 恋人→深爱：affection≥DEEP + 当恋人≥DAYS_AS_LOVER_TO_DEEP 天
+// 好感每日上限 DAILY_CAP，55 分以上增幅衰减 —— 防一次聊天无脑刷到恋人/深爱。
+export const AFFECTION_LOVER = Number(process.env.AFFECTION_LOVER) || 55;
+export const AFFECTION_DEEP  = Number(process.env.AFFECTION_DEEP)  || 80;
+export const DAYS_TO_LOVER         = Number(process.env.DAYS_TO_LOVER ?? 14);
+export const DAYS_AS_LOVER_TO_DEEP = Number(process.env.DAYS_AS_LOVER_TO_DEEP ?? 30);
+export const AFFECTION_DAILY_CAP   = Number(process.env.AFFECTION_DAILY_CAP ?? 8);
+
+const STAGE_RANK = ['陌生人', '朋友', '暧昧', '恋人', '深爱'];
+const stageRank = (s) => Math.max(0, STAGE_RANK.indexOf(s));
+
+function daysFromTs(ts) {
+  if (!ts) return 0;
+  const d = new Date(String(ts).replace(' ', 'T') + (String(ts).includes('Z') ? '' : 'Z'));
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400_000));
+}
+export const daysSinceMeet = (c) => daysFromTs(c?.created_at);
+export const daysAsLover   = (c) => daysFromTs(c?.became_lover_at);
+
+/**
+ * 用户表白时是否该"接住"升恋人：好感够 + 认识够久。
+ * 不够 → bot 端走"端着婉拒"，关系不升级（见 bot.mjs）。
+ */
+export function canAcceptConfession(companion) {
+  return (companion?.affection_level ?? 0) >= AFFECTION_LOVER && daysSinceMeet(companion) >= DAYS_TO_LOVER;
 }
 
 // ─── 心情关键词 ──────────────────────────────────────────────────────────────
@@ -62,11 +91,12 @@ export function calcAffectionDelta(userMsg) {
   const positive = ['喜欢', '谢谢', '感谢', '棒', '开心', '可爱', '好'];
   const negative = ['讨厌', '烦死', '滚', '差劲', '垃圾', '无聊', '笨'];
 
-  for (const w of strong)    if (userMsg.includes(w)) { delta += 3; break; }
+  for (const w of strong)    if (userMsg.includes(w)) { delta += 2; break; }  // v1.x: 3→2 降速
   for (const w of positive)  if (userMsg.includes(w)) { delta += 1; break; }
   for (const w of negative)  if (userMsg.includes(w)) { delta -= 2; break; }
 
-  return Math.max(delta, -3);
+  // v1.x: 单条封顶 +3（防强词+长消息叠加冲太快），负向仍可到 -3
+  return Math.max(Math.min(delta, 3), -3);
 }
 
 /**
@@ -76,19 +106,37 @@ export function calcAffectionDelta(userMsg) {
 export function syncUpdateCompanionState(companion, userMsg, botReply) {
   const fields = {};
 
-  // 好感度（上限 100）
-  const raw    = (companion.affection_level ?? 0) + calcAffectionDelta(userMsg);
-  const newAff = Math.min(Math.max(raw, 0), 100);
+  // ── 好感度增量：基础规则 → 55+ 衰减 → 每日上限（防一次聊天无脑刷）──
+  const curAff = companion.affection_level ?? 0;
+  let delta = calcAffectionDelta(userMsg);
+  if (delta > 0 && curAff >= AFFECTION_LOVER) delta = Math.max(1, Math.round(delta * 0.5)); // 恋人后增幅减半，深爱更慢
+  const today = shanghaiDateKey();
+  const gainedToday = (companion.affection_day === today) ? (companion.affection_today || 0) : 0; // 跨天自动重置
+  if (delta > 0) delta = Math.min(delta, Math.max(0, AFFECTION_DAILY_CAP - gainedToday));       // 每日上限只限正向
+  fields.affection_day   = today;
+  fields.affection_today = gainedToday + Math.max(0, delta);
+
+  const newAff = Math.min(Math.max(curAff + delta, 0), 100);
+  fields.affection_level = newAff;
+
+  // ── 关系阶段：真实节奏闸门（表白 + 时间），只拦升级、不动存量 ──
+  // 暧昧→恋人：affection≥55 + 已表白 + 认识≥14天；恋人→深爱：affection≥80 + 当恋人≥30天
   const oldStage = companion.relationship_stage || '陌生人';
   const rawStage = computeRelationshipStage(newAff);
-  // v1.10.24: "恋人"/"深爱"必须有表白事件（任一方），否则即使 affection 到了也卡在"暧昧"。
-  // 旧逻辑只看分数，从朋友→暧昧→恋人完全自动，给用户"莫名其妙就成恋人了"的诡异感。
   const hasConfession = Boolean(companion.confessed_at || companion.user_confessed_at);
-  const newStage = (!hasConfession && (rawStage === '恋人' || rawStage === '深爱'))
-    ? '暧昧'
-    : rawStage;
-  fields.affection_level   = newAff;
+  let newStage = rawStage;
+  if (stageRank(rawStage) > stageRank(oldStage)) {            // 仅"想升级"时套闸门
+    if (rawStage === '恋人' && !(hasConfession && daysSinceMeet(companion) >= DAYS_TO_LOVER)) {
+      newStage = oldStage;                                   // 没表白 / 认识太短 → 卡住
+    } else if (rawStage === '深爱' && !(daysAsLover(companion) >= DAYS_AS_LOVER_TO_DEEP)) {
+      newStage = oldStage;                                   // 当恋人时间不够 → 卡住
+    }
+  }
+  // 非升级（含掉好感的自然降级）按 rawStage，不因新闸门强制降级老用户（存量不动）
   fields.relationship_stage = newStage;
+  if (newStage === '恋人' && oldStage !== '恋人' && !companion.became_lover_at) {
+    fields.became_lover_at = new Date().toISOString();       // 升恋人时间戳 → 深爱时间门槛计时
+  }
 
   // 心情（有变化才更新）
   const newMood = detectMood(userMsg, botReply);

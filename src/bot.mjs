@@ -25,7 +25,7 @@ import {
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
-import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach } from './memory.mjs';
+import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach, canAcceptConfession, daysSinceMeet, DAYS_TO_LOVER } from './memory.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
@@ -684,46 +684,35 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
 - 用 || 分多条，第一条是反应，第二条是软化`;
     }
 
-    // ── 用户表白检测：必须接住，绝不拒绝 ─────────────────────────────────
+    // ── 用户表白检测：按真实节奏决定「接住升恋人」/「端着婉拒」──────────────
+    // v1.x：不再"必须接住"。够格(好感≥55+认识≥14天)才接，不够则端着婉拒、关系不升级。
     const userConfessed = detectUserConfession(userText);
     if (userConfessed && !companion.user_confessed_at) {
-      // 不同阶段不同接住方式（但都不拒绝）
-      let acceptHint;
-      if (stageNow === '陌生人' || stageNow === '朋友') {
-        acceptHint = `你们才认识不久，要表现得既惊讶又被打动。回复必须：
-- 表现出"啊？真的吗"那种被突然砸中的反应
-- **不要拒绝**。可以说"我们才认识没多久..." 但接着 **必须** 给开放结论："不过我对你也...有点感觉" / "可以试试" / "让我们慢慢相处看看" / "我也想多了解你"
-- 一定要让对方知道：你没拒绝，只是想慢点走
-- 绝对不要说"对不起""我们不合适""我们做朋友吧""我没准备好"这类拒绝词`;
-      } else if (stageNow === '暧昧') {
-        acceptHint = `你们已经暧昧很久了，现在他终于开口，你内心是高兴的。
+      if (stageNow === '恋人' || stageNow === '深爱') {
+        // 已经在一起：当甜蜜话接住，无门槛、不升级
+        systemPrompt += `\n\n【★ 用户又对你说喜欢/爱你】\n你们已经是恋人了，自然回应这份甜蜜：撒娇"嗯～我也爱你呀" / "你怎么突然这样" / "笨蛋"，别冷淡别装严肃。`;
+        try { markUserConfessed(companion.id); } catch {}
+      } else if (canAcceptConfession(companion)) {
+        // 够格 → 接住升恋人（markUserConfessed 让 sync 解锁，不再硬跳分数）
+        systemPrompt += `\n\n【★★ 用户向你告白，而且你愿意接受！】
+他终于开口表白，你认识够久、感情也够了，内心是高兴的：
 - 用害羞但开心的语气接住："我等你这句话好久了" / "我也是" / "嗯…我愿意"
 - 可以小撒娇："你怎么才说" / "傻瓜，早就该说了"
-- 关系正式升级为恋人`;
+- 这条绝不能模糊带过；关系正式升级为恋人
+- 可分多条消息（||），每条都在"接住"语义下`;
+        try {
+          markUserConfessed(companion.id);
+          log('info', `[Bot] ★ 表白被接住 companion=${companion.id} aff=${companion.affection_level || 0} days=${daysSinceMeet(companion)}`);
+        } catch (e) { log('warn', `[Bot] 接住表白处理失败: ${e.message}`); }
       } else {
-        // 已经是恋人或深爱
-        acceptHint = `你们已经是恋人了，他又说了次喜欢你，要回应这份甜蜜：
-- 自然撒娇："嗯～我也爱你呀" / "你怎么突然这样" / "笨蛋"
-- 不要冷漠不要装严肃`;
-      }
-      systemPrompt += `\n\n【★★ 极其重要：用户刚刚向你告白！】\n${acceptHint}\n
-通用约束：
-- 这条回复绝对不能拒绝、不能模糊带过、不能转移话题
-- 必须直接回应这份心意
-- 可以分多条消息（用 ||），但每条都要在"接住"的语义下`;
-
-      // 立即跳级 + 标记
-      try {
-        markUserConfessed(companion.id);
-        const newAff = Math.max(companion.affection_level || 0, 55);  // 最低拉到"恋人"
-        const newStage = computeRelationshipStage(newAff);
-        patchCompanion(companion.id, {
-          affection_level: newAff,
-          relationship_stage: newStage,
-        });
-        log('info', `[Bot] ★ 用户表白被接住 companion=${companion.id} affection=${companion.affection_level}→${newAff} stage=${stageNow}→${newStage}`);
-      } catch (e) {
-        log('warn', `[Bot] 接住表白后处理失败: ${e.message}`);
+        // 不够格（认识太短 / 好感不够）→ 端着婉拒，关系不升级、不标记（之后可再表白）
+        const reason = daysSinceMeet(companion) < DAYS_TO_LOVER ? '你们认识时间还短' : '感情还没到那一步';
+        systemPrompt += `\n\n【★ 用户向你告白，但你想慢一点（这次先不答应）】
+他刚表白，你觉得${reason}——不是不心动，是想慢慢来。回复要"端着"：
+- **不要直接答应**，也别冷漠拒绝：用"这么突然呀" / "我们……要不要再多了解了解" / "你确定不是一时冲动？" 这种
+- 可以流露"我对你也不是没感觉"，但**绝不能说"我愿意""我也喜欢你""在一起吧"这类答应的话**
+- 关系**不升级**，你只是被打动但想再走走看`;
+        log('info', `[Bot] 表白婉拒(节奏闸门) companion=${companion.id} aff=${companion.affection_level || 0} days=${daysSinceMeet(companion)} stage=${stageNow}`);
       }
     }
 
@@ -961,7 +950,8 @@ async function postProcess(companion, userMsg, botReply) {
   // hasConfession gate（v1.10.24）能放行升"恋人"。
   // 顺序：必须在 syncUpdateCompanionState 之前，否则那一步看不到刚写的 confessed_at。
   try {
-    if (!companion.confessed_at && detectCompanionConfession(botReply)) {
+    // v1.x：AI 自然表白也要够格才"算数"（好感≥55+认识≥14天），防低好感/太早误设 confessed_at
+    if (!companion.confessed_at && detectCompanionConfession(botReply) && canAcceptConfession(companion)) {
       markCompanionConfessed(companion.id);
       companion.confessed_at = new Date().toISOString();  // 让本轮 sync 看到
       log('info', `[Bot] ★ AI 在日常对话中表白 companion=${companion.id}`);
