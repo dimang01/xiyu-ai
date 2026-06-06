@@ -1,8 +1,12 @@
 /**
  * 照片请求意图检测。
  *
- * 只做轻量规则识别：强请求会进入真实发图路径，弱上下文仅供后续低频主动策略参考。
+ * v1.10.38 起：regex 是 fast path（命中即返回 strong），不命中再用 LLM 二分类
+ * 兜底。终结"每个新口语 → 加 regex → 发版"循环。
  */
+
+import { extractStructuredInfo } from './ai.mjs';
+import { log } from './logger.mjs';
 
 function normalizeText(text) {
   return String(text || '')
@@ -77,4 +81,56 @@ export function detectPhotoIntent(text) {
 
 export function hasUnsafePhotoContent(text) {
   return UNSAFE_PHOTO_RE.test(normalizeText(text));
+}
+
+/**
+ * v1.10.38: regex fast path + LLM 兜底的智能版本。
+ * - regex 命中 strong → 直接返回 strong（0 LLM 调用）
+ * - regex 不命中 → 调 extractStructuredInfo 让 LLM 判 yes/no（最多 +1 次轻 LLM 调用）
+ * - LLM 抛错 → 退回 regex 结果（保守不打扰主流程）
+ *
+ * @param {string} text
+ * @param {Array<{role?:string, direction?:string, content?:string}>} recentMessages 可选最近对话
+ * @returns {Promise<{type: 'strong_photo_request'|'weak_photo_context'|'none', reason: string}>}
+ */
+export async function detectPhotoIntentSmart(text, recentMessages = []) {
+  const r = detectPhotoIntent(text);
+  if (r.type === 'strong_photo_request') return r;
+
+  // 不命中 strong（regex 漏识别 / weak / none）→ LLM 兜底
+  try {
+    const yes = await classifyPhotoIntentWithLLM(text, recentMessages);
+    if (yes) {
+      log('info', `[photo_intent] LLM 兜底命中 text="${String(text).slice(0, 40)}"`);
+      return { type: 'strong_photo_request', reason: 'LLM 判定为请求照片' };
+    }
+  } catch (e) {
+    log('warn', `[photo_intent] LLM 兜底失败: ${e.message}`);
+  }
+  return r; // 退回 regex 结果（weak 或 none）
+}
+
+async function classifyPhotoIntentWithLLM(text, recentMessages) {
+  const recent = (Array.isArray(recentMessages) ? recentMessages : [])
+    .slice(-6)
+    .map(m => `${m.direction === 'in' || m.role === 'user' ? '用户' : 'AI'}: ${String(m.content || '').slice(0, 80)}`)
+    .filter(Boolean)
+    .join('\n');
+
+  const system = '你是一个简单的二分类器。只输出 yes 或 no（小写），不要任何解释或额外文字。';
+  const userPrompt = `判断用户最新一条消息是否在请求看 AI 女友（虚拟陪伴对象）的照片 / 自拍 / 外貌。
+
+最近对话上下文：
+${recent || '(无)'}
+
+用户最新消息: "${String(text).slice(0, 200)}"
+
+判断标准：
+- yes：用户请求看照片 / 自拍 / 当前样子 / 外貌 / 换个姿势再拍 / 再来一张 / 长什么样
+- no：普通对话、问候、情绪表达、问其它话题
+
+只回 yes 或 no（小写）。`;
+
+  const reply = await extractStructuredInfo(system, userPrompt, { maxTokens: 5, temperature: 0 });
+  return /\byes\b/i.test(String(reply || '').trim());
 }
