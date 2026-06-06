@@ -294,7 +294,7 @@ function renderCard(m) {
           ${pinned ? `<span title="已置顶">${pinned}</span>` : ''}
           ${locked ? `<span title="已锁定">${locked}</span>` : ''}
           ${dnm ? `<span title="不主动提及">${dnm}</span>` : ''}
-          ${source ? `<span class="text-xs text-mute border border-line rounded px-1">${source}</span>` : ''}
+          ${source ? `<span class="text-xs text-mute border border-line rounded px-1">${escHtml(source)}</span>` : ''}
         </div>
         <p class="text-sm text-ink leading-relaxed">${escHtml(m.content || '')}</p>
         <div class="mt-2 flex gap-3 text-xs text-mute">

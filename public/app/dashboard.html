@@ -1338,7 +1338,7 @@
         `${c.age || 20} 岁 · ${c.role_title || c.persona || '邻家女孩'}`;
       const stageNames = ['陌生人','朋友','暧昧','恋人','深爱'];
       const curStage = c.relationship_stage || '陌生人';
-      document.getElementById('c-stage').innerHTML = '💕 ' + curStage;
+      document.getElementById('c-stage').textContent = '💕 ' + curStage;
 
       const aff = c.affection ?? 0;
       document.getElementById('aff-val').textContent = aff;
