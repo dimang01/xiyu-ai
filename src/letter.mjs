@@ -14,6 +14,7 @@
  */
 
 import crypto from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
 import { log } from './logger.mjs';
 import { getDb } from './db.mjs';
 import { extractStructuredInfo } from './ai.mjs';
@@ -31,8 +32,9 @@ function getLetterSigningKey() {
     return crypto.createHmac('sha256', root).update('xiyu-offline-letter-v1').digest();
   }
   // 兜底：从 .auth-secret 文件读（同 auth.mjs 逻辑，但不重复落盘）
+  // v1.x 修：原来用 require() 在 ESM 里抛 "require is not defined" 被 catch 吞掉，
+  // 导致存在的 .auth-secret 也读不到、离线留言永远签名失败。改 ESM import。
   try {
-    const { readFileSync, existsSync } = require('node:fs');
     const SECRET_FILE = '.auth-secret';
     if (existsSync(SECRET_FILE)) {
       const s = readFileSync(SECRET_FILE, 'utf-8').trim();

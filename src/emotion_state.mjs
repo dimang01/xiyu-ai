@@ -305,6 +305,13 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes) {
     update.dependency = clamp(dep + 1, 0, 100);
   }
 
+  // v1.x 修(#6)：energy 跟昼夜节律自然起伏，让情绪曲线"活"起来（之前 energy 从不变 → 平到离谱）。
+  const hr = (new Date().getUTCHours() + 8) % 24;  // 上海时（UTC+8，无 DST）
+  const target = hr < 6 ? 32 : hr < 9 ? 55 : hr < 12 ? 78 : hr < 15 ? 58 : hr < 18 ? 70 : hr < 22 ? 62 : 44;
+  const curEnergy = currentState.energy ?? DEFAULT_STATE.energy;
+  const noise = Math.floor(Math.random() * 7) - 3;  // ±3 自然抖动
+  update.energy = clamp(Math.round(curEnergy + (target - curEnergy) * 0.3 + noise), 0, 100);
+
   try {
     upsertEmotionState(companionId, update);
     return { ...currentState, ...update };
@@ -349,7 +356,7 @@ export async function runEmotionRecalcBatch() {
   const db = getDb();
   // 只跑活跃的（有微信绑定的，避免给从未对话过的孤儿 companion 跑）
   const rows = db.prepare(`
-    SELECT c.id, c.last_user_reply_at
+    SELECT c.id, c.last_user_reply_at, c.affection_level
     FROM companions c
     JOIN users u ON u.id = c.user_id
     JOIN wechat_accounts wa ON wa.wechat_user_id = u.wechat_user_id AND wa.bot_id = c.bot_id
@@ -372,7 +379,9 @@ export async function runEmotionRecalcBatch() {
       // 写历史（让 dashboard 趋势曲线能看到 idle 演化，而不是只在用户消息时跳变）
       try {
         insertEmotionHistory(row.id, {
-          affection: next.affection, trust: next.trust, dependency: next.dependency,
+          // v1.x 修(#6)：好感线记录真实关系好感(companions.affection_level)，
+          // 不再记并行的 emotion-affection（之前图上"好感"低又平、与真实 56 对不上）
+          affection: row.affection_level ?? next.affection, trust: next.trust, dependency: next.dependency,
           security: next.security, energy: next.energy, mood: next.mood,
           trigger: 'tick',
         });

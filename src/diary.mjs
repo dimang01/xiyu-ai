@@ -41,6 +41,7 @@ const STAGE_LABELS = {
 
 function buildDiaryPrompt(companion, turns, emotionHint, kind, dateKey) {
   const c = companion;
+  const quiet = turns.length < 3;   // v1.x(#2)：安静的一天 → 写她自己的日子
   const turnLines = turns
     .slice(-60)
     .map(t => `${t.role === 'user' ? '他' : '我'}：${String(t.content).slice(0, 160)}`)
@@ -55,7 +56,7 @@ ${emotionHint}
 
 下面是${span}你和对方（你心里叫他「他」）的聊天记录：
 ${turnLines || `（${span}你们几乎没怎么聊）`}
-
+${quiet ? `\n※ ${span}你们几乎没怎么聊。就写写你自己${span}的日子：你在忙什么、心情如何，可以流露一点点没怎么等到他消息的小想念或小失落，但别抱怨别卖惨。\n` : ''}
 请你用第一人称、以你自己的口吻，写${span}的一篇私人日记。要求：
 1. 像真实女孩写在本子里的日记，自然、有真情实感，不是流水账
 2. 回顾${span}和他之间让你印象深的瞬间、你的小情绪、对他的想法
@@ -102,7 +103,9 @@ export async function generateDiaryForCompanion(companionId, opts = {}) {
       ({ startSql, endSql } = shanghaiBoundsForDateKey(dateKey));
     }
     const turns = getConversationTurnsBetween(companionId, startSql, endSql, TURNS_LIMIT);
-    if (turns.length < MIN_TURNS) {
+    // v1.x 修(#2)：每日日记应天天写——安静的一天也写（写她自己的日子，见 buildDiaryPrompt
+    // 的 quiet 分支）。只有周记在"整周几乎没聊"时才跳过，避免硬凑空周记。
+    if (turns.length < MIN_TURNS && kind === 'weekly') {
       return { skipped: `too-few-turns(${turns.length})`, dateKey };
     }
 
