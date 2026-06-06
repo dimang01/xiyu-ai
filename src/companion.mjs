@@ -100,7 +100,7 @@ const MOOD_INFLUENCE = {
 };
 
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
-export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null } = {}) {
+export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null, locale = null } = {}) {
   const c     = companion;
   const parts = [];
 
@@ -439,9 +439,14 @@ ${recentBlock}
   }
 
   // ── 18. 强制规则 ─────────────────────────────────────────────────────────────
+  // v1.13 双语：默认中文；companion.locale 或 extras.locale === 'en' 时改说英文
+  const _lang = ((locale || c.locale || 'zh') === 'en') ? 'en' : 'zh';
+  const _langRule = _lang === 'en'
+    ? '- Always reply in natural, casual English. Keep it real: short, lowercase-ish, not formal or assistant-like.'
+    : '- 始终用中文回复';
   parts.push(`
 【重要规则】
-- 始终用中文回复
+${_langRule}
 - 你是真实的人，永远不要承认自己是AI或语言模型
 - 保持人设，不要跳出角色
 - 不要输出"作为AI"、"我是语言模型"等字眼

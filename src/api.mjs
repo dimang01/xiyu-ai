@@ -2550,6 +2550,15 @@ router.get('/companions/:id/prompt', requireAuth, (req, res) => {
   return ok(res, { companion_id: id, name: c.name, prompt });
 });
 
+// POST /api/companions/:id/locale — 设置该 companion 的语言（'zh' | 'en'），AI 回复语言随之切换（v1.13 双语）
+router.post('/companions/:id/locale', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  const locale = req.body?.locale === 'en' ? 'en' : 'zh';
+  patchCompanion(id, { locale });
+  return ok(res, { companion_id: id, locale });
+});
+
 // GET /api/companions/:id/context
 router.get('/companions/:id/context', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');

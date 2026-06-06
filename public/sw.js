@@ -20,7 +20,7 @@
  * stored in the service worker cache.
  */
 
-const CACHE_NAME = 'xiyu-static-v9-sec';
+const CACHE_NAME = 'xiyu-static-v10-i18n';
 
 const ASSET_EXTENSIONS = ['.css', '.js', '.mjs', '.png', '.webp', '.jpg', '.jpeg',
   '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.webmanifest'];

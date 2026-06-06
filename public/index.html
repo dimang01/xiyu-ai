@@ -130,6 +130,20 @@
   </style>
   <link rel="manifest" href="/manifest.webmanifest" />
   <script src="/app/theme.js" defer></script>
+  <!-- v1.13 双语：默认中文，可切英文（右下角「中/EN」开关） -->
+  <script>
+    window.XIYU_I18N = {
+      'nav.features': 'Features', 'nav.pricing': 'Pricing', 'nav.faq': 'FAQ',
+      'nav.signin': 'Sign in', 'nav.start': 'Get started', 'nav.menu': 'Menu',
+      'hero.badge': 'Free during beta · $0 to start',
+      'hero.h1': 'Meet Xiyu',
+      'hero.tagline': 'Not just a chat tool — she has a whole past, and she’s here to live the days with you.',
+      'hero.cta.start': 'Start now', 'hero.cta.more': 'Learn more',
+      'hero.subline': 'No download — meet her inside WeChat',
+      'hero.stat.memories': 'life memories', 'hero.stat.dims': 'backstory dimensions', 'hero.stat.schedule': 'daily schedule items',
+    };
+  </script>
+  <script src="/app/i18n.js" defer></script>
 </head>
 
 <body class="bg-white text-ink font-sans antialiased selection:bg-sakura/30 selection:text-ink">
@@ -141,29 +155,29 @@
         <span class="text-[15px] font-semibold tracking-tight">溪语AI</span>
       </a>
       <div class="hidden md:flex items-center gap-10 text-[14px] text-mute font-medium">
-        <a href="#features" class="nav-link hover:text-ink transition-colors">功能</a>
-        <a href="#pricing"  class="nav-link hover:text-ink transition-colors">价格</a>
-        <a href="#faq"      class="nav-link hover:text-ink transition-colors">常见问题</a>
+        <a href="#features" class="nav-link hover:text-ink transition-colors" data-i18n="nav.features">功能</a>
+        <a href="#pricing"  class="nav-link hover:text-ink transition-colors" data-i18n="nav.pricing">价格</a>
+        <a href="#faq"      class="nav-link hover:text-ink transition-colors" data-i18n="nav.faq">常见问题</a>
       </div>
       <div class="hidden md:flex items-center gap-2">
-        <a href="/app/auth.html" class="px-4 py-2 text-[14px] font-medium text-ink hover:text-sakura-deep transition-colors">登录</a>
+        <a href="/app/auth.html" class="px-4 py-2 text-[14px] font-medium text-ink hover:text-sakura-deep transition-colors" data-i18n="nav.signin">登录</a>
         <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-1.5 px-5 py-2 text-[14px] font-medium text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
-          开始创建
+          <span data-i18n="nav.start">开始创建</span>
           <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
         </a>
       </div>
-      <button id="menu-btn" class="md:hidden p-2 -mr-2" aria-label="菜单">
+      <button id="menu-btn" class="md:hidden p-2 -mr-2" aria-label="菜单" data-i18n-aria="nav.menu">
         <i data-lucide="menu" class="w-6 h-6 text-ink"></i>
       </button>
     </div>
     <div id="mobile-menu" class="hidden md:hidden border-t border-line">
       <div class="px-6 py-4 space-y-1 bg-white/95 backdrop-blur-xl">
-        <a href="#features" class="block py-3 text-[15px] font-medium">功能</a>
-        <a href="#pricing"  class="block py-3 text-[15px] font-medium">价格</a>
-        <a href="#faq"      class="block py-3 text-[15px] font-medium">常见问题</a>
+        <a href="#features" class="block py-3 text-[15px] font-medium" data-i18n="nav.features">功能</a>
+        <a href="#pricing"  class="block py-3 text-[15px] font-medium" data-i18n="nav.pricing">价格</a>
+        <a href="#faq"      class="block py-3 text-[15px] font-medium" data-i18n="nav.faq">常见问题</a>
         <div class="pt-3 mt-2 border-t border-line flex gap-2">
-          <a href="/app/auth.html" class="flex-1 py-3 text-[14px] font-medium border border-line rounded-full text-center">登录</a>
-          <a href="/app/auth.html?tab=register" class="flex-1 py-3 text-[14px] font-medium text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura text-center">开始创建</a>
+          <a href="/app/auth.html" class="flex-1 py-3 text-[14px] font-medium border border-line rounded-full text-center" data-i18n="nav.signin">登录</a>
+          <a href="/app/auth.html?tab=register" class="flex-1 py-3 text-[14px] font-medium text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura text-center" data-i18n="nav.start">开始创建</a>
         </div>
       </div>
     </div>
@@ -193,32 +207,32 @@
       </div>
       <div class="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-[12px] font-semibold rounded-full bg-sakura-soft text-sakura-deep">
         <span class="w-1.5 h-1.5 rounded-full bg-sakura-deep animate-pulse"></span>
-        内测期免费 · 0 元即用
+        <span data-i18n="hero.badge">内测期免费 · 0 元即用</span>
       </div>
-      <h1 class="text-[56px] sm:text-[72px] lg:text-[96px] font-bold tracking-tightest leading-[0.98]">遇见溪语</h1>
-      <p class="mt-6 text-[18px] sm:text-[20px] lg:text-[24px] text-mute font-medium tracking-tight max-w-2xl mx-auto">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
+      <h1 class="text-[56px] sm:text-[72px] lg:text-[96px] font-bold tracking-tightest leading-[0.98]" data-i18n="hero.h1">遇见溪语</h1>
+      <p class="mt-6 text-[18px] sm:text-[20px] lg:text-[24px] text-mute font-medium tracking-tight max-w-2xl mx-auto" data-i18n-html="hero.tagline">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
       <div class="mt-12 flex flex-col sm:flex-row gap-3 justify-center items-center">
         <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-2 px-8 py-3.5 text-[15px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
-          立即开始
+          <span data-i18n="hero.cta.start">立即开始</span>
           <i data-lucide="arrow-right" class="w-4 h-4"></i>
         </a>
-        <button onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})" class="px-8 py-3.5 text-[15px] font-semibold text-ink rounded-full border border-line hover:border-sakura hover:text-sakura-deep transition-all">了解更多</button>
+        <button onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})" class="px-8 py-3.5 text-[15px] font-semibold text-ink rounded-full border border-line hover:border-sakura hover:text-sakura-deep transition-all" data-i18n="hero.cta.more">了解更多</button>
       </div>
-      <p class="mt-8 text-[13px] text-mute font-medium">无需下载 · 在微信里与她相遇</p>
+      <p class="mt-8 text-[13px] text-mute font-medium" data-i18n="hero.subline">无需下载 · 在微信里与她相遇</p>
 
       <!-- 数据指标 -->
       <div class="mt-14 grid grid-cols-3 gap-2 max-w-2xl mx-auto">
         <div class="text-center">
           <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">46+</div>
-          <div class="text-[11px] sm:text-[13px] text-mute font-medium">人生记忆条数</div>
+          <div class="text-[11px] sm:text-[13px] text-mute font-medium" data-i18n="hero.stat.memories">人生记忆条数</div>
         </div>
         <div class="text-center">
           <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">12 类</div>
-          <div class="text-[11px] sm:text-[13px] text-mute font-medium">过往维度档案</div>
+          <div class="text-[11px] sm:text-[13px] text-mute font-medium" data-i18n="hero.stat.dims">过往维度档案</div>
         </div>
         <div class="text-center">
           <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">8-12</div>
-          <div class="text-[11px] sm:text-[13px] text-mute font-medium">每天的日程安排</div>
+          <div class="text-[11px] sm:text-[13px] text-mute font-medium" data-i18n="hero.stat.schedule">每天的日程安排</div>
         </div>
       </div>
     </div>
