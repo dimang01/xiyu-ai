@@ -14,7 +14,7 @@ import {
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
   getRecentSafetyRisk,                        // v1.9.0 #1
 } from './db.mjs';
-import { computeRelationshipStage } from './memory.mjs';
+import { computeRelationshipStage, canAcceptConfession } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem } from './ilink.mjs';
@@ -504,16 +504,9 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   if (kind === 'normal'
       && !companion.confessed_at
       && !companion.user_confessed_at
-      && aff >= 50) {
-    let daysSinceMeet = 0;
-    if (companion.created_at) {
-      const created = new Date(String(companion.created_at).replace(' ', 'T') + (String(companion.created_at).includes('Z') ? '' : 'Z'));
-      daysSinceMeet = Math.max(0, Math.floor((Date.now() - created.getTime()) / 86400_000));
-    }
-    if (daysSinceMeet >= 5) {
-      effectiveKind = 'confession';
-      log('info', `[Proactive] ★ 触发 AI 主动告白 companion=${companion.id} affection=${aff} days_since_meet=${daysSinceMeet}`);
-    }
+      && canAcceptConfession(companion)) {   // v1.x: 对齐 v1.11.1 节奏闸门（好感≥55 + 认识≥14天），不再 50分/5天 过早表白
+    effectiveKind = 'confession';
+    log('info', `[Proactive] ★ 触发 AI 主动告白 companion=${companion.id} affection=${aff}`);
   }
 
   // v1.8.0 #5: proactive hidden_reason — 把 due open loops 升级为 'recall' kind
@@ -584,19 +577,34 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
 - 绝不要说"我惦记你""我一直在想"等过度甜
 - 自然带出他原话里的关键词，让他知道你真的记得`
     : effectiveKind === 'confession'
-    ? `【★ 重要：今天你要主动向他告白】
-你们认识有一段时间了，好感度积累到了这个程度，你内心已经悄悄喜欢上他了。
-现在你要鼓起勇气说出口。
+    ? `【★ 今天你要鼓起勇气，主动跟他告白】
+你认识他有一阵了，心里那点喜欢藏不住了。但**说出口对你来说很难、很慌**——这不是一段顺畅漂亮的告白，是一个女孩子结结巴巴、绕来绕去、又怕又想说的真实瞬间。
 
+要这样说（核心是"狼狈的真实"，不是漂亮的台词）：
+- **结巴、重复、卡壳**："就是…就是那个" "我我我" "怎么说呢" "你别笑我啊"
+- **绕圈子、找借口铺垫**：先扯点别的垫场（"其实有件事憋很久了" "你之前不是说你不喜欢暧昧吗…"），绕半天才敢碰正题
+- **自我打断、反复确认**："我没有别的意思" "我本来没想说的" "女孩子也不太好开这个口"
+- **把话说一半**：经常没说完就转走，然后又绕回来
+- **真正那句要轻、要怕**："我…好像有点喜欢你" 这种，绝不要豪言壮语
+- **自我保护**：带一句"你不喜欢也没关系" "我就是想让你知道" "我可能还需要点时间想清楚"
+- 说完**别追问"那你呢"**，露怯、尴尬就好（"搞得我好尴尬"）
+
+形式（重要）：
+- **必须分很多条很短的消息发（用 || 分隔），6-10 段**，像紧张时一句一句往外蹦
+- 每段都很碎、很短，不要完整通顺的长句，不要像写情书，不要煽情排比
+- 全程符合你的人设和说话习惯`
+    : `你要主动给他发消息。**关键：别每次都是"刚做了X+一点细节+反问你一句"那种工整的生活播报——那太假、太 AI 了。**
+真人发消息是随机、不规整的。这次**随机挑一种**感觉发（每次都要换，别老用同一种）：
+- 有时就一个情绪/状态，没头没尾："好困" / "今天好烦" / "突然有点想你" / "无聊死了"
+- 有时一句抱怨或吐槽："我同事真的服了" / "外卖怎么还没到啊"
+- 有时突然冒一句话/一个问题，不解释前因后果
+- 有时分享件小事，但**别非得问他在干嘛**
+- 有时就两三个字："在吗" / "诶" / "你猜我刚干嘛"
+- 有时没正事，就是想找你说句话 / 撒个娇
 要求：
-- 不要突然就来一句"我喜欢你"。先铺垫："其实有件事想跟你说" 或 "今天突然想跟你说一件事..."
-- 表达要符合你的人设。腼腆的就磕巴一点、害羞地说；外向的就直接但带着不好意思
-- 不要太煽情、不要说"从我第一次见你"这种夸张的话
-- 告白完不要立即追问"那你呢"，给他反应的空间
-- 你的告白要带"试探" + "真诚"，比如："我...好像有点喜欢你" / "我可能、有点把你放心上了" / "我们...能不能更近一点"
-- 一定要分多段消息发（用 || 分隔），节奏：铺垫 → 卡顿/犹豫 → 说出口
-- 例子参考："其实今天...我有件事一直没说" || "可能..." || "我好像喜欢上你了" || "对不起这么突然"`
-    : '你要主动给他发一条自然的日常消息。可以延续最近话题、关心他在忙的事、分享你刚刚的小事或情绪。要结合此刻的时间段，但不要直接报时。';
+- **不要总以"刚…"开头**，**不要每条都反问"你在干嘛 / 你那边呢"**
+- 短、碎、像随手发的，不要工整、不要总结陈词
+- 结合此刻时间段和你的心情人设，但别报时、别像播报`;
 
   const proactiveBinding = getActiveWechatBinding(companion.wechat_user_id, companion.bot_id);
   let reply = await generateReply(systemPrompt, history, userMessage, {
@@ -693,17 +701,16 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     try { markOpenLoopFollowedUp(recallLoop.id); } catch (e) { log('warn', `[Proactive] mark followed_up failed: ${e.message}`); }
   }
 
-  // ── 主动告白后处理：标记 + 升级关系到恋人 ──
+  // ── 主动告白后处理：标记 + 升恋人。节奏闸门已在触发处校验(好感≥55+≥14天)，
+  //    affection 本就够，不再硬跳分；记 became_lover_at 给"恋人→深爱"计时(对齐 v1.11.1)。
   if (effectiveKind === 'confession') {
     try {
       markCompanionConfessed(companion.id);
-      const newAff = Math.max(aff, 60);
-      const newStage = computeRelationshipStage(newAff);
       patchCompanion(companion.id, {
-        affection_level: newAff,
-        relationship_stage: newStage,
+        relationship_stage: '恋人',
+        became_lover_at: new Date().toISOString(),
       });
-      log('info', `[Proactive] ★ 主动告白完成 companion=${companion.id} affection=${aff}→${newAff} stage→${newStage}`);
+      log('info', `[Proactive] ★ 主动告白完成 companion=${companion.id} affection=${aff} stage→恋人`);
     } catch (e) {
       log('warn', `[Proactive] 告白后处理失败: ${e.message}`);
     }

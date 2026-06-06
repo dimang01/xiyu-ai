@@ -844,6 +844,22 @@ function migrateMemoryV3() {
   addColIfMissing('companion_memories', 'memory_weight', 'INTEGER DEFAULT 3');
   addColIfMissing('companion_memories', 'memory_status', "TEXT DEFAULT 'active'");
   addColIfMissing('companion_memories', 'memory_source', "TEXT DEFAULT 'auto'");
+  // v1.x 修(#1)：回填存量 memory_layer（此前 saveMemories 没写 layer，全卡在 'event'）。
+  // 只动"被错标成 event 但 type 不是 event/image"的行，幂等（修对后不再匹配）。
+  try {
+    db.prepare(`
+      UPDATE companion_memories SET memory_layer = CASE memory_type
+        WHEN 'fact' THEN 'user_fact'
+        WHEN 'preference' THEN 'preference'
+        WHEN 'emotion' THEN 'emotion'
+        WHEN 'daily_summary' THEN 'summary'
+        WHEN 'weekly_summary' THEN 'summary'
+        WHEN 'monthly_summary' THEN 'summary'
+        ELSE 'event' END
+      WHERE memory_layer IS NULL
+         OR (memory_layer = 'event' AND memory_type NOT IN ('event','image'))
+    `).run();
+  } catch (e) { /* 表/列尚未就绪时忽略，下次启动再回填 */ }
   addColIfMissing('companion_memories', 'locked',        'INTEGER DEFAULT 0');
   addColIfMissing('companion_memories', 'do_not_mention','INTEGER DEFAULT 0');
   addColIfMissing('companion_memories', 'conflict_of',   'INTEGER');
@@ -2772,11 +2788,20 @@ export function saveMemory({ companionId, userId, memoryType, content, importanc
   `).run(companionId, userId, memoryType, content, importance, isPinned, kw, emb);
 }
 
+// v1.x 修(#1)：memory_type → memory_layer 映射（与 memory_v2.mjs LAYER_MAP 一致，
+// 内联避免循环 import）。此前 saveMemories 不写 memory_layer，全默认 'event'，导致
+// 网页端 7 层记忆只显示「事件」。
+const MEMORY_TYPE_TO_LAYER = {
+  fact: 'user_fact', preference: 'preference', event: 'event', emotion: 'emotion',
+  image: 'event', daily_summary: 'summary', weekly_summary: 'summary', monthly_summary: 'summary',
+};
+export const memoryLayerOfType = (t) => MEMORY_TYPE_TO_LAYER[t] || 'event';
+
 export function saveMemories(memories) {
   const db = getDb();
   const stmt = db.prepare(`
-    INSERT INTO companion_memories (companion_id, user_id, memory_type, content, importance, pinned, keywords, embedding)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO companion_memories (companion_id, user_id, memory_type, memory_layer, content, importance, pinned, keywords, embedding)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = db.transaction(list => {
     for (const m of list) {
@@ -2784,7 +2809,7 @@ export function saveMemories(memories) {
       const pinned = m.pinned !== undefined ? (m.pinned ? 1 : 0) : (imp >= 7 ? 1 : 0);
       const kw = Array.isArray(m.keywords) ? JSON.stringify(m.keywords) : (m.keywords || null);
       const emb = m.embedding ? packEmbedding(m.embedding) : null;
-      stmt.run(m.companionId, m.userId, m.memoryType, m.content, imp, pinned, kw, emb);
+      stmt.run(m.companionId, m.userId, m.memoryType, memoryLayerOfType(m.memoryType), m.content, imp, pinned, kw, emb);
     }
   });
   tx(memories);
