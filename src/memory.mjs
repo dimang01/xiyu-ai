@@ -156,6 +156,24 @@ export function detectUserConfession(userMsg) {
   return false;
 }
 
+/**
+ * v1.10.32: 检测 AI 回复是否含"她在表白"语义。返回 boolean。
+ * 跟 detectUserConfession 同模式但排除常见"接住用户告白"的回应（"我也是" / "我等你"
+ * 这种不算独立的告白事件 — 那是用户告白触发的）。
+ */
+export function detectCompanionConfession(botReply) {
+  if (!botReply || typeof botReply !== 'string' || botReply.length < 2) return false;
+  const original = botReply;
+  const compact = botReply.replace(/\s+/g, '');
+  // 排除"也"类回应（接住用户告白），不是独立告白事件
+  if (/^(?:我)?也(?:喜欢|爱|是)/.test(compact)) return false;
+  if (/喜欢你(?:发|画|说|做|的|那|这|@|分享)/.test(compact)) return false;
+  for (const re of CONFESSION_PATTERNS) {
+    if (re.test(compact) || re.test(original)) return true;
+  }
+  return false;
+}
+
 // ─── 亲密称呼检测（用户使用过早的亲密词）──────────────────────────────────
 const INTIMATE_TERMS_RE = /(?:^|[^a-zA-Z])(宝宝|宝贝|宝儿|亲爱的|老婆|老公|baby|honey|sweetie|心肝|小可爱|乖乖)(?:[^a-zA-Z]|$)/i;
 const FLIRT_PHRASES_RE = /(?:抱抱|抱一下|亲亲|亲一口|蹭蹭|摸摸头|想睡你|想亲你|想抱你|抱回家|带你回家)/;
