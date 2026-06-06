@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./assets/cover.png" alt="Xiyu AI · an open-source AI-girlfriend companion framework" width="100%" />
+
 # Xiyu AI · 溪语 AI
 
 **An open-source AI-girlfriend companion framework — she starts already crushing on you, not as a stranger.**

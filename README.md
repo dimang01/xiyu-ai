@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./assets/cover.png" alt="溪语 AI · 默认对你有好感的开源 AI 女友陪伴框架" width="100%" />
+
 # 溪语 AI · Xiyu AI
 
 **默认对你有好感的 AI 女友 · 开源陪伴框架**
