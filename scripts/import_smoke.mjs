@@ -34,6 +34,7 @@ const MODULES = [
   'src/voice_inbound.mjs',
   'src/voice_emotion.mjs',
   'src/visual_identity_candidates.mjs',
+  'src/image_beautify.mjs',
   'src/bot.mjs',
   'src/api.mjs',
 ];

@@ -214,12 +214,21 @@ const REGISTRY = {
 
 /**
  * 统一生图接口。返回图片 URL（或 base64 data URL）。
+ * v1.10.52: 所有 provider 输出后自动过 beautify 滤镜（可 IMAGE_BEAUTIFY_ENABLED=false 关）。
  */
 export async function imageGenerate(prompt, { size = '1024x1024' } = {}) {
   const fn = REGISTRY[ACTIVE];
   if (!fn) throw new Error(`未知 IMAGE_PROVIDER=${ACTIVE}。可选：${Object.keys(REGISTRY).join(', ')}`);
   log('debug', `[image] provider=${ACTIVE} size=${size}`);
-  return await fn(prompt, size);
+  const rawUrl = await fn(prompt, size);
+  // v1.10.52: 全局美颜后处理。失败时静默返回原 url。
+  try {
+    const { beautifyImageUrl } = await import('../image_beautify.mjs');
+    return await beautifyImageUrl(rawUrl);
+  } catch (e) {
+    log('warn', `[image] beautify wrap failed, 返回原 url: ${e.message}`);
+    return rawUrl;
+  }
 }
 
 export function getActiveImageProvider() {
