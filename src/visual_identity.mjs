@@ -16,12 +16,13 @@ const VISUAL_ROOT = process.env.PHOTO_VISUAL_IDENTITY_DIR || DEFAULT_ROOT;
 const BLOCKED_RE = /\b(anime|illustration|poster|app icon|avatar icon|glamour shoot|fantasy girlfriend|nsfw|nude|sexual|minor|celebrity|loneliness|attachment)\b|二次元|插画|海报|未成年|名人|色情|裸露|情绪分数|当前情绪状态|11维|11[-\s]*dimensional\s+emotion/i;
 const SAFE_AVOID = [
   'non-photographic styles',
-  'polished advertising look',
   'studio portrait look',
   'famous-person resemblance',
   'revealing styling',
-  'underage appearance',
   'private user details',
+  // v1.10.42: 移除 'underage appearance' 和 'polished advertising look' —
+  // 它们让模型把人物画成 25-30 plain 阿姨脸。新版用具象视觉描述显小，
+  // 安全过滤由 BLOCKED_RE / sanitizer 处理。
 ];
 
 function envFlag(name, fallback = true) {
@@ -124,12 +125,14 @@ export function buildVisualIdentitySpec({ companion = {}, persona = {}, emotionS
   ].filter(Boolean);
 
   return {
-    ageLook: 'adult appearance, mid-20s to early-30s feeling',
-    face: 'natural facial features, consistent face shape, ordinary real-world look',
+    // v1.10.42: 用具象视觉特征代替"adult mid-20s"硬编码。让模型画"非常
+    // 年轻但成年看起来"，跟 photo_planner v1.10.41 prompt 对齐。
+    ageLook: 'very youthful first-year university freshman vibe, soft baby-faced look',
+    face: 'soft round full cheeks, large warm doe eyes, small delicate chin, dewy clear skin, gentle warm natural smile, fresh makeup-free complexion',
     hair: `${hairColor} ${hairStyle} hair, stable across photos`,
-    body: 'natural proportions, modest styling, adult only',
-    style: `${clothing} clothing style, practical and everyday`,
-    vibe: safeText(vibeParts.join(', ') || 'realistic, warm, ordinary-life feeling', 180),
+    body: 'slim petite youthful frame, natural proportions, modest casual styling',
+    style: `${clothing} clothing style, casual youthful daily wear`,
+    vibe: safeText(vibeParts.join(', ') || 'fresh, warm, photogenic, naturally pretty everyday feeling', 180),
     avoid: SAFE_AVOID,
   };
 }
