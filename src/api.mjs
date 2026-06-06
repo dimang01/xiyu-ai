@@ -148,7 +148,7 @@ import {
   createBillingOrder, getBillingOrder, listBillingOrdersByAccount,
   markOrderPaid, updateOrderStatus, grantProToAccount,
   getLastVerificationSend, countVerificationSendsSince, saveVerificationCode,
-  getVerificationCode, deleteVerificationCode,
+  getVerificationCode, deleteVerificationCode, bumpVerificationAttempt,
   createUserAccount, getUserAccountByUsername, getUserAccountByEmail,
   getUserAccountById, getUserAccountWithPassword, updateUserPassword,
   getOrCreateSingleUserOwner,
@@ -471,7 +471,9 @@ function isValidRegisterCode(email, code) {
     return false;
   }
   const receivedHash = hashCode(email, 'register', code);
-  return crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(record.code_hash));
+  const ok = crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(record.code_hash));
+  if (!ok) bumpVerificationAttempt(email, 'register');  // v1.11.0 安全(M1)
+  return ok;
 }
 
 function isValidResetCode(email, code) {
@@ -482,7 +484,9 @@ function isValidResetCode(email, code) {
     return false;
   }
   const receivedHash = hashCode(email, 'reset_password', code);
-  return crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(record.code_hash));
+  const ok = crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(record.code_hash));
+  if (!ok) bumpVerificationAttempt(email, 'reset_password');  // v1.11.0 安全(M1)
+  return ok;
 }
 
 function requireCompanion(res, id) {
@@ -727,7 +731,10 @@ router.post('/auth/send-code',
 });
 
 // POST /api/auth/verify-code
-router.post('/auth/verify-code', (req, res) => {
+router.post('/auth/verify-code',
+  // v1.11.0 安全(M1)：补限流，与 login/send-code/register/reset 一致，封死验证码爆破 oracle
+  rateLimit({ scope: 'verify-code', maxPerWindow: 10, windowMs: 10 * 60 * 1000, message: '验证过于频繁，请稍后再试' }),
+  (req, res) => {
   const email = normalizeEmail(req.body?.email);
   const purpose = req.body?.purpose || 'login';
   const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
@@ -743,7 +750,7 @@ router.post('/auth/verify-code', (req, res) => {
 
   const receivedHash = hashCode(email, purpose, code);
   const okHash = crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(record.code_hash));
-  if (!okHash) return authErr(res, '验证码错误或已过期');
+  if (!okHash) { bumpVerificationAttempt(email, purpose); return authErr(res, '验证码错误或已过期'); }
 
   deleteVerificationCode(email, purpose);
   return authOk(res, '验证成功');
@@ -4158,6 +4165,32 @@ export function startApiServer() {
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: false, limit: '2mb' }));   // 支付宝异步通知用 form 编码
   app.use((req, _res, next) => { log('debug', `[API] ${req.method} ${req.path}`); next(); });
+
+  // v1.11.0 安全(L1)：基础安全响应头。零风险的几个无条件加；CSP 因前端用
+  // Tailwind CDN(JIT 需 unsafe-eval)易打挂，默认关，置 CSP_ENABLED=true 且
+  // 浏览器自测通过后再在生产开启。
+  app.use((_req, res, next) => {
+    res.setHeader('X-Frame-Options', 'DENY');                          // 防点击劫持
+    res.setHeader('X-Content-Type-Options', 'nosniff');                // 防 MIME 嗅探
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+    if (String(process.env.CSP_ENABLED || '').toLowerCase() === 'true') {
+      res.setHeader('Content-Security-Policy', [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://challenges.cloudflare.com https://unpkg.com",
+        "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
+        "img-src 'self' data: blob: https:",
+        "connect-src 'self' https:",
+        "font-src 'self' data:",
+        "frame-src https://challenges.cloudflare.com",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "object-src 'none'",
+      ].join('; '));
+    }
+    next();
+  });
+
   app.use(express.static(PUBLIC_DIR));
 
   // 健康检查 + 当前激活的 AI provider（开源版本提供，便于排查"为什么没回复"）
@@ -4180,15 +4213,20 @@ export function startApiServer() {
     const chatKeyEnv = CHAT_KEY_ENV[String(chat?.id || '').toLowerCase()];
     const chatConfigured = chatKeyEnv ? Boolean(process.env[chatKeyEnv]) : false;
     const setupRequired = !chatConfigured;
+    // v1.11.0 安全(L3)：HOSTED_MODE（SaaS 部署）下不向未授权方暴露 provider 技术栈
+    // 与 env 名，对齐 /setup/status 的屏蔽策略（v1.10.20）。
+    const hostedMode = String(process.env.HOSTED_MODE || '').toLowerCase() === 'true';
 
     res.json({
       ok: true,
       status: 'running',
       setup_required: setupRequired,                          // 用于首次启动浏览器引导
       setup: setupRequired
-        ? { reason: 'chat_provider_unconfigured', chat_provider: chat?.id, missing_env: chatKeyEnv }
+        ? (hostedMode
+            ? { reason: 'unconfigured' }
+            : { reason: 'chat_provider_unconfigured', chat_provider: chat?.id, missing_env: chatKeyEnv })
         : null,
-      providers: {
+      providers: hostedMode ? null : {
         chat: { ...chat, configured: chatConfigured },
         image: getActiveImageProvider(),
         vision: getActiveVisionProvider(),

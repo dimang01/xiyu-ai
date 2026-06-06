@@ -74,8 +74,8 @@ async function chatCompleteWithRetry(args, { label = 'chat' } = {}) {
 
 // ─── 图像生成 ─────────────────────────────────────────────────────────────
 
-export async function generateImage(prompt, { size = '1024x1024' } = {}) {
-  return await imageGenerate(prompt, { size });
+export async function generateImage(prompt, { size = '1024x1024', referenceImage = null } = {}) {
+  return await imageGenerate(prompt, { size, referenceImage });
 }
 
 /**

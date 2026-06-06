@@ -13,7 +13,8 @@
  *    annoyance/anger+，AI 用 "被吵醒" prompt 生成一条短消息回执。
  *
  * 学习期（observing）：
- *  - 默认 bed=23:00 wake=07:30 jitter=30，但 user_set=0 且 learn_state='observing'
+ *  - 默认 bed=00:30 wake=07:30 jitter=30（v1.10.5: 23:00→00:30），但 user_set=0
+ *    且 learn_state='observing'
  *    时每天记录用户的 first_msg / last_msg 上海时区时刻到 observed_samples_json。
  *  - 满 7 天样本后第 8 天 cron 自动固化：取最后消息时刻中位数为 bed_time，
  *    取首条消息时刻中位数为 wake_time（夹在合理区间内）。learn_state='locked'。

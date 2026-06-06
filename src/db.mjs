@@ -232,6 +232,8 @@ function migrateUserAccounts() {
   addColIfMissing('user_accounts', 'is_banned', 'INTEGER DEFAULT 0');
   addColIfMissing('user_accounts', 'banned_reason', 'TEXT');
   addColIfMissing('user_accounts', 'banned_at', 'DATETIME');
+  // v1.11.0 安全(M1)：验证码失败尝试计数，错 N 次作废，防爆破
+  addColIfMissing('email_verification_codes', 'attempts', 'INTEGER DEFAULT 0');
 }
 
 function initAiUsageTable() {
@@ -1401,6 +1403,19 @@ export function deleteVerificationCode(email, purpose) {
   db.prepare('DELETE FROM email_verification_codes WHERE email = ? AND purpose = ?').run(email, purpose);
 }
 
+// v1.11.0 安全(M1)：验证码每次校验失败调用一次；尝试数 +1，达上限即作废该码，
+// 让 6 位码无法被无限暴力穷举（配合 verify-code 端点限流）。
+export const MAX_CODE_ATTEMPTS = 5;
+export function bumpVerificationAttempt(email, purpose) {
+  const db = getDb();
+  db.prepare('UPDATE email_verification_codes SET attempts = COALESCE(attempts, 0) + 1 WHERE email = ? AND purpose = ?')
+    .run(email, purpose);
+  const row = db.prepare('SELECT attempts FROM email_verification_codes WHERE email = ? AND purpose = ?').get(email, purpose);
+  if (row && row.attempts >= MAX_CODE_ATTEMPTS) {
+    db.prepare('DELETE FROM email_verification_codes WHERE email = ? AND purpose = ?').run(email, purpose);
+  }
+}
+
 // ─── user accounts ───────────────────────────────────────────────────────────
 function publicAccount(row) {
   if (!row) return null;
@@ -2565,11 +2580,18 @@ export function updateCompanion(id, data) {
   return getCompanionById(id);
 }
 
-/** 直接更新 companion 的特定字段（供内部使用，跳过白名单） */
+/** 直接更新 companion 的特定字段（供内部使用，跳过字段白名单但强校验列名） */
 export function patchCompanion(id, fields) {
   const db = getDb();
-  const sets = Object.keys(fields).map(k => `${k} = ?`).join(', ');
-  const vals = Object.values(fields);
+  const keys = Object.keys(fields || {});
+  // v1.11.0 安全(M2)：列名必须是合法 SQL 标识符，杜绝列名注入。现有调用方都是
+  // 硬编码 key；此校验是防御未来有人误把 req.body 直接传进来。fail-closed。
+  for (const k of keys) {
+    if (!/^[a-z_][a-z0-9_]*$/i.test(k)) throw new Error(`patchCompanion: 非法列名 ${k}`);
+  }
+  if (keys.length === 0) return;
+  const sets = keys.map(k => `${k} = ?`).join(', ');
+  const vals = keys.map(k => fields[k]);
   db.prepare(`UPDATE companions SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
     .run(...vals, id);
 

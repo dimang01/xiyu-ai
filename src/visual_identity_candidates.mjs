@@ -10,18 +10,25 @@ import { imageGenerate } from './providers/image.mjs';
 import { saveCandidateImage } from './visual_identity.mjs';
 import { log } from './logger.mjs';
 
-// v1.10.51: 4 seed 强差异化 — 不同表情 + 不同视角 + 不同环境 + 不同情绪，
-// 让用户选择真有意义。前版本 4 张几乎只换光线，差异太小。
+// v1.10.53: 4 seed 强差异化 + 全部不露齿（用户反馈「笑最好不漏齿」）。
+// 拿用户给的两张参考图当光谱两端拉大差距：
+//   s1 ≈ 室内楼梯/走廊冷调清冷  s2 ≈ 户外走廊暖阳清新
+// 之前 s2 `hint of teeth`、s3 `mid-laugh` 是露齿源头，全改抿唇/闭嘴。
 const SEED_VARIATIONS = {
-  // 害羞低头 / 室内柔光 / 内向感
-  s1: 'shy bashful expression looking slightly down with a faint smile and rosy blushing cheeks, hand near chin or hair, soft afternoon window light from the side casting gentle warm glow, intimate quiet bedroom or dorm room background',
-  // 开心露齿 / 阳光 / 外向感
-  s2: 'bright wide genuine open smile showing a hint of teeth, looking directly into the camera with sparkling cheerful eyes, sunny bright midday natural daylight, fresh clean campus or park outdoor background with soft bokeh',
-  // 抓拍中笑 / 室内暖灯 / 自然感
-  s3: 'candid mid-laugh expression with hand slightly raised covering part of the cheek, head tilted at a playful angle, eyes half-crinkled from laughing, cozy warm indoor lamp lighting, home or cafe setting',
-  // 远眺侧脸 / 黄金时分 / 文艺感
-  s4: 'serene calm gentle close-mouth smile with eyes looking softly off into the distance to the side, three-quarter profile angle, warm golden-hour sunset light glowing on the cheek, soft green leafy or sky background',
+  // s1 清冷文艺 / 室内楼梯间·走廊冷光 / 垂发安静（对齐参考图2）
+  s1: 'calm quiet serene almost-expressionless face with lips gently closed and only the faintest trace of a smile, long hair hanging straight down framing the face, standing in a bright indoor stairwell or corridor with cool natural daylight pouring in from tall windows, quiet literary introverted mood',
+  // s2 阳光清新 / 户外走廊暖阳·风吹发丝 / 动态（对齐参考图1）
+  s2: 'gentle soft close-lipped smile with lips kept softly together, a few strands of hair lightly blown by the breeze, standing in an outdoor covered walkway or sunny corridor, warm bright late-afternoon sunlight, fresh airy candid feeling with a hint of natural motion',
+  // s3 害羞低头 / 室内窗边暖光 / 内向（保留原 s1 害羞感，去掉露齿）
+  s3: 'shy bashful expression glancing slightly downward with a soft closed-lip smile and rosy blushing cheeks, one hand gently touching hair near the face, warm soft indoor window light from the side, cozy quiet intimate bedroom or dorm mood',
+  // s4 远眺侧脸 / 黄金时分 / 文艺（用户钦点，保持不露齿）
+  s4: 'serene gentle close-mouth smile with lips together and eyes gazing softly off into the distance to the side, three-quarter profile angle, warm golden-hour sunset light glowing on the cheek, soft green leafy or open sky background, dreamy literary mood',
 };
+
+// v1.10.53: 每个 seed 的服装位 — uniform 位仅 16-18 岁出校服，其余年龄段
+// 自动降级（见 outfitForSeed）；casual 位走 companion 个性化便服。
+// 用户要求「留 2 张便服」：s1/s2 = 校园校服位，s3/s4 = 便服位。
+const SEED_OUTFIT_SLOT = { s1: 'uniform', s2: 'uniform', s3: 'casual', s4: 'casual' };
 
 export const CANDIDATE_SEEDS = Object.keys(SEED_VARIATIONS);
 
@@ -69,15 +76,36 @@ function clothingToEnglish(style) {
   if (/甜美|sweet|cute/.test(s)) return 'cute pastel hoodie or light knit cardigan';
   if (/清新|fresh|elegant/.test(s)) return 'fresh clean light blouse or simple soft tee';
   if (/酷|cool|street/.test(s)) return 'oversized casual hoodie or graphic tee';
-  if (/学院|preppy/.test(s)) return 'preppy soft cardigan over light shirt';
+  if (/学生|学院|preppy|student/.test(s)) return 'preppy soft cardigan over a light shirt, fresh clean student daily style';
   return 'casual youthful daily wear';
+}
+
+// v1.10.53: 服装按 seed 服装位 + 年龄动态化。
+// 关键约束（用户要求）：校服只在 16-18 岁出现，提示词不写死年龄数字，
+// 其余年龄段自动降级到对应清新便服，避免成年 companion 误穿校服。
+function outfitForSeed(companion, slot) {
+  // casual 位：始终走 companion 个性化便服
+  if (slot !== 'uniform') return clothingToEnglish(companion?.clothing_style);
+
+  const a = Number(companion?.age) || 18;
+  // 校服仅限 16-18：白蓝撞色短袖 polo 校服（措辞避开 "school uniform" 防安全过滤）
+  if (a >= 16 && a <= 18) {
+    return 'fresh clean white short-sleeve collared polo shirt with blue trim, neat tidy student style';
+  }
+  // 19-22：已无校服，降级清新学院风便服
+  if (a <= 22) {
+    return 'fresh preppy crisp white collared shirt or light campus cardigan, clean academic style';
+  }
+  // 23+：更成熟的简约通勤便服
+  return 'simple elegant light collared blouse or fine knit top, clean refined style';
 }
 
 export function buildIdentityCandidatePrompt(companion, seed) {
   const hairColor = companion?.hair_color || '黑色';
   const hairStyle = companion?.hair_style || '长发';
   const eye = companion?.eye_color || '棕色';
-  const clothing = clothingToEnglish(companion?.clothing_style);
+  // v1.10.53: 服装按 seed 服装位 + 年龄动态决定（校服仅 16-18，见 outfitForSeed）
+  const clothing = outfitForSeed(companion, SEED_OUTFIT_SLOT[seed] || 'casual');
   const variation = SEED_VARIATIONS[seed] || SEED_VARIATIONS.s1;
 
   // v1.10.51: 按 companion.age 取年龄段 vibe，替代硬编码 freshman

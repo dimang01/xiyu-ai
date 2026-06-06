@@ -234,6 +234,54 @@ function splitReplySegments(reply) {
 // 等当前回复结束后 AI 已能从 history 里看到全部连发的内容，自然合并响应。
 const inflightUsers = new Set();
 
+// v1.10.53: 连发消息合并（debounce）——真人常一次连发 2-3 条消息/图片；不再每条
+// 都单独回，而是等用户停手（安静窗口）后把这一串整合成「一轮」，只回一次。
+//   · COALESCE_WINDOW_MS：两条消息间隔超过它就视为"发完了"，开始回复
+//   · COALESCE_MAX_WAIT_MS：一直连发不停的硬上限，到点强制冲刷，防永远不回
+const COALESCE_ENABLED     = String(process.env.COALESCE_ENABLED ?? 'true').toLowerCase() !== 'false';
+const COALESCE_WINDOW_MS   = Number(process.env.COALESCE_WINDOW_MS) || 10_000;
+const COALESCE_MAX_WAIT_MS = Number(process.env.COALESCE_MAX_WAIT_MS) || 30_000;
+// fromUser -> { parts: string[], firstAt: number, timer, turn }
+const pendingBursts = new Map();
+
+// 测试 seam：默认走真实 processUserTurn；测试可替换以验证合并/计时逻辑而不跑重管线。
+let _turnRunner = (turn) => processUserTurn(turn);
+export function __setTurnRunnerForTest(fn) { _turnRunner = typeof fn === 'function' ? fn : ((t) => processUserTurn(t)); }
+
+// 把一条已识别的 userText 推进该用户的 burst 缓冲并重置计时器；停手后 flush 合并回复。
+// COALESCE 关闭时退回老行为：直接处理（仍用 inflightUsers 防同一用户并发回复）。
+export function enqueueOrRunTurn(turn) {
+  const fromUser = turn.fromUser;
+  if (!COALESCE_ENABLED) {
+    if (inflightUsers.has(fromUser)) { log('info', `[Bot] 已有回复进行中，跳过 user=${fromUser}`); return; }
+    _turnRunner(turn).catch(e => log('error', `[Bot] processUserTurn 异常: ${e.message}`));
+    return;
+  }
+  let b = pendingBursts.get(fromUser);
+  if (!b) { b = { parts: [], firstAt: Date.now(), timer: null, turn }; pendingBursts.set(fromUser, b); }
+  b.parts.push(turn.userText);
+  b.turn = turn;  // 留最新一条的 ctx / contextToken / companion
+  if (b.timer) clearTimeout(b.timer);
+  const remaining = COALESCE_MAX_WAIT_MS - (Date.now() - b.firstAt);
+  const delay = Math.max(0, Math.min(COALESCE_WINDOW_MS, remaining));
+  b.timer = setTimeout(() => flushBurst(fromUser), delay);
+  log('debug', `[Bot] coalesce: user=${fromUser} 缓冲第 ${b.parts.length} 条，${delay}ms 后冲刷`);
+}
+
+// 安静窗口到点：把缓冲里的多条合并成一段（换行分隔），整体回一次。
+function flushBurst(fromUser) {
+  const b = pendingBursts.get(fromUser);
+  if (!b) return;
+  if (inflightUsers.has(fromUser)) {  // 上一轮还在回复 → 等下一个窗口再冲刷
+    b.timer = setTimeout(() => flushBurst(fromUser), COALESCE_WINDOW_MS);
+    return;
+  }
+  pendingBursts.delete(fromUser);
+  const userText = b.parts.length <= 1 ? (b.parts[0] || '') : b.parts.join('\n');
+  if (b.parts.length > 1) log('info', `[Bot] coalesce flush: user=${fromUser} 合并 ${b.parts.length} 条 → 一次回复`);
+  _turnRunner({ ...b.turn, userText }).catch(e => log('error', `[Bot] flush 异常: ${e.message}`));
+}
+
 // 防重放：记录已处理的 msgId（内存）
 const processedIds = new Set();
 
@@ -285,13 +333,7 @@ export async function handleMessage(rawMsg, botContext = {}) {
     direction: 'in',
   });
 
-  // 同一用户已有 inflight 任务则不重复触发，AI 下次能从 history 看到合并文本
-  if (inflightUsers.has(msg.fromUser)) {
-    log('info', `[Bot] coalesce: user=${msg.fromUser} already has inflight reply, skipping`);
-    return;
-  }
-  inflightUsers.add(msg.fromUser);
-
+  // v1.10.53: 旧的"忙时跳过"式合并已移除，改为下方 enqueueOrRunTurn 的防抖合并。
   try {
     if (msg.msgType === 'text') {
       const bindHandled = await handleBindCodeMessage(ctx, msg, botId);
@@ -409,6 +451,23 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
     if (!userText) return;
 
+    // v1.10.53: 连发合并 —— 把这条识别后的 userText 推进 burst 缓冲，用户停手后
+    // 整合成一轮、只回一次（见文件顶部 enqueueOrRunTurn / flushBurst）。
+    enqueueOrRunTurn({ companion, binding, ctx, botId, fromUser: msg.fromUser, contextToken: msg.contextToken, userText });
+    return;
+  } catch (err) {
+    log('error', `[Bot] 接收段异常 user=${msg.fromUser}: ${err.message}`);
+  } finally {
+    // 接收段（绑定/睡眠/识别/缓冲）不持有回复锁；回复锁由 processUserTurn 自管。
+  }
+}
+
+// v1.10.53: 单轮回复处理（photo-intent + 文本回复管线）。由 burst flush 合并后调用，
+// COALESCE 关闭时直接调用。msg 为 shim，保留移植代码里的 msg.fromUser/.contextToken 写法。
+async function processUserTurn({ companion, binding, ctx, botId, fromUser, contextToken, userText }) {
+  const msg = { fromUser, contextToken };
+  inflightUsers.add(fromUser);  // 回复期间占用，防同一用户并发回复（调用前已查 has）
+  try {
     // v1.10.38: regex fast path + LLM 兜底。regex 命中 strong → 直接 strong；
     // 不命中 → LLM 二分类（轻量短 token）兜底，终结 regex 漏识别循环。
     const photoIntent = await detectPhotoIntentSmart(userText, getRecentHistory(msg.fromUser, botId, 6));
