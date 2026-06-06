@@ -78,7 +78,9 @@
     nodes.forEach((node) => {
       if (node._i18nOrig === undefined) node._i18nOrig = node.nodeValue;
       const orig = node._i18nOrig, key = orig.trim();
-      node.nodeValue = (lang === 'en' && TEXT_MAP[key] != null) ? orig.replace(key, () => TEXT_MAP[key]) : orig;
+      // 先精确匹配，再用「空白归一化」兜底（跨行/多空格文本节点也能命中）
+      const en = TEXT_MAP[key] != null ? TEXT_MAP[key] : TEXT_MAP[key.replace(/\s+/g, ' ')];
+      node.nodeValue = (lang === 'en' && en != null) ? orig.replace(key, () => en) : orig;
     });
   }
   function walkAttrs(lang) {
