@@ -33,6 +33,7 @@ const MODULES = [
   'src/playground.mjs',
   'src/voice_inbound.mjs',
   'src/voice_emotion.mjs',
+  'src/visual_identity_candidates.mjs',
   'src/bot.mjs',
   'src/api.mjs',
 ];
