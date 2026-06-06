@@ -50,11 +50,36 @@ const PHOTO_REQUEST_FALLBACKS = [
   '等等，我找个好看的角度',
   '刚刚那张糊了，别急',
 ];
+// v1.10.40: 异步生图前发的"等一下"安抚句，让用户立刻知道收到了请求
+const PHOTO_ACK_OPTIONS = [
+  '等下哦 我看看刚拍的怎么样',
+  '嗯 给我一点时间挑一张',
+  '稍等 我拍一张',
+  '嗯等一下 我找一张好看的',
+  '等等哦 这就来',
+];
+// 异步生图中又被请求时的"还在挑"短句
+const PHOTO_BUSY_REPLIES = [
+  '嗯…等一下哦 还在挑',
+  '别催别催 马上',
+  '我还在选哦 等等',
+];
 const UNSAFE_PHOTO_REPLY = '这个不行啦，换个正常点的给你看';
 
 function pickPhotoRequestFallback() {
   return PHOTO_REQUEST_FALLBACKS[Math.floor(Math.random() * PHOTO_REQUEST_FALLBACKS.length)];
 }
+
+function pickPhotoAck() {
+  return PHOTO_ACK_OPTIONS[Math.floor(Math.random() * PHOTO_ACK_OPTIONS.length)];
+}
+
+function pickPhotoBusyReply() {
+  return PHOTO_BUSY_REPLIES[Math.floor(Math.random() * PHOTO_BUSY_REPLIES.length)];
+}
+
+// v1.10.40: 异步生图防并发锁 — companion_id 在 inflight 时拒绝再触发
+const inflightPhoto = new Set();
 
 const BIND_CODE_RE = /(?:^绑定\s*)?(XYU-\d{6})$/i;
 // 模拟打字延迟：按文字长度自适应
@@ -393,50 +418,76 @@ export async function handleMessage(rawMsg, botContext = {}) {
     if (photoIntent.type === 'strong_photo_request') {
       try { recordUserReplied(companion.id); } catch {}
 
-      let replyText = '';
+      // unsafe / 兜底 / gate 拒 都是同步小回复，不进异步路径
       if (hasUnsafePhotoContent(userText)) {
-        replyText = UNSAFE_PHOTO_REPLY;
-      } else {
-        const photoCompanion = { ...companion, wechat_user_id: msg.fromUser };
-        const gate = getPhotoGateState({
-          companion: photoCompanion,
-          trigger: 'user_request',
-          source: 'request',
-        });
-        if (!gate.allowed) {
-          // gate 拦截（冷却/每日上限/provider 未配置）时给一个温和兜底，
-          // 别把"她要拍照"直接退回到普通 AI 文本路径——AI 不知道刚被拒。
-          replyText = pickPhotoRequestFallback();
-          log('debug', `[Bot] photo gate blocked companion=${companion.id} reason=${gate.reasons.join(',')} → fallback`);
+        await sendAndRecord(ctx, msg.fromUser, UNSAFE_PHOTO_REPLY, msg.contextToken);
+        saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
+        saveConversationTurn(companion.id, 'assistant', UNSAFE_PHOTO_REPLY, companion.chat_mode_active);
+        return;
+      }
+
+      const photoCompanion = { ...companion, wechat_user_id: msg.fromUser };
+      const gate = getPhotoGateState({
+        companion: photoCompanion,
+        trigger: 'user_request',
+        source: 'request',
+      });
+      if (!gate.allowed) {
+        const replyText = pickPhotoRequestFallback();
+        log('debug', `[Bot] photo gate blocked companion=${companion.id} reason=${gate.reasons.join(',')} → fallback`);
+        await sendAndRecord(ctx, msg.fromUser, replyText, msg.contextToken);
+        saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
+        saveConversationTurn(companion.id, 'assistant', replyText, companion.chat_mode_active);
+        return;
+      }
+
+      // 已在生图中 → 发"还在挑"安抚 + return
+      if (inflightPhoto.has(companion.id)) {
+        const busyReply = pickPhotoBusyReply();
+        await sendAndRecord(ctx, msg.fromUser, busyReply, msg.contextToken);
+        log('info', `[Bot] photo gen already inflight, busy reply companion=${companion.id}`);
+        return;
+      }
+
+      // v1.10.40: 立即回应 + 后台异步生图。handleMessage 不再被 60-180s 的
+      // image gen 阻塞，bot polling 立即恢复，用户能继续对话。
+      const ackText = pickPhotoAck();
+      await sendAndRecord(ctx, msg.fromUser, ackText, msg.contextToken);
+      saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
+      saveConversationTurn(companion.id, 'assistant', ackText, companion.chat_mode_active);
+
+      inflightPhoto.add(companion.id);
+      const photoTaskCtx = {
+        ctx, msg, botId, photoCompanion, binding, userText, companion,
+      };
+      // 用 IIFE async fire-and-forget；外层不 await。catch 兜底防 unhandled rejection。
+      (async () => {
+        const recentForPlanner = getRecentHistory(photoTaskCtx.msg.fromUser, photoTaskCtx.botId, 10);
+        let photoEmotionState = null;
+        try {
+          photoEmotionState = getEmotionStateWithDefaults(photoTaskCtx.companion.id);
+        } catch (e) {
+          log('warn', `[Bot] async photo emotion state unavailable: ${e.message}`);
         }
-        if (gate.allowed) {
-          const recentForPlanner = getRecentHistory(msg.fromUser, botId, 10);
-          let photoEmotionState = null;
-          try {
-            photoEmotionState = getEmotionStateWithDefaults(companion.id);
-          } catch (e) {
-            log('warn', `[Bot] photo emotion state unavailable companion=${companion.id} error=${e.message}`);
-          }
+        try {
           const plan = await planPhotoMessage({
-            companion: photoCompanion,
-            user: { ...binding, wechat_user_id: msg.fromUser },
-            userText,
+            companion: photoTaskCtx.photoCompanion,
+            user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
+            userText: photoTaskCtx.userText,
             recentMessages: recentForPlanner,
             trigger: 'user_request',
-            context: { accountId: binding.account_id || null },
+            context: { accountId: photoTaskCtx.binding.account_id || null },
             cooldownState: gate,
             imageProviderAvailable: gate.imageProviderAvailable,
             emotionState: photoEmotionState,
           });
           if (plan.shouldSendPhoto) {
-            await sendTyping(ctx, msg.fromUser, msg.contextToken);
-            await sleep(plan.delayImageMs || randInt(700, 1400));
             const result = await sendCompanionPhoto({
-              companion: photoCompanion,
-              user: { ...binding, wechat_user_id: msg.fromUser },
-              context: ctx,
-              contextToken: msg.contextToken,
-              activity: companion.current_scene || '',
+              companion: photoTaskCtx.photoCompanion,
+              user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
+              context: photoTaskCtx.ctx,
+              contextToken: photoTaskCtx.msg.contextToken,
+              activity: photoTaskCtx.companion.current_scene || '',
               imagePrompt: plan.imagePrompt,
               caption: plan.caption,
               trigger: 'user_request',
@@ -445,31 +496,39 @@ export async function handleMessage(rawMsg, botContext = {}) {
               maintainIdentity: plan.maintainIdentity !== false,
             });
             if (result.ok) {
-              replyText = result.caption || plan.caption;
-              if (replyText) {
+              const captionText = result.caption || plan.caption;
+              if (captionText) {
                 await sleep(plan.delayCaptionMs || randInt(700, 1400));
-                await sendAndRecord(ctx, msg.fromUser, replyText, msg.contextToken);
+                await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, captionText, photoTaskCtx.msg.contextToken);
               }
-              saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
-              saveConversationTurn(companion.id, 'assistant', replyText || '发了一张生活照片', companion.chat_mode_active);
+              saveConversationTurn(photoTaskCtx.companion.id, 'assistant', captionText || '[photo]', photoTaskCtx.companion.chat_mode_active);
+              log('info', `[Bot] async photo sent companion=${photoTaskCtx.companion.id}`);
               return;
             }
-            log('warn', `[Bot] photo request send failed companion=${companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
+            log('warn', `[Bot] async photo send failed companion=${photoTaskCtx.companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
           } else {
-            // planner 拒绝发图，但用户明确要求了——也给个轻量 fallback 而不是
-            // 退到普通 AI 文本（避免 AI 不知道刚才被拒，回出反差感）。
-            replyText = pickPhotoRequestFallback();
-            log('debug', `[Bot] photo planner declined companion=${companion.id} reason=${plan.reason} → fallback`);
+            log('debug', `[Bot] async photo planner declined companion=${photoTaskCtx.companion.id} reason=${plan.reason}`);
           }
+          // 生不出来 / 拒绝 / send 失败：给一个 fallback 文字
+          const fallback = pickPhotoRequestFallback();
+          await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, fallback, photoTaskCtx.msg.contextToken);
+          saveConversationTurn(photoTaskCtx.companion.id, 'assistant', fallback, photoTaskCtx.companion.chat_mode_active);
+        } catch (e) {
+          log('warn', `[Bot] async photo gen error companion=${photoTaskCtx.companion.id}: ${e.message}`);
+          try {
+            await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, '光线不好 等下再发哈', photoTaskCtx.msg.contextToken);
+          } catch (e2) {
+            log('warn', `[Bot] async photo fallback send also failed: ${e2.message}`);
+          }
+        } finally {
+          inflightPhoto.delete(photoTaskCtx.companion.id);
         }
-      }
+      })().catch(e => {
+        log('error', `[Bot] async photo IIFE unhandled: ${e.message}`);
+        inflightPhoto.delete(companion.id);
+      });
 
-      if (replyText) {
-        await sendAndRecord(ctx, msg.fromUser, replyText, msg.contextToken);
-        saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
-        saveConversationTurn(companion.id, 'assistant', replyText, companion.chat_mode_active);
-        return;
-      }
+      return;
     }
 
     // ── v1.9.0 #1 + v1.9.1: 安全风险检测 + 温度收紧 ────────────────────────
