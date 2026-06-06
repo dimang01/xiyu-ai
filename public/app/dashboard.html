@@ -2625,11 +2625,22 @@
     }
     async function fetchRegenCandidates() {
       try {
-        const r = await fetch('/api/companions/' + companionId + '/visual-identity/generate-candidates', {
-          method: 'POST',
-          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        });
-        const d = await r.json().catch(() => ({ ok: false, message: 'JSON 解析失败' }));
+        // v1.10.47: 显式 180s timeout — iOS Safari 默认 60s 会在后端 115s 时砍连接
+        const ac = new AbortController();
+        const to = setTimeout(() => ac.abort(), 180_000);
+        let r;
+        try {
+          r = await fetch('/api/companions/' + companionId + '/visual-identity/generate-candidates', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            signal: ac.signal,
+          });
+        } finally { clearTimeout(to); }
+        // v1.10.47: 改用 text() → 手动 parse，错误时把 status + 前 120 字 raw 给用户看
+        const raw = await r.text();
+        let d;
+        try { d = JSON.parse(raw); }
+        catch { throw new Error('HTTP ' + r.status + ' · 响应非 JSON: ' + raw.slice(0, 120)); }
         if (!r.ok || !d.ok) throw new Error(d.message || ('HTTP ' + r.status));
         regenCandidates = (d.data && d.data.candidates) || [];
         stopRegenProgress(true);
