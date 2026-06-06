@@ -2918,41 +2918,40 @@ router.post('/companions/:id/visual-identity/generate-candidates',
   }
 });
 
+// v1.10.46: 候选图磁盘 → URL serve（替代发 4 张 base64 给前端，12MB JSON 撑爆 Safari）
+router.get('/companions/:id/visual-identity/candidate-image/:fname', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const { candidatePath } = await import('./visual_identity.mjs');
+    const full = candidatePath(id, req.params.fname);
+    if (!full) return err(res, '候选图不存在或已过期', 404);
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.sendFile(full);
+  } catch (e) {
+    return err(res, e.message || 'serve 失败', 500);
+  }
+});
+
 // v1.10.43: 用户选定一张 → 重置旧 identity + 把这张写为 ref_001.png
 // v1.10.45: 限流 20 次/小时（lock 本身便宜但仍防刷）
+// v1.10.46: 接受 fname（v1.10.43 旧路径用 data URL 太大；改用磁盘 fname）
 router.post('/companions/:id/visual-identity/lock',
   rateLimit({ scope: 'identity-lock', maxPerWindow: 20, windowMs: 60 * 60 * 1000, message: '锁定请求过于频繁，请稍后再试' }),
   requireAuth,
   async (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
   const c = requireOwnedCompanion(req, res, id); if (!c) return;
-  const url = String(req.body?.url || '').trim();
-  if (!url) return err(res, 'url 缺失');
+  const fname = String(req.body?.fname || req.body?.candidate || '').trim();
+  if (!fname) return err(res, 'fname 缺失');
   try {
-    const { saveReferenceImage, resetVisualIdentity } = await import('./visual_identity.mjs');
-    let buffer;
-    if (url.startsWith('data:image/')) {
-      const m = url.match(/^data:image\/[a-z+]+;base64,(.+)$/i);
-      if (!m) return err(res, 'invalid data url');
-      buffer = Buffer.from(m[1], 'base64');
-    } else if (/^https?:\/\//.test(url)) {
-      const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-      if (!resp.ok) return err(res, `下载失败 HTTP ${resp.status}`, 502);
-      buffer = Buffer.from(await resp.arrayBuffer());
-    } else {
-      return err(res, '不支持的 url 格式');
-    }
-    if (!buffer || buffer.length < 1024) return err(res, '图片数据无效');
-    const os = await import('node:os');
-    const fs = await import('node:fs/promises');
-    const path = await import('node:path');
-    const tmpPath = path.join(os.tmpdir(), `identity-${id}-${Date.now()}.png`);
-    await fs.writeFile(tmpPath, buffer);
+    const { saveReferenceImage, resetVisualIdentity, candidatePath } = await import('./visual_identity.mjs');
+    const srcPath = candidatePath(id, fname);
+    if (!srcPath) return err(res, '候选图不存在或已过期', 404);
     resetVisualIdentity(id);
-    const saved = saveReferenceImage(id, tmpPath);
-    await fs.unlink(tmpPath).catch(() => {});
+    const saved = saveReferenceImage(id, srcPath);
     if (!saved) return err(res, '保存 reference 失败', 500);
-    log('info', `[API] identity locked companion=${id} bytes=${buffer.length}`);
+    log('info', `[API] identity locked companion=${id} fname=${fname}`);
     return ok(res, { locked: true });
   } catch (e) {
     log('error', `[API] identity lock failed id=${id}: ${e.message}`);

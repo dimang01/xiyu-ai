@@ -7,6 +7,7 @@
  */
 
 import { imageGenerate } from './providers/image.mjs';
+import { saveCandidateImage } from './visual_identity.mjs';
 import { log } from './logger.mjs';
 
 // 4 个 seed 对应不同光线 / 视角 / 表情，让候选有差异
@@ -75,8 +76,36 @@ export async function generateIdentityCandidates(companion, opts = {}) {
   const errors = [];
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
-    if (r.status === 'fulfilled' && r.value?.url) candidates.push(r.value);
-    else errors.push({ seed: seeds[i], error: r.reason?.message || 'unknown' });
+    const seed = seeds[i];
+    if (r.status !== 'fulfilled' || !r.value?.url) {
+      errors.push({ seed, error: r.reason?.message || 'unknown' });
+      continue;
+    }
+    // v1.10.46: 把 data URL / http URL 落地到磁盘，response 只返短 fname。
+    // 避免 4 张 base64 (~12MB JSON) 撑爆前端解析。
+    try {
+      const raw = r.value.url;
+      let buf;
+      if (raw.startsWith('data:image/')) {
+        const m = raw.match(/^data:image\/[a-z+]+;base64,(.+)$/i);
+        buf = m ? Buffer.from(m[1], 'base64') : null;
+      } else if (/^https?:\/\//.test(raw)) {
+        const resp = await fetch(raw, { signal: AbortSignal.timeout(30_000) });
+        if (resp.ok) buf = Buffer.from(await resp.arrayBuffer());
+      }
+      if (!buf || buf.length < 256) {
+        errors.push({ seed, error: 'image bytes invalid' });
+        continue;
+      }
+      const saved = saveCandidateImage(companion.id, buf, seed);
+      if (!saved) {
+        errors.push({ seed, error: 'save failed' });
+        continue;
+      }
+      candidates.push({ seed, fname: saved.fname });
+    } catch (e) {
+      errors.push({ seed, error: e.message });
+    }
   }
   log('info', `[identity-candidates] companion=${companion.id} 完成 ok=${candidates.length}/${seeds.length} 耗时=${Date.now() - t0}ms`);
   return { candidates, errors };
