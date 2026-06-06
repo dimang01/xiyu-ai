@@ -6,7 +6,7 @@
  */
 
 import path from 'node:path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { generateImage } from './ai.mjs';
 import { getImageProviderCapabilities } from './providers/image.mjs';
 import { log } from './logger.mjs';
@@ -157,6 +157,35 @@ export function selectReferenceImage(companionId) {
     if (existsSync(full)) return full;
   }
   return null;
+}
+
+// v1.10.43: 删 identity.json + 全部 references，让系统下次按当前 spec 重建
+export function resetVisualIdentity(companionId) {
+  if (!companionId) return false;
+  const { referencesDir } = ensureDirs(companionId);
+  const idFile = identityPath(companionId);
+  let removed = 0;
+  try {
+    if (existsSync(idFile)) {
+      const bak = idFile + '.bak.' + Date.now();
+      copyFileSync(idFile, bak);
+      unlinkSync(idFile);
+      removed++;
+    }
+  } catch {}
+  try {
+    for (const f of readdirSync(referencesDir)) {
+      if (!/\.bak\./.test(f)) {
+        const full = path.join(referencesDir, f);
+        try {
+          copyFileSync(full, full + '.bak.' + Date.now());
+          unlinkSync(full);
+          removed++;
+        } catch {}
+      }
+    }
+  } catch {}
+  return removed > 0;
 }
 
 export function saveReferenceImage(companionId, localPath) {

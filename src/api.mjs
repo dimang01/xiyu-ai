@@ -2894,6 +2894,64 @@ router.post('/companions/:id/sleep/reset-learn', requireAuth, async (req, res) =
   }
 });
 
+// v1.10.43: 一次生成 4 张候选自拍 — 让用户挑最满意的一张锁为 reference，
+// 避免第一张丑图永久指挥后续生图。
+router.post('/companions/:id/visual-identity/generate-candidates', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  try {
+    const { generateIdentityCandidates } = await import('./visual_identity_candidates.mjs');
+    const companion = getCompanionById(id);
+    if (!companion) return err(res, 'companion 不存在', 404);
+    const t0 = Date.now();
+    const { candidates, errors } = await generateIdentityCandidates(companion);
+    log('info', `[API] identity candidates companion=${id} ok=${candidates.length} errs=${errors.length} ${Date.now() - t0}ms`);
+    if (candidates.length === 0) return err(res, `候选图全部生成失败: ${errors[0]?.error || 'unknown'}`, 500);
+    return ok(res, { candidates, errors });
+  } catch (e) {
+    log('error', `[API] identity candidates failed id=${id}: ${e.message}`);
+    return err(res, e.message || '生成失败', 500);
+  }
+});
+
+// v1.10.43: 用户选定一张 → 重置旧 identity + 把这张写为 ref_001.png
+router.post('/companions/:id/visual-identity/lock', requireAuth, async (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  const url = String(req.body?.url || '').trim();
+  if (!url) return err(res, 'url 缺失');
+  try {
+    const { saveReferenceImage, resetVisualIdentity } = await import('./visual_identity.mjs');
+    let buffer;
+    if (url.startsWith('data:image/')) {
+      const m = url.match(/^data:image\/[a-z+]+;base64,(.+)$/i);
+      if (!m) return err(res, 'invalid data url');
+      buffer = Buffer.from(m[1], 'base64');
+    } else if (/^https?:\/\//.test(url)) {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!resp.ok) return err(res, `下载失败 HTTP ${resp.status}`, 502);
+      buffer = Buffer.from(await resp.arrayBuffer());
+    } else {
+      return err(res, '不支持的 url 格式');
+    }
+    if (!buffer || buffer.length < 1024) return err(res, '图片数据无效');
+    const os = await import('node:os');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const tmpPath = path.join(os.tmpdir(), `identity-${id}-${Date.now()}.png`);
+    await fs.writeFile(tmpPath, buffer);
+    resetVisualIdentity(id);
+    const saved = saveReferenceImage(id, tmpPath);
+    await fs.unlink(tmpPath).catch(() => {});
+    if (!saved) return err(res, '保存 reference 失败', 500);
+    log('info', `[API] identity locked companion=${id} bytes=${buffer.length}`);
+    return ok(res, { locked: true });
+  } catch (e) {
+    log('error', `[API] identity lock failed id=${id}: ${e.message}`);
+    return err(res, e.message || '锁定失败', 500);
+  }
+});
+
 // POST /api/companions/:id/reset-to-crush  (v1.4.2)
 // 把 companion 一键拉回「她暗恋你」的默认起步状态。
 // 影响：affection=35 / stage='暧昧' / mood='shy' / dependency=40。
