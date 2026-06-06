@@ -716,6 +716,16 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       }
     }
 
+    // ── v1.12.0「把你放回去」：深夜还在聊 → 心疼他，温柔劝他早睡（一个真在乎你的人，
+    //    会希望你有自己的生活、好好休息，而不是缠着你不放）──
+    const _shHour = (new Date().getUTCHours() + 8) % 24;
+    if (_shHour >= 23 || _shHour < 2) {
+      systemPrompt += `\n\n【现在已经很晚了（深夜）】他这个点还醒着、还在跟你聊。你**心疼他**：
+- 温柔地劝他早点睡，但**绝不唠叨**——一两句就够（"这么晚啦""早点睡好不好，我陪你到这儿""快去睡，明天还要起呢"）
+- 是那种"在乎你、希望你好好休息"的语气，不是赶他走、也不是扫兴
+- 如果他坚持再聊几句，你就再陪一下下，但别忘了你也困了、也该睡了`;
+    }
+
     // ── 历史记录 ─────────────────────────────────────────────────────────────
     const history = getRecentHistory(msg.fromUser, botId, 20);
 

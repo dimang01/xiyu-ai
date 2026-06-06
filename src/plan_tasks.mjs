@@ -231,6 +231,23 @@ async function generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum) {
   const isWeekend = weekdayNum === 0 || weekdayNum === 6;
   const occupationHint = ageOccupationHint(age, isWeekend, comp.role_title);
 
+  // v1.12.0「她有自己的连续生活线」：把昨天日程里值得延续的事喂进来，让今天不是全新的人和事
+  let continuityHint = '';
+  try {
+    const y = getDailySchedule(comp.id, addDays(dateKey, -1));
+    const threads = (y?.items || [])
+      .filter(it => (it.importance || 0) >= 5)
+      .map(it => it.activity).filter(Boolean).slice(0, 5);
+    if (threads.length) {
+      continuityHint = `
+【延续生活线 - 重要】你昨天的生活里有这些事：${threads.join('；')}。
+今天的日程要**自然延续其中 1-2 条**，让你的生活有惯性、像真的在过日子：
+- 该有后续的给后续（追的剧今天看到第几集、闺蜜那事后来怎样、没做完的接着做）
+- 该收尾的收尾、该换的自然换（剧追完了、烦心事解决了换件新的）
+- 别整天都是全新的人和全新的事，那样不像一个真实在生活的人`;
+    }
+  } catch { /* 拿不到昨天就正常生成 */ }
+
   const sys = `你帮一个虚拟角色生成"今天的日程"，要符合人设、真实可信、有生活气息。
 
 角色：${comp.name}，${age}岁，${comp.role_title || '邻家女孩'}${personality ? '，性格' + personality : ''}${hobbies ? '，爱好：' + hobbies : ''}
@@ -238,6 +255,7 @@ async function generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum) {
 
 【强制约束 - 极其重要】
 ${occupationHint}
+${continuityHint}
 
 【风格要求】
 - 输出 8-12 个时间点，覆盖从 07:00 到 23:30
