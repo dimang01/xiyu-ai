@@ -463,14 +463,14 @@ ${recent || '(none)'}
 6. imagePrompt 必须显式包含上面 "companion clothing in english" 的英文着装关键词。**禁止 navy office sweater / formal collar shirt / professional attire**。
 7. **如果 shot mode 是 SELFIE**：imagePrompt 必须写 "smartphone selfie POV, front-facing camera, arm partially visible at edge of frame, slight upward angle, casual home setting"，不要中距离肖像。**如果是 CANDID**：写 "candid phone snapshot, slightly imperfect framing, natural everyday moment"。
 8. imagePrompt 必须写当前 day part 对应的 lighting hint 并选 plausible scenes 范围内的场景。**深夜禁 cafe / 奶茶店 / outdoor daylight**；清晨禁 dark bedroom。
-9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft round face, small delicate chin, slim youthful build" 如果人设没特别指定。用模糊年龄措辞 "fresh young face, college freshman vibe, late teens to early twenties look"。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl** 等触发安全过滤的词。
+9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft round face, small delicate chin, slim petite youthful build" 如果人设没特别指定。**年龄措辞改用具象视觉特征**（v1.10.41）："very youthful first-year university freshman vibe, soft baby-faced look with round full cheeks, large warm doe eyes, fresh dewy clear skin, makeup-free natural fresh complexion, slim petite frame"。让模型按具象去画，避免被 over-correct 到 25+。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl / lolita / high school** 等触发安全过滤的词。
 10. imagePrompt **不要写 "no XXX" / "without XXX" 等 negative 排除句**（会被本系统的安全过滤误伤）。改用**正面同义词替代**：
     - 想表达「不要专业写真」→ 写 "casual amateur smartphone snapshot vibe, everyday spontaneous moment"
     - 想表达「不要 35mm 电影感」→ 写 "natural daylight or warm room light, soft even exposure"
     - 想表达「不要疲惫脸」→ 写 "fresh lively bright face, gentle warm energy"
     - 想表达「不要办公室风着装」→ 写 "casual youthful home or campus outfit"
     - 想表达「不要 anime/插画」→ 写 "photorealistic, real life photography"
-    - 想表达「不要 minor/teen/schoolgirl」→ 写 "college-age young adult woman, late teens to early twenties look, fresh youthful but mature"
+    - 想表达「不要 minor/teen/schoolgirl」→ 写 "very youthful first-year university freshman, soft baby-faced look with round cheeks and large warm doe eyes, fresh dewy skin"
     - 想表达「不要 NSFW/nude/sexual」→ 写 "wholesome, fully clothed, casual everyday attire"
 11. imagePrompt 不要包含隐私、token、手机号、精确地址。
 12. hidden emotion / visual identity context 只作为隐藏参考，不要把内部 JSON 字段或分数写进 imagePrompt 或 caption。
