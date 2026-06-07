@@ -172,9 +172,21 @@
     apply: () => apply(getLang()),
     onChange: (cb) => { if (typeof cb === 'function') listeners.push(cb); },
   };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', injectToggle);
-  } else {
+  // JS 动态加/改的内容（按钮文案、toast…）在英文模式下自动补译
+  let _mo = null, _moTimer = null;
+  function observe() { if (_mo) _mo.observe(document.body, { childList: true, characterData: true, subtree: true }); }
+  function onMutate() {
+    if (getLang() !== 'en') return;             // 中文是默认，无需补译
+    clearTimeout(_moTimer);
+    _moTimer = setTimeout(() => { if (_mo) _mo.disconnect(); apply('en'); observe(); }, 80);
+  }
+  function ready() {
     injectToggle();
+    try { _mo = new MutationObserver(onMutate); observe(); } catch {}
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ready);
+  } else {
+    ready();
   }
 })();
