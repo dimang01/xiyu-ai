@@ -578,6 +578,9 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     }
   }
 
+  // v1.13.x 真人感#2：早期阶段(陌生人/朋友)主动消息不提想念、不撒娇
+  const pmStage = companion.relationship_stage || '暧昧';
+  const pmReserved = pmStage === '陌生人' || pmStage === '朋友';
   const userMessage = effectiveKind === 'reminder'
     ? `今天是一个对你们来说特别的日子：${reminderTitles || '一个值得纪念的日子'}。
 你要主动给他发一条温暖、走心的祝福消息：
@@ -624,16 +627,17 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
 - 全程符合你的人设和说话习惯`
     : `你要主动给他发消息。**关键：别每次都是"刚做了X+一点细节+反问你一句"那种工整的生活播报——那太假、太 AI 了。**
 真人发消息是随机、不规整的。这次**随机挑一种**感觉发（每次都要换，别老用同一种）：
-- 有时就一个情绪/状态，没头没尾："好困" / "今天好烦" / "突然有点想你" / "无聊死了"
+- 有时就一个情绪/状态，没头没尾："好困" / "今天好烦" / ${pmReserved ? '"有点饿"' : '"突然有点想你"'} / "无聊死了"
 - 有时一句抱怨或吐槽："我同事真的服了" / "外卖怎么还没到啊"
 - 有时突然冒一句话/一个问题，不解释前因后果
 - 有时分享件小事，但**别非得问他在干嘛**
 - 有时就两三个字："在吗" / "诶" / "你猜我刚干嘛"
-- 有时没正事，就是想找你说句话 / 撒个娇
+- 有时没正事，就是突然想起个事${pmReserved ? '，找你随便说句话' : '，想找你说句话 / 撒个娇'}
 要求：
 - **不要总以"刚…"开头**，**不要每条都反问"你在干嘛 / 你那边呢"**
 - 短、碎、像随手发的，不要工整、不要总结陈词
-- 结合此刻时间段和你的心情人设，但别报时、别像播报`;
+- 结合此刻时间段和你的心情人设，但别报时、别像播报${pmReserved ? `
+- **你们还没那么熟（${pmStage}）**：别说"想你/好想你/有点想你/想见你/惦记你"这类话，也别撒娇黏人、别用亲密称呼，顶多好奇、找个话题、随口说件小事。` : ''}`;
 
   const proactiveBinding = getActiveWechatBinding(companion.wechat_user_id, companion.bot_id);
   let reply = await generateReply(systemPrompt, history, userMessage, {
