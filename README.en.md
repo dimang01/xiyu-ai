@@ -47,6 +47,7 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 
 | Capability | Description |
 |---|---|
+| **🌐 Bilingual zh/en (v1.13)** ⭐⭐ | Default Chinese; a one-tap 中/EN toggle (bottom-right) switches the whole UI to English and makes the AI reply in English too (`companions.locale`). AI-generated diary/memory content is translated **on-device in the browser** (never leaves the browser). Zero impact for existing users |
 | **She sleeps (v1.10.x)** ⭐⭐ | Default 00:30 bed / 07:30 wake (asymmetric daily jitter: bed -15/+45, wake ±10 min), adjustable via an **iOS-style circular dial** (drag the 🌙☀️ handles). Sends an "I'm going to sleep" goodnight → leaves a **grace window** (say "stay with me a bit" and she postpones ~20 min to chat) → once truly asleep, **both WeChat and web go silent** (messages queue), morning brings a greeting + "I fell asleep last night" catch-up. Once deep asleep pleas don't work — the **📞 Call her awake** button (pulsing) wakes her but she's grumpy. Can be turned off in the sleep card |
 | **Default starting point = "flirting"** | affection 35/100, stage = flirting. She likes you from day one, not built up from zero |
 | **Concrete life memories** | At registration, generates 46+ specific life events ("got chased by a dog in 3rd grade") — not abstract tags |
