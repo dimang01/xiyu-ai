@@ -112,8 +112,12 @@
   }
 
   function t(key, zhFallback) {
-    if (getLang() === 'en' && DICT[key] != null) return DICT[key];
-    return zhFallback != null ? zhFallback : (DICT[key] != null ? DICT[key] : key);
+    if (getLang() === 'en') {
+      const en = DICT[key] != null ? DICT[key]
+        : (TEXT_MAP[key] != null ? TEXT_MAP[key] : TEXT_MAP[String(key).replace(/\s+/g, ' ').trim()]);
+      if (en != null) return en;
+    }
+    return zhFallback != null ? zhFallback : key;
   }
 
   function set(lang) {
