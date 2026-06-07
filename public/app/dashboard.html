@@ -752,9 +752,9 @@
           <div class="mt-3" id="proactive-freq-row">
             <div class="flex items-center justify-between mb-1.5">
               <div class="text-[11px] text-mute font-medium">每天目标条数</div>
-              <div class="text-[13px] font-bold text-sakura-deep" id="proactive-target-val">10</div>
+              <div class="text-[13px] font-bold text-sakura-deep" id="proactive-target-val">4</div>
             </div>
-            <input type="range" min="0" max="30" step="1" value="10" id="proactive-target-slider" class="proactive-slider w-full" />
+            <input type="range" min="0" max="30" step="1" value="4" id="proactive-target-slider" class="proactive-slider w-full" />
             <div class="flex justify-between text-[10px] text-mute mt-1">
               <span>0 静默</span>
               <span>30 满档</span>
@@ -1205,6 +1205,26 @@
     </div>
   </div>
 
+  <!-- v1.13.x 主动消息「先调低再关」下台阶 -->
+  <div id="proactive-off-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-[400px] w-full p-6 shadow-card">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center shrink-0">
+          <i data-lucide="bell-ring" class="w-5 h-5 text-sakura-deep"></i>
+        </div>
+        <h3 class="text-[17px] font-bold tracking-tightest">要不先调低，而不是关掉？</h3>
+      </div>
+      <p class="text-[13px] text-mute leading-relaxed mb-5">
+        关掉之后，她就<b class="text-ink">完全不会再主动找你</b>了。如果只是觉得有点多，把频率调低到<b class="text-sakura-deep">每天 2 条</b>，她偶尔冒个泡、也不打扰——大多数人想要的其实是这个。
+      </p>
+      <div class="flex flex-col gap-2">
+        <button id="proactive-off-lower" class="w-full py-3 text-[14px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg transition-all">调低到每天 2 条（推荐）</button>
+        <button id="proactive-off-disable" class="w-full py-3 text-[14px] font-semibold text-ink rounded-full border border-line hover:bg-cloud transition-all">还是完全关掉</button>
+        <button id="proactive-off-cancel" class="w-full py-2 text-[13px] font-medium text-mute hover:text-ink transition-all">取消</button>
+      </div>
+    </div>
+  </div>
+
   <div id="avatar-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-[440px] w-full p-6 shadow-card">
       <div class="flex items-center justify-between mb-4">
@@ -1638,7 +1658,9 @@
       }
 
       tProactive.addEventListener('change', () => {
-        patchCompanion('proactive_enabled', tProactive.checked);
+        // v1.13.x：用户想「关掉」时先给一个"调低频率"的下台阶，而不是一刀关掉整个功能
+        if (!tProactive.checked) { showProactiveOffRamp(); return; }
+        patchCompanion('proactive_enabled', true);
         syncSliderEnabled();
       });
       tSticker.addEventListener('change', () => patchCompanion('sticker_reply_enabled', tSticker.checked));
@@ -1922,7 +1944,7 @@
       // 主动消息：用户拖动滑块直接调每天目标条数 (proactive_daily_target, 0-30)
       const slider = document.getElementById('proactive-target-slider');
       const valEl  = document.getElementById('proactive-target-val');
-      const initTarget = (Number.isFinite(Number(c.proactive_daily_target)) ? Number(c.proactive_daily_target) : 10);
+      const initTarget = (Number.isFinite(Number(c.proactive_daily_target)) ? Number(c.proactive_daily_target) : 4);
       function paintSliderFill(v) {
         slider.style.setProperty('--fill', ((v - slider.min) / (slider.max - slider.min) * 100) + '%');
       }
@@ -1958,6 +1980,56 @@
             showToast('已保存 · 每天 ' + v + ' 条');
           } catch (e) { alert(e.message); }
         }, 200);
+      });
+
+      // ── v1.13.x 主动消息「先调低再关」下台阶 ──
+      const offModal   = document.getElementById('proactive-off-modal');
+      const offLower   = document.getElementById('proactive-off-lower');
+      const offDisable = document.getElementById('proactive-off-disable');
+      const offCancel  = document.getElementById('proactive-off-cancel');
+      const OFF_RAMP_TARGET = 2;   // "调低"落到每天 2 条
+      function showProactiveOffRamp() {
+        if (!offModal) {           // 兜底：没有弹窗就按原行为直接关
+          patchCompanion('proactive_enabled', false);
+          syncSliderEnabled();
+          return;
+        }
+        offModal.classList.remove('hidden');
+      }
+      function hideProactiveOffRamp() { if (offModal) offModal.classList.add('hidden'); }
+      // 取消 / 点遮罩 → 维持开启，什么都不改
+      function cancelProactiveOffRamp() {
+        tProactive.checked = true;
+        syncSliderEnabled();
+        hideProactiveOffRamp();
+      }
+      async function applyProactiveTarget(v) {
+        slider.value = String(v);
+        valEl.textContent = String(v);
+        paintSliderFill(v);
+        refreshProactiveQuota(v);
+        const r = await fetch('/api/companions/' + companionId, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proactive_daily_target: v }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
+      }
+      if (offCancel)  offCancel.addEventListener('click', cancelProactiveOffRamp);
+      if (offModal)   offModal.addEventListener('click', (e) => { if (e.target === offModal) cancelProactiveOffRamp(); });
+      if (offLower)   offLower.addEventListener('click', async () => {
+        hideProactiveOffRamp();
+        tProactive.checked = true;          // 保持开启
+        syncSliderEnabled();
+        try { await applyProactiveTarget(OFF_RAMP_TARGET); showToast('已调低 · 每天 ' + OFF_RAMP_TARGET + ' 条'); }
+        catch (e) { alert(e.message); }
+      });
+      if (offDisable) offDisable.addEventListener('click', () => {
+        hideProactiveOffRamp();
+        tProactive.checked = false;
+        patchCompanion('proactive_enabled', false);
+        syncSliderEnabled();
       });
 
       // 头像点击 → 弹换头像
