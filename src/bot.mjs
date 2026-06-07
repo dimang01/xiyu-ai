@@ -480,7 +480,14 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     if (photoIntent.type === 'weak_photo_context') {
       log('debug', `[Bot] weak photo context companion=${companion.id} reason=${photoIntent.reason}`);
     }
-    if (photoIntent.type === 'strong_photo_request') {
+    // v1.13.x 真人感#5b：反复索图把她惹烦了(escalation≥2)→ 不生图，落到带升级指令的文字回复让她 grumpy 拒绝
+    const photoEsc = (photoIntent.type === 'strong_photo_request')
+      ? escalationLevel(userText, getRecentHistory(msg.fromUser, botId, 8))
+      : { level: 0 };
+    if (photoEsc.level >= 2) {
+      log('info', `[Bot] #5b 气头停生图 companion=${companion.id} level=${photoEsc.level}`);
+    }
+    if (photoIntent.type === 'strong_photo_request' && photoEsc.level < 2) {
       try { recordUserReplied(companion.id); } catch {}
 
       // unsafe / 兜底 / gate 拒 都是同步小回复，不进异步路径
