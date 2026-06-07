@@ -219,6 +219,17 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
       update[dim] = clamp((currentState[dim] ?? DEFAULT_STATE[dim]) + dampened, 0, 100);
     }
   }
+
+  // v1.13.x 真人感#5：被反复戳(repeatLevel≥1)直接累积 annoyance / 砸 patience，不走
+  // dampening —— 让重复挑衅单向升级、能累积到低能量模式阈值(ann≥70 / pat≤20)。
+  const repeatLevel = Number(context.repeatLevel) || 0;
+  if (repeatLevel >= 1) {
+    const baseAnn = currentState.annoyance ?? DEFAULT_STATE.annoyance;
+    const basePat = currentState.patience ?? DEFAULT_STATE.patience;
+    update.annoyance = clamp((update.annoyance ?? baseAnn) + 14 * repeatLevel, 0, 100);
+    update.patience  = clamp((update.patience  ?? basePat) - 10 * repeatLevel, 0, 100);
+  }
+
   if (rawDelta.mood && MOOD_STATES.includes(rawDelta.mood)) {
     update.mood = rawDelta.mood;
   }
