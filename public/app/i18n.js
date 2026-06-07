@@ -124,6 +124,7 @@
     const v = lang === 'en' ? 'en' : 'zh';
     setPref(v);
     apply(v);
+    machinePass();
     renderBtn();
     listeners.forEach((cb) => { try { cb(v); } catch {} });
     try { window.dispatchEvent(new CustomEvent('xiyu:langchange', { detail: { lang: v } })); } catch {}
@@ -167,8 +168,62 @@
     document.body.appendChild(b);
   }
 
+  // ── 机器翻译兜底（浏览器本地 Translator API；字典没覆盖的动态中文，en 模式翻，结果缓存，不出浏览器） ──
+  const _HAN = /[一-鿿]/;
+  let _mt = null, _mtTried = false, _mtCache = {};
+  try { _mtCache = JSON.parse(localStorage.getItem('xiyu_mt_cache') || '{}'); } catch {}
+  function _saveMt() { try { localStorage.setItem('xiyu_mt_cache', JSON.stringify(_mtCache)); } catch {} }
+  async function getMT() {
+    if (_mt || _mtTried) return _mt;
+    _mtTried = true;
+    const opt = { sourceLanguage: 'zh-Hans', targetLanguage: 'en' };
+    try {
+      if (typeof Translator !== 'undefined' && Translator.create) {
+        const a = Translator.availability ? await Translator.availability(opt) : 'available';
+        if (a !== 'unavailable') _mt = await Translator.create(opt);
+      } else if (self.translation && self.translation.createTranslator) {
+        _mt = await self.translation.createTranslator(opt);
+      }
+    } catch { _mt = null; }
+    return _mt;
+  }
+  function _mtReplace(node, zh, en) {
+    if (node._i18nOrig === undefined) node._i18nOrig = node.nodeValue;
+    if (node.nodeValue.trim() === zh) node.nodeValue = node._i18nOrig.replace(zh, () => en);
+  }
+  async function machinePass() {
+    if (getLang() !== 'en' || !document.body) return;
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        const p = n.parentNode;
+        if (!p || SKIP_TAGS[p.nodeName]) return NodeFilter.FILTER_REJECT;
+        if (p.closest && p.closest('#xiyu-lang-toggle,#xiyu-theme-toggle,#xiyu-theme-bubble')) return NodeFilter.FILTER_REJECT;
+        return (n.nodeValue && _HAN.test(n.nodeValue)) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const nodes = []; let n; while ((n = w.nextNode())) nodes.push(n);
+    const need = [];
+    for (const node of nodes) {
+      const zh = node.nodeValue.trim();
+      if (_mtCache[zh] != null) _mtReplace(node, zh, _mtCache[zh]);
+      else need.push([node, zh]);
+    }
+    if (!need.length) return;
+    const tr = await getMT(); if (!tr) return;     // 浏览器不支持 → 静默降级保留中文
+    let dirty = false;
+    for (const [node, zh] of need) {
+      try {
+        let en = _mtCache[zh];
+        if (en == null) { en = await tr.translate(zh); _mtCache[zh] = en; dirty = true; }
+        _mtReplace(node, zh, en);
+      } catch {}
+    }
+    if (dirty) _saveMt();
+  }
+
   // ── 启动 ──────────────────────────────────────────────────────────────────
   apply(getLang());
+  machinePass();
   window.XiyuI18n = {
     get lang() { return getLang(); },
     t,
@@ -182,7 +237,7 @@
   function onMutate() {
     if (getLang() !== 'en') return;             // 中文是默认，无需补译
     clearTimeout(_moTimer);
-    _moTimer = setTimeout(() => { if (_mo) _mo.disconnect(); apply('en'); observe(); }, 80);
+    _moTimer = setTimeout(async () => { if (_mo) _mo.disconnect(); apply('en'); await machinePass(); observe(); }, 80);
   }
   function ready() {
     injectToggle();
