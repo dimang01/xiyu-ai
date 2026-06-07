@@ -213,6 +213,52 @@ async function openrouterGenerate(prompt, size, refImage = null) {
   throw new Error(`OpenRouter 全链失败 (${chain.length} 个 model): ${lastErr?.message || 'unknown'}`);
 }
 
+// ─── 302.ai 中转（OpenAI 兼容；图走 chat/completions+modalities，结果以托管 URL 回，
+//     由上方 openrouter 同款的 markdown / 直链解析兜住）。OpenRouter 欠费时顶上。
+async function ai302Call(prompt, size, model, refImage = null) {
+  const key = process.env.AI302_API_KEY;
+  if (!key) throw new Error('AI302_API_KEY 未配置');
+  const sizedPrompt = size ? `${prompt}\n\n[尺寸要求: ${size}]` : prompt;
+  const content = refImage
+    ? [{ type: 'text', text: sizedPrompt }, { type: 'image_url', image_url: { url: refImage } }]
+    : sizedPrompt;
+  const resp = await fetch('https://api.302.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages: [{ role: 'user', content }], modalities: ['image', 'text'] }),
+    signal: AbortSignal.timeout(180_000),
+  });
+  if (!resp.ok) throw new Error(`302 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+  const data = await resp.json();
+  const msg = data?.choices?.[0]?.message;
+  const imgs = Array.isArray(msg?.images) ? msg.images : [];
+  for (const it of imgs) { const u = it?.image_url?.url || it?.url || (typeof it === 'string' ? it : null); if (u) return u; }
+  const ct = typeof msg?.content === 'string' ? msg.content : '';
+  const md = ct.match(/!\[[^\]]*\]\(([^)]+)\)/); if (md) return md[1];
+  const link = ct.match(/(https?:\/\/[^\s)]+\.(?:png|jpg|jpeg|webp|gif))/i); if (link) return link[1];
+  const b64 = ct.match(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+/); if (b64) return b64[0];
+  throw new Error(`302 响应无图像: ${JSON.stringify(data).slice(0, 300)}`);
+}
+
+async function ai302Generate(prompt, size, refImage = null) {
+  const chain = [
+    process.env.AI302_IMAGE_MODEL || 'gemini-2.5-flash-image',
+    process.env.AI302_IMAGE_MODEL_FALLBACK || 'gpt-image-1',
+  ].filter((m, i, arr) => m && arr.indexOf(m) === i);
+  let lastErr = null;
+  for (const m of chain) {
+    try {
+      const url = await ai302Call(prompt, size, m, refImage);
+      if (chain.indexOf(m) > 0) log('warn', `[image] 302 fallback 命中 model=${m}`);
+      return url;
+    } catch (e) {
+      lastErr = e;
+      log('warn', `[image] 302 model=${m} 失败: ${e.message.slice(0, 120)}`);
+    }
+  }
+  throw new Error(`302 全链失败: ${lastErr?.message || 'unknown'}`);
+}
+
 const REGISTRY = {
   zhipu: zhipuGenerate,
   qwen: qwenGenerate,
@@ -220,6 +266,7 @@ const REGISTRY = {
   wenxin: wenxinGenerate,
   openai: openaiGenerate,
   openrouter: openrouterGenerate,
+  '302ai': ai302Generate,
 };
 
 /**
@@ -250,7 +297,7 @@ export function getImageProviderCapabilities(providerName = ACTIVE) {
   const id = String(providerName || ACTIVE || '').toLowerCase();
   // v1.10.53: openrouter 走 chat/completions 多模态，可吃 input image 做
   // image-to-image（gpt-image / gemini-2.5-flash-image）。其它 provider 暂只文生图。
-  const supportsRef = id === 'openrouter';
+  const supportsRef = id === 'openrouter' || id === '302ai';
   return {
     provider: id,
     textToImage: Boolean(REGISTRY[id]),
