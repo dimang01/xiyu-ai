@@ -349,17 +349,21 @@
     </div>
     <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(circle at 50% 30%, rgba(255,232,242,.7) 0%, rgba(255,255,255,0) 60%);"></div>
 
-    <div class="relative z-10 text-center px-6 max-w-4xl mx-auto pt-24 pb-12">
-      <div class="logo-float inline-block mb-12">
-        <img src="/logo-512.webp?v=2" alt="溪语AI" width="240" height="240" class="w-44 md:w-56 lg:w-60 mx-auto rounded-[42px] shadow-sakura-lg" />
-      </div>
+    <div class="relative z-10 w-full px-6 max-w-6xl mx-auto pt-24 pb-12">
+      <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+        <!-- 封面插画 -->
+        <div class="logo-float order-1">
+          <img src="/hero.webp?v=1" alt="溪语 AI" width="1248" height="832" class="w-full max-w-xl mx-auto rounded-[40px] shadow-sakura-lg ring-1 ring-sakura-soft/50" />
+        </div>
+        <!-- 文案 -->
+        <div class="order-2 text-center lg:text-left">
       <div class="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-[12px] font-semibold rounded-full bg-sakura-soft text-sakura-deep">
         <span class="w-1.5 h-1.5 rounded-full bg-sakura-deep animate-pulse"></span>
         <span data-i18n="hero.badge">内测期免费 · 0 元即用</span>
       </div>
-      <h1 class="text-[56px] sm:text-[72px] lg:text-[96px] font-bold tracking-tightest leading-[0.98]" data-i18n="hero.h1">遇见溪语</h1>
-      <p class="mt-6 text-[18px] sm:text-[20px] lg:text-[24px] text-mute font-medium tracking-tight max-w-2xl mx-auto" data-i18n-html="hero.tagline">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
-      <div class="mt-12 flex flex-col sm:flex-row gap-3 justify-center items-center">
+      <h1 class="text-[48px] sm:text-[64px] lg:text-[80px] font-bold tracking-tightest leading-[0.98]" data-i18n="hero.h1">遇见溪语</h1>
+      <p class="mt-6 text-[18px] sm:text-[20px] lg:text-[24px] text-mute font-medium tracking-tight max-w-xl mx-auto lg:mx-0" data-i18n-html="hero.tagline">不是简单的对话工具，是一个有完整过去<br class="hidden sm:block" />会陪你度过日子的她。</p>
+      <div class="mt-10 flex flex-col sm:flex-row gap-3 justify-center lg:justify-start items-center">
         <a href="/app/auth.html?tab=register" class="group inline-flex items-center gap-2 px-8 py-3.5 text-[15px] font-semibold text-white rounded-full bg-gradient-to-r from-sakura to-sakura-deep shadow-sakura hover:shadow-sakura-lg hover:scale-[1.03] transition-all">
           <span data-i18n="hero.cta.start">立即开始</span>
           <i data-lucide="arrow-right" class="w-4 h-4"></i>
@@ -369,7 +373,7 @@
       <p class="mt-8 text-[13px] text-mute font-medium" data-i18n="hero.subline">无需下载 · 在微信里与她相遇</p>
 
       <!-- 数据指标 -->
-      <div class="mt-14 grid grid-cols-3 gap-2 max-w-2xl mx-auto">
+      <div class="mt-12 grid grid-cols-3 gap-2 max-w-md mx-auto lg:mx-0">
         <div class="text-center">
           <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">46+</div>
           <div class="text-[11px] sm:text-[13px] text-mute font-medium" data-i18n="hero.stat.memories">人生记忆条数</div>
@@ -381,6 +385,8 @@
         <div class="text-center">
           <div class="text-[24px] sm:text-[32px] font-bold tracking-tight text-sakura-deep">8-12</div>
           <div class="text-[11px] sm:text-[13px] text-mute font-medium" data-i18n="hero.stat.schedule">每天的日程安排</div>
+        </div>
+      </div>
         </div>
       </div>
     </div>
