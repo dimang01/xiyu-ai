@@ -7,7 +7,7 @@
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#FFB6D9" />
   <title>控制台 · 溪语AI</title>
-  <link rel="icon" href="/logo.png" />
+  <link rel="icon" href="/logo.png?v=2" />
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/app/glass.css" />
@@ -435,7 +435,7 @@
   <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
     <div class="max-w-content mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2" style="max-width:1120px;">
       <a href="/" class="flex items-center gap-2 sm:gap-2.5 flex-shrink-0 min-w-0">
-        <img src="/logo-256.webp" alt="溪语AI" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex-shrink-0" />
+        <img src="/logo-256.webp?v=2" alt="溪语AI" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex-shrink-0" />
         <span class="text-[15px] font-semibold tracking-tight whitespace-nowrap">溪语AI</span>
       </a>
       <div class="flex items-center gap-2 sm:gap-4 flex-shrink min-w-0">
@@ -501,7 +501,7 @@
 
         <div class="relative flex items-start gap-5">
           <div class="avatar-ring shrink-0">
-            <img id="c-avatar" src="/logo-512.webp" class="w-20 h-20 object-cover" />
+            <img id="c-avatar" src="/logo-512.webp?v=2" class="w-20 h-20 object-cover" />
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
@@ -1213,7 +1213,7 @@
       </div>
 
       <div class="flex items-center gap-4 mb-5">
-        <img id="avatar-preview" src="/logo-256.webp" class="w-20 h-20 rounded-2xl border-2 border-line object-cover" />
+        <img id="avatar-preview" src="/logo-256.webp?v=2" class="w-20 h-20 rounded-2xl border-2 border-line object-cover" />
         <div class="flex-1 text-[12px] text-mute font-medium leading-relaxed">
           支持 PNG / JPG / WebP / GIF，最大 5MB。<br>会自动裁剪居中为 512×512 webp。
         </div>
@@ -1574,7 +1574,7 @@
 
       document.getElementById('has-companion').classList.remove('hidden');
       document.getElementById('c-name').textContent  = c.name || '溪语';
-      document.getElementById('c-avatar').src = c.avatar_url || '/logo-512.webp';
+      document.getElementById('c-avatar').src = c.avatar_url || '/logo-512.webp?v=2';
       document.getElementById('c-mood').textContent  = (c.mood || '平静');
       document.getElementById('c-meta').textContent  =
         `${c.age || 20} 岁 · ${c.role_title || c.persona || '邻家女孩'}`;
