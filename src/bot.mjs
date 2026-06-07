@@ -34,6 +34,7 @@ import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel } from './emotion_state.mjs';
+import { escalationLevel, escalationDirective } from './escalation.mjs';
 import { detectPhotoIntent, detectPhotoIntentSmart, hasUnsafePhotoContent } from './photo_intent.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
@@ -656,7 +657,9 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const personaFacts = getPersonaFacts(companion.id);
     // ── Emotion State Machine ─────────────────────────────────────────────────
     let emotionState = getEmotionStateWithDefaults(companion.id);
-    emotionState = updateEmotionFromUserMessage(companion.id, emotionState, userText, { companion });
+    // v1.13.x 真人感#5：被反复戳(同一 pushy 消息连发)→ 升级档位，喂给情绪 + 注入硬指令
+    const esc = escalationLevel(userText, recentTurns);
+    emotionState = updateEmotionFromUserMessage(companion.id, emotionState, userText, { companion, repeatLevel: esc.level });
 
     const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();
     const stickerHint = buildStickerPromptHint(stickerEnabled);
@@ -664,7 +667,7 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
     const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel, dailySchedule });
     const preferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
-    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences }) + stickerHint + emotionHint;
+    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences }) + stickerHint + emotionHint + escalationDirective(esc.level);
     // 关系阶段刚升级 → 这条回复要自然体现这种变化
     const celebration = consumePendingCelebration(companion.id);
     if (celebration) {
