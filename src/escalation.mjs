@@ -3,7 +3,7 @@
 // 纯 "在吗/人呢" 归 #3b(bot.mjs)处理，这里专管索求/命令/催促/情感施压。
 import { isSemanticallySimilar } from './text_similarity.mjs';
 
-const PUSHY_RE  = /(发(张|个|图|照片|自拍)?|给我(发|看)|拍(张|个|照)?|生成|来(一|个|张)|让我看|想看你|看看你|快回|赶紧|马上回|理我|回我|理不理|睬我|别不理|不理我|怎么不回|回复我|催|再发|再拍)/;
+const PUSHY_RE  = /(自拍|照片|发图|发张|发个|发一|再发|再拍|拍张|拍个|拍一|给我看|让我看|看看你|想看你|生成|理我|回我|搭理|睬|别不理|不理我|怎么不回|回复我|快回|快发|快点|赶紧|马上回|催|说话呀|说话啊|倒是)/;
 const RESIST_RE = /(不(拍|要|想拍|想|行|发)|别(闹|急|催|这样)|烦|说了|多少遍|急啥|自己玩|不想理|不理你|累了|待会|不发了|玩去|够了)/;
 
 /**
@@ -24,13 +24,22 @@ export function escalationLevel(userText, recentTurns = []) {
     if (t?.role === 'user' || t?.direction === 'in') users.push(c);
     else if (t?.role === 'assistant' || t?.direction === 'out') assists.push(c);
   }
-  let repeatN = 0;
-  for (const t of users.slice(-6)) { if (t && isSemanticallySimilar(cur, t)) repeatN++; }
-  out.repeatN = repeatN;
+  // 从最近往前数"连续的 pushy 用户消息"(按意图持续施压，对换皮稳健) + 雷同兜底
+  let consec = 0;
+  for (let i = users.length - 1; i >= 0; i--) {
+    const u = users[i].trim();
+    // 意图持续(PUSHY)或长串雷同(≥5字才查相似度，避免短串误判) → 算一次持续施压
+    if (u.length <= 60 && (PUSHY_RE.test(u) || (u.length >= 5 && cur.length >= 5 && isSemanticallySimilar(cur, u)))) consec++;
+    else break;
+  }
+  const persist = consec + 1;            // 含当前这条
+  out.repeatN = persist;
   out.sheResisted = assists.slice(-3).some(s => RESIST_RE.test(s));
 
-  let level = repeatN >= 3 ? 3 : repeatN >= 2 ? 2 : repeatN >= 1 ? 1 : 0;
-  if (out.sheResisted && level > 0) level = Math.min(3, level + 1);   // 她已表态他还来 → 再升一级
+  let level = persist >= 4 ? 3 : persist >= 3 ? 2 : persist >= 2 ? 1 : 0;
+  // ★ 没有"她已回绝/不耐烦"信号时封顶 L1：纯黏人/撒娇连发不该被升级到撤退，只有
+  //   "她已经表态、他还在反复戳"才是真挑衅，才放开升到 L2/L3。
+  if (!out.sheResisted) level = Math.min(level, 1);
   out.level = level;
   return out;
 }
