@@ -291,7 +291,7 @@ export function updateEmotionFromAssistantReply(companionId, currentState, reply
  * Called when user has been silent for a long time.
  * @param {number} idleMinutes - minutes since last user message
  */
-export function updateEmotionFromIdle(companionId, currentState, idleMinutes) {
+export function updateEmotionFromIdle(companionId, currentState, idleMinutes, affectionLevel = null) {
   if (idleMinutes < 30) return currentState;
   const update = {};
 
@@ -322,6 +322,16 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes) {
   const curEnergy = currentState.energy ?? DEFAULT_STATE.energy;
   const noise = Math.floor(Math.random() * 7) - 3;  // ±3 自然抖动
   update.energy = clamp(Math.round(curEnergy + (target - curEnergy) * 0.3 + noise), 0, 100);
+
+  // v1.13.x：信任/安全感也要"活"起来——之前只在窄词表(谢谢/夸/道歉)触发，日常聊天踩不到 →
+  // dashboard 趋势图上一条直线。这里像 energy 那样，让它们朝"关系深度(affection)"目标缓慢漂移 + 轻抖。
+  const aff = Number.isFinite(affectionLevel) ? affectionLevel : (currentState.affection ?? DEFAULT_STATE.affection);
+  const curTrust = currentState.trust ?? DEFAULT_STATE.trust;
+  const trustTarget = clamp(42 + aff * 0.5, 30, 92);     // 关系越深，信任天花板越高
+  update.trust = clamp(Math.round(curTrust + (trustTarget - curTrust) * 0.15 + (Math.floor(Math.random() * 5) - 2)), 0, 100);
+  const baseSec = (update.security ?? sec);              // 久不聊上面可能已扣，在其基础上继续朝目标漂
+  const secTarget = clamp(40 + aff * 0.45, 25, 90);
+  update.security = clamp(Math.round(baseSec + (secTarget - baseSec) * 0.12 + (Math.floor(Math.random() * 5) - 2)), 0, 100);
 
   try {
     upsertEmotionState(companionId, update);
@@ -384,7 +394,7 @@ export async function runEmotionRecalcBatch() {
       }
       // < 30min 不动；updateEmotionFromIdle 内部还有阈值兜底
       if (idleMinutes < 30) { skipped++; continue; }
-      const next = updateEmotionFromIdle(row.id, current, idleMinutes);
+      const next = updateEmotionFromIdle(row.id, current, idleMinutes, row.affection_level);
       if (next === current) { skipped++; continue; }
       updated++;
       // 写历史（让 dashboard 趋势曲线能看到 idle 演化，而不是只在用户消息时跳变）
