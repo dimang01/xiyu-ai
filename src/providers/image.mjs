@@ -243,7 +243,7 @@ async function ai302Call(prompt, size, model, refImage = null) {
 async function ai302Generate(prompt, size, refImage = null) {
   const chain = [
     process.env.AI302_IMAGE_MODEL || 'gemini-2.5-flash-image',
-    process.env.AI302_IMAGE_MODEL_FALLBACK || 'gpt-image-1',
+    process.env.AI302_IMAGE_MODEL_FALLBACK || 'gemini-2.0-flash-preview-image-generation',
   ].filter((m, i, arr) => m && arr.indexOf(m) === i);
   let lastErr = null;
   for (const m of chain) {
