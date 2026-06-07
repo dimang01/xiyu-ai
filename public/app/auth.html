@@ -250,6 +250,8 @@
                  data-callback="onTurnstileSuccess"
                  data-error-callback="onTurnstileError"
                  data-expired-callback="onTurnstileExpired"></div>
+            <!-- v1.13 双语：英文模式让 Cloudflare Turnstile 控件也说英文（渲染前设 data-language） -->
+            <script>try{if(localStorage.getItem('xiyu_lang')==='en'){var _t=document.querySelector('.cf-turnstile');if(_t)_t.setAttribute('data-language','en');}}catch(e){}</script>
             <p id="turnstile-hint" class="hidden mt-1 text-[12px] text-red-500 font-medium">请先完成人机验证</p>
           </div>
           <div>
@@ -316,7 +318,7 @@
     // ─── Utilities ─────────────────────────────────────────────────────────
     function showMsg(elId, text, kind) {
       const el = document.getElementById(elId);
-      el.textContent = text;
+      el.textContent = (window.XiyuI18n && window.XiyuI18n.t) ? window.XiyuI18n.t(text, text) : text;
       el.className = 'text-[13px] font-medium px-3 py-2 rounded-xl ' +
         (kind === 'error' ? 'bg-red-50 text-danger' :
          kind === 'success' ? 'bg-emerald-50 text-emerald-600' :
