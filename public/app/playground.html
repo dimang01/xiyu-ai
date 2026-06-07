@@ -42,7 +42,7 @@
   <header class="sticky top-0 z-10 bg-white/85 backdrop-blur border-b border-line">
     <div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
       <a href="/app/dashboard.html" class="text-mute hover:text-ink text-[20px] leading-none">‹</a>
-      <img id="c-avatar" src="/logo.png?v=2" alt="" class="w-10 h-10 rounded-full" />
+      <img id="c-avatar" src="/default-avatar.webp" alt="" class="w-10 h-10 rounded-full" />
       <div class="flex-1 min-w-0">
         <p id="c-name" class="text-[15px] font-bold truncate">—</p>
         <p class="text-[11px] text-mute flex items-center gap-2">
@@ -104,7 +104,7 @@
         if (!r.ok || !d.ok) return;
         const c = d.data || {};
         document.getElementById('c-name').textContent = c.name || '—';
-        document.getElementById('c-avatar').src = c.avatar_url || '/logo.png?v=2';
+        document.getElementById('c-avatar').src = c.avatar_url || '/default-avatar.webp';
         updateState({
           mood: c.current_mood,
           affection_level: c.affection_level,
