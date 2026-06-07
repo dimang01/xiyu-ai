@@ -396,6 +396,11 @@ ${scheduleLines}${dailySchedule.mood_arc ? `\n今天的心情：${dailySchedule.
     }
   }
 
+  // v1.13.x 真人感#4：低电量时段 —— 不对称投入，她不是永远秒回永远暖
+  if (promptMode !== 'proactive' && isLowEnergyStretch(c.id)) {
+    parts.push(`【此刻你有点低电量】你这会儿状态不高——累了 / 在忙自己的事 / 就是没什么聊天欲。不是不理他，是真没那么多话：回得短、淡，少追问、别主动找话题、别长篇，"嗯""还好""在忙""待会聊"都可以。但别冷暴力——他要说正经事、情绪真上来了，你还是会好好回他。`);
+  }
+
   // ── 14d. 近几天的日程（让她"记得昨天做了什么"）─────────────────────────
   if (Array.isArray(recentSchedules) && recentSchedules.length > 0) {
     const recentBlock = recentSchedules.slice(0, 3).map(d => {
@@ -590,6 +595,17 @@ function pickAdaptiveChatMode(companion, { dailySchedule } = {}) {
 }
 
 // 工具：当前上海时间的分钟数（0-1439）
+// v1.13.x 真人感#4：约 1/5 的"时段"(每 ~2.5h 一段)她低电量/低投入。
+// 稳定哈希(companionId|沪日期|窗口) → 是一段而非逐条闪烁；同一时段重启也不变。
+function isLowEnergyStretch(companionId) {
+  const nowMin = nowShanghaiMinute();
+  const dayKey = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+  const win = Math.floor(nowMin / 150);   // 每 150min(2.5h) 一个窗口
+  let h = 2166136261; const s = `${companionId}|${dayKey}|${win}|lowbw`;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (((h >>> 0) % 1000) / 1000) < 0.2;
+}
+
 function nowShanghaiMinute(now = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai',
