@@ -50,6 +50,8 @@ function isImageProviderConfigured(provider = process.env.IMAGE_PROVIDER || 'zhi
     doubao: ['DOUBAO_API_KEY'],
     wenxin: ['WENXIN_API_KEY'],
     openai: ['OPENAI_API_KEY'],
+    openrouter: ['OPENROUTER_API_KEY'],
+    '302ai': ['AI302_API_KEY'],
   }[name] || [];
   return keys.some(k => Boolean(process.env[k]));
 }
