@@ -2555,8 +2555,11 @@ export function createCompanion(wechatUserId, botId, data) {
   }
   // v1.9.9 Bug 4：表情包默认开启（新建 companion 时如果没显式设，给 1）。
   // 之前 schema DEFAULT 0 让新用户聊很多回合都没收到过表情包，体感"功能没生效"。
+  // v1.13.x：主动消息每天目标默认 4（原 10 偏高，线上数据显示多数用户会一刀关掉整个
+  //   功能而非调低）。列默认值在已存在的库里改不动，这里显式给 4 才对老库的新用户生效。
   const dataWithDefaults = {
     sticker_reply_enabled: 1,
+    proactive_daily_target: 4,
     ...data,
   };
   const fields = buildUpsertFields(dataWithDefaults);
@@ -3376,9 +3379,11 @@ function migrateReminderPush() {
 
 // ─── Proactive Daily Target ─────────────────────────────────────────────────
 // v1.3.3: 替代 v1.3.2 的 free/pro 三段式频率。开源版让用户直接拖动 0-30 整数。
-// 默认 10 与旧"适中"档中位数接近；老 companion 升级后立刻就有合理值。
+// v1.13.x：新库默认 4（原 10 偏高，线上数据显示多数用户嫌多直接一刀关掉整个功能）。
+// 已建库的列默认值改不动，老库的新用户实际值靠 createCompanion 显式给 4 兜底；
+// 这里改的是「全新部署」的 schema 默认，两边保持一致。
 function migrateProactiveDailyTarget() {
-  addColIfMissing('companions', 'proactive_daily_target', 'INTEGER DEFAULT 10');
+  addColIfMissing('companions', 'proactive_daily_target', 'INTEGER DEFAULT 4');
 }
 
 // v1.5: 沉默陪伴模式
