@@ -258,6 +258,20 @@ export function resolveReplyTemperature(baseTemperature, safetyLevel) {
   return baseTemperature;
 }
 
+// v1.13.x 真人感#1：删掉括号/星号「动作神态旁白」——真人发微信不会旁白自己的动作。
+// 角色扮演模式(prompt 含「进入角色扮演模式」)在调用处豁免，不进这里。
+function stripActionNarration(text) {
+  if (!text) return text;
+  if (!text.includes('（') && !/\*[^*\n]/.test(text)) return text;
+  const cleaned = text
+    .replace(/（[^（）]{0,50}）/g, '')      // 全角括号动作旁白（限长，避免吞正常长句）
+    .replace(/\*[^*\n]{1,50}\*/g, '');      // *斜体* 动作
+  // 按气泡(||)重组，丢掉被洗空的气泡；全洗没了就退回原文，别让她空着
+  const segs = cleaned.split(/\s*(?:\|\||｜｜)\s*/).map(s => s.trim()).filter(Boolean);
+  const out = segs.join('||').trim();
+  return out.length ? out : text;
+}
+
 export async function generateReply(personaPrompt, history, userMessage, params = {}, ctx = {}) {
   // v1.2.10: 兜底默认与 companions 表 DEFAULT 对齐 (0.8 / 3000 / 0.95)，
   // 让回复更有创意、空间更宽、用词更自然。caller 显式传值会优先。
@@ -309,7 +323,9 @@ export async function generateReply(personaPrompt, history, userMessage, params 
       top_p,
       timeout_ms: 30_000,
     });
-    const reply = text || FALLBACK;
+    let reply = text || FALLBACK;
+    // v1.13.x 真人感#1：非角色扮演模式，删掉动作神态旁白（确定性兜底，prompt 之外再保一道）
+    if (!/进入角色扮演模式/.test(personaPrompt)) reply = stripActionNarration(reply);
     log('info', `[ai] 回复: ${reply.slice(0, 80)}...`);
     if (accountId && usage) {
       try {
