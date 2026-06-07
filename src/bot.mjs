@@ -747,6 +747,24 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       systemPrompt += buildInnerOsHint(innerThought);
     }
 
+    // v1.13.x 真人感#3：连环追问"在吗/人呢"时强制打破"在呢+刚XX"模板（prompt 拦不住，这里硬注入）
+    {
+      const pokeOnly = (t) => {
+        const s = String(t || '').replace(/[\s?？!！。.,，~、]/g, '');
+        return s.length > 0 && s.length <= 12 && /^(?:在吗|在不在|在不|在嘛|在么|人呢|你在吗|在呀|在){1,4}$/.test(s);
+      };
+      if (pokeOnly(userText)) {
+        const hist = Array.isArray(history) ? history : [];
+        const lastOut = [...hist].reverse().find(h => h && (h.direction === 'out' || h.role === 'assistant'));
+        const lastIn  = [...hist].reverse().find(h => h && (h.direction === 'in'  || h.role === 'user'));
+        const sheJustReported = lastOut && /刚[去在洗倒透拿做看叠晾收回过吃喝睡忙玩]/.test(String(lastOut.content || ''));
+        const consecutivePoke = lastIn && pokeOnly(lastIn.content);
+        if (sheJustReported || consecutivePoke) {
+          systemPrompt += `\n\n【★ 这一轮特别注意】他在连着追问"在吗 / 人呢"。**绝对不要再用"在呢 + 刚做了件小事"来回**（你上一条就是这么回的，再来一次就成机器人了）。这次只能二选一：① 就一个字/词——"在" / "?" / "咋了" / "说"；② 直接烦他一下——"急啥呀" / "你连环 call 我呢" / "一直问干嘛"。**禁止**再报告你"刚"在干什么。`;
+        }
+      }
+    }
+
     // ── 生成 AI 回复 ─────────────────────────────────────────────────────────
     // v1.9.1: 把检测到的 safety level 传下去，high/medium 时 generateReply 内部会
     // 把 temperature 收紧到 min(base, 0.4|0.6)。不上调用户已设的低温值。
