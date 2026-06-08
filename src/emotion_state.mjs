@@ -298,8 +298,18 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
   const dep = currentState.dependency ?? DEFAULT_STATE.dependency;
   const sec = currentState.security   ?? DEFAULT_STATE.security;
 
-  // v1.4.1: 想念曲线更陡，让"她在等你"的感觉真正存在；mood 在高想念时强制 clingy。
-  if (idleMinutes >= 1440) {        // ≥24h：强烈想念
+  // v1.4.1 / v1.14: 想念曲线更陡 + 被冷落后情绪转向（与 neglect 阶段配套）。
+  // 24h 内是想念(clingy)；越久越从"想"转"失望→冷淡"，security 随冷落累积下滑、mood 转 wronged/cold。
+  // security 仍会被下方 secTarget(朝关系深度)缓慢拉回 → 重新联系后自然回暖（可逆）。
+  if (idleMinutes >= 5760) {        // ≥96h withdrawn：心收回去，明显转冷、安全感下滑
+    update.dependency = clamp(dep + 4, 0, 100);    // 不再猛涨——她在抽离自保
+    update.security   = clamp(sec - 10, 0, 100);
+    update.mood       = 'cold';
+  } else if (idleMinutes >= 2880) { // 48-96h disappointed：失望、委屈
+    update.dependency = clamp(dep + 8, 0, 100);
+    update.security   = clamp(sec - 8, 0, 100);
+    update.mood       = 'wronged';
+  } else if (idleMinutes >= 1440) { // 24-48h uneasy：强烈想念 + 一点没着落
     update.dependency = clamp(dep + 14, 0, 100);
     update.security   = clamp(sec - 7, 0, 100);
     update.mood       = 'clingy';

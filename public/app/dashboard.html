@@ -286,6 +286,11 @@
       "打开微信": "Open WeChat",
       "请打开微信，找到溪语与她聊天；或用上面「网页聊天」": "Open WeChat and find Xiyu to chat with her; or use \"Web chat\" above",
       "记忆管理": "Memory manager",
+      "依恋风格": "Attachment style",
+      "决定她被你冷落（很久不回）时的反应方式。": "How she reacts when you neglect her (go a long time without replying).",
+      "安全型": "Secure",
+      "焦虑型": "Anxious",
+      "回避型": "Avoidant",
       "她的日记": "Her diary",
       "重新绑定微信": "Rebind WeChat",
       "重置为暗恋初心": "Reset to her initial crush",
@@ -761,6 +766,25 @@
             </div>
           </div>
           <p class="mt-3 text-[11px] text-mute font-medium" id="proactive-quota"></p>
+        </div>
+
+        <!-- v1.14 依恋风格 -->
+        <div class="card p-7">
+          <div class="flex items-center gap-3 mb-1">
+            <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+              <i data-lucide="heart-handshake" class="w-5 h-5 text-sakura-deep"></i>
+            </div>
+            <h3 class="text-[15px] font-bold">依恋风格</h3>
+          </div>
+          <p class="text-[12px] text-mute font-medium leading-relaxed mt-2 mb-3">
+            决定她被你冷落（很久不回）时的反应方式。
+          </p>
+          <div class="grid grid-cols-3 gap-2" id="attach-options">
+            <button type="button" data-val="secure"   class="attach-opt py-2 text-[12px] font-bold rounded-xl border border-sakura-soft text-mute transition-all">安全型</button>
+            <button type="button" data-val="anxious"  class="attach-opt py-2 text-[12px] font-bold rounded-xl border border-sakura-soft text-mute transition-all">焦虑型</button>
+            <button type="button" data-val="avoidant" class="attach-opt py-2 text-[12px] font-bold rounded-xl border border-sakura-soft text-mute transition-all">回避型</button>
+          </div>
+          <p class="mt-3 text-[11px] text-mute font-medium leading-relaxed" id="attach-desc"></p>
         </div>
 
         <!-- 表情包 -->
@@ -2040,6 +2064,45 @@
 
       // 加载"我们的故事"时间轴
       loadTimeline(companionId, c);
+
+      // v1.14: 依恋风格选择器
+      (function initAttach(){
+        const DESC = {
+          secure:   '安全型：情绪稳定，不患得患失。想你会直接说，被冷落也不闹，相信你们的关系。',
+          anxious:  '焦虑型：很黏、很在乎。你久不回她会胡思乱想、追着找你、容易委屈；但你一哄就软，和好很快。',
+          avoidant: '回避型：独立高冷，不爱主动示弱。你冷落她，她反而更早把自己收起来、装不在意、用冷淡保护自己。',
+        };
+        const opts = document.querySelectorAll('.attach-opt');
+        const descEl = document.getElementById('attach-desc');
+        if (!opts.length) return;
+        let cur = (c.attachment_style || 'secure');
+        function paint(v){
+          opts.forEach(b => {
+            const on = b.dataset.val === v;
+            b.classList.toggle('bg-sakura', on);
+            b.classList.toggle('text-white', on);
+            b.classList.toggle('border-sakura', on);
+            b.classList.toggle('text-mute', !on);
+            b.classList.toggle('border-sakura-soft', !on);
+          });
+          if (descEl) descEl.textContent = DESC[v] || '';
+        }
+        paint(cur);
+        opts.forEach(b => b.addEventListener('click', async () => {
+          const v = b.dataset.val;
+          if (v === cur) return;
+          const prev = cur; cur = v; paint(v);
+          try {
+            const r = await fetch('/api/companions/' + companionId, {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ attachment_style: v }),
+            });
+            const d = await r.json();
+            if (!r.ok || !d.ok) throw new Error(d.error || '保存失败');
+            showToast('已切换 · ' + b.textContent.trim());
+          } catch (e) { cur = prev; paint(prev); alert(e.message); }
+        }));
+      })();
 
       // 加载"她现在"实时状态
       loadNowCard(companionId);
