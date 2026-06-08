@@ -141,8 +141,8 @@ export function buildStickerPromptHint(enabled) {
 - 正面例子：[STICKER:happy]、[STICKER:love]、[STICKER:shy]
 - 反讽吐槽：[STICKER:mock]、[STICKER:dismissive]、[STICKER:eyeroll]、[STICKER:whatever]、[STICKER:speechless]
   · 用在他得意忘形 / 说傻话 / 自恋 / 吹牛 / 找事时（"你又觉得你配了"这类反应）
-- 场景：[STICKER:night]、[STICKER:morning]、[STICKER:cat]
+- 场景：[STICKER:night]、[STICKER:morning]、[STICKER:hug]、[STICKER:ping]
 - 可用 tag：${tags.join('、')}
-- 心情合适时**大方用**——开心 / 害羞 / 撒娇 / 吐槽他 / 晚安早安 / 想他 这些场景都很贴，平均每 3-5 条带一个，让聊天更有表情、更像真人
+- 心情合适时**大方用**——开心 / 害羞 / 撒娇 / 吐槽他 / 晚安早安 / 想他 这些场景都很贴，平均每 2-3 条带一个，情绪有起伏时更要用，让聊天更有表情、更像真人
 - 一条消息最多一个表情，放开头或结尾；真没合适情绪时才不用（但别太吝啬）`;
 }
