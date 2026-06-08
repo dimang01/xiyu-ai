@@ -22,12 +22,14 @@ import {
   markUserConfessed, markCompanionConfessed, patchCompanion,
   getCompanionPreferencesForPrompt,
   recordSafetyEvent,
+  upsertShaping, listShaping,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach, canAcceptConfession, daysSinceMeet, DAYS_TO_LOVER } from './memory.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
+import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk } from './moderation.mjs';
 import { log } from './logger.mjs';
@@ -677,7 +679,12 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const reunionHint = buildReunionHint(neglectStage, companion.attachment_style);
     const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule });
     const preferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
-    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences }) + stickerHint + emotionHint + reunionHint + escalationDirective(esc.level);
+    // M1 共建：检测"他在教你"→ 写入塑造痕迹 + 当场确认；并把"他教过你的"注入人设（她必守）
+    const _taught = detectTeaching(userText);
+    if (_taught.length) { for (const _t of _taught) { try { upsertShaping({ companionId: companion.id, kind: _t.kind, content: _t.content, rawMsg: userText }); } catch (e) { log('warn', `[Shaping] upsert failed: ${e.message}`); } } }
+    const shapingConfirmHint = buildShapingConfirmHint(_taught);
+    const shapingHint = buildShapingPromptHint(listShaping(companion.id));
+    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + escalationDirective(esc.level);
     // 关系阶段刚升级 → 这条回复要自然体现这种变化
     const celebration = consumePendingCelebration(companion.id);
     if (celebration) {

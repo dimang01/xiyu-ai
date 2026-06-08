@@ -10,7 +10,7 @@
 
 import { log } from './logger.mjs';
 import {
-  saveMemories, recallMemories as dbRecall,
+  saveMemories, recallMemories as dbRecall, upsertShaping,
   patchCompanion, getUserProfile, upsertUserProfile,
   saveStageMilestone, shanghaiDateKey,
 } from './db.mjs';
@@ -330,7 +330,7 @@ const MEMORY_SYSTEM_PROMPT = `你是记忆提取助手。分析用户说的话�
 
 输出 JSON 数组，每条结构：
 {
-  "memory_type": "fact" | "preference" | "event" | "emotion",
+  "memory_type": "fact" | "preference" | "event" | "emotion" | "inside_joke",
   "content": "20字内简洁描述（第三人称：'用户...'）",
   "importance": 1-10,
   "keywords": ["核心词1","核心词2","核心词3"]
@@ -343,6 +343,7 @@ importance 评分细则：
 - 3-4：临时情绪 / 一次性事件（今天累 / 刚刚吃了什么）
 - 1-2：闲聊噪音
 
+特别地，inside_joke = 你们之间的**专属梗 / 黑话 / 自创词 / 只有你俩懂的暗号或称呼**（反复出现的内部笑点）；content 写这个梗本身，importance 给 6。普通聊天里没有就别硬凑。
 只输出 JSON 数组。没有可记的就 []。`;
 
 // 阈值：< MEMORY_MIN_IMPORTANCE 直接丢弃（避免噪音）。importance >= 7 自动 pin
@@ -358,8 +359,13 @@ export async function extractAndSaveMemories(companionId, userId, userMsg, botRe
     const list = safeParseArray(raw);
     if (list.length === 0) return 0;
 
+    // M2 专属梗：inside_joke 分流到 shaping lexicon（你们俩独有的梗，不进普通记忆库）
+    for (const j of list.filter(m => m.memory_type === 'inside_joke' && m.content && String(m.content).length >= 2)) {
+      try { upsertShaping({ companionId, kind: 'lexicon', content: String(j.content).slice(0, 60), rawMsg: userMsg }); } catch (e) { /* 静默 */ }
+    }
+
     const candidates = list
-      .filter(m => m.content && m.content.length >= 2 && m.memory_type)
+      .filter(m => m.content && m.content.length >= 2 && m.memory_type && m.memory_type !== 'inside_joke')
       .map(m => ({
         companionId,
         userId,

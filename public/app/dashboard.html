@@ -287,6 +287,8 @@
       "请打开微信，找到溪语与她聊天；或用上面「网页聊天」": "Open WeChat and find Xiyu to chat with her; or use \"Web chat\" above",
       "记忆管理": "Memory manager",
       "依恋风格": "Attachment style",
+      "你把她调教成了什么样": "How you've shaped her",
+      "你聊天里教过她的、你们共建的默契——只属于你们俩。": "What you've taught her in chat — your shared, one-of-a-kind dynamic.",
       "决定她被你冷落（很久不回）时的反应方式。": "How she reacts when you neglect her (go a long time without replying).",
       "安全型": "Secure",
       "焦虑型": "Anxious",
@@ -785,6 +787,20 @@
             <button type="button" data-val="avoidant" class="attach-opt py-2 text-[12px] font-bold rounded-xl border border-sakura-soft text-mute transition-all">回避型</button>
           </div>
           <p class="mt-3 text-[11px] text-mute font-medium leading-relaxed" id="attach-desc"></p>
+        </div>
+
+        <!-- M3 共建留痕：你把她调教成了什么样 -->
+        <div class="card p-7" id="shaping-card" style="display:none">
+          <div class="flex items-center gap-3 mb-1">
+            <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
+              <i data-lucide="sparkles" class="w-5 h-5 text-sakura-deep"></i>
+            </div>
+            <h3 class="text-[15px] font-bold">你把她调教成了什么样</h3>
+          </div>
+          <p class="text-[12px] text-mute font-medium leading-relaxed mt-2 mb-3">
+            你聊天里教过她的、你们共建的默契——只属于你们俩。
+          </p>
+          <div id="shaping-body" class="space-y-2"></div>
         </div>
 
         <!-- 表情包 -->
@@ -2064,6 +2080,28 @@
 
       // 加载"我们的故事"时间轴
       loadTimeline(companionId, c);
+
+      // M3 共建留痕卡片
+      (function initShaping(){
+        const card = document.getElementById('shaping-card');
+        const body = document.getElementById('shaping-body');
+        if (!card || !body) return;
+        const LABEL = { nickname:'她这样叫你', style:'说话风格', pact:'你们的约定', taboo:'雷区', fact:'她记得你', lexicon:'专属梗' };
+        const esc = s => String(s).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c]));
+        fetch('/api/companions/' + companionId + '/shaping').then(r => r.json()).then(d => {
+          const sh = ((d && d.data) || d || {}).shaping || {};
+          let html = '', total = 0;
+          for (const k of ['nickname','style','pact','taboo','fact','lexicon']) {
+            const items = sh[k] || [];
+            if (!items.length) continue;
+            total += items.length;
+            html += '<div class="flex gap-2 text-[12px] leading-relaxed"><span class="text-mute font-medium shrink-0 w-[68px]">' + LABEL[k] + '</span><span class="font-bold text-sakura-deep flex-1">' + items.map(i => esc(i.content)).join('、') + '</span></div>';
+          }
+          if (!total) html = '<p class="text-[12px] text-mute leading-relaxed">还没有痕迹——在聊天里教教她吧:「以后叫我…」「说话皮一点」「我不吃香菜」「答应我…」，她会记住并照做。</p>';
+          body.innerHTML = html;
+          card.style.display = '';
+        }).catch(() => {});
+      })();
 
       // v1.14: 依恋风格选择器
       (function initAttach(){

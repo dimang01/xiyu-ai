@@ -58,6 +58,7 @@ export function getDb() {
     migrateConversationTurnSynthetic();
     migrateBackfillFlag();
     migratePreferences();  // v1.8.0 #3
+    migrateCompanionShaping();  // 共建留痕（教她说话/称呼/雷区/约定/专属梗）
     migrateOpenLoops();    // v1.8.0 #4
     migrateSafetyEvents(); // v1.9.0 #1 安全事件记录（高危后暂停普通主动消息）
   }
@@ -2685,6 +2686,49 @@ export function deletePreference(companionId, type, target) {
   const db = getDb();
   return db.prepare(`DELETE FROM companion_preferences WHERE companion_id = ? AND type = ? AND target = ?`)
     .run(companionId, type, target).changes;
+}
+
+// ─── M0: companion_shaping —— 用户共建/塑造留痕（教她说话/称呼/雷区/约定/专属梗）─────
+function migrateCompanionShaping() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_shaping (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      kind         TEXT    NOT NULL CHECK(kind IN ('nickname','style','taboo','pact','fact','lexicon')),
+      content      TEXT    NOT NULL,
+      raw_msg      TEXT,
+      created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(companion_id, kind, content)
+    );
+    CREATE INDEX IF NOT EXISTS idx_shaping_companion ON companion_shaping(companion_id, kind);
+  `);
+}
+
+const SHAPING_KINDS = ['nickname','style','taboo','pact','fact','lexicon'];
+const SHAPING_SINGLETON = ['nickname', 'style'];   // 单例 kind：只保留最新一条
+export function upsertShaping({ companionId, kind, content, rawMsg = null }) {
+  if (!companionId || !kind || !content) throw new Error('upsertShaping: missing fields');
+  if (!SHAPING_KINDS.includes(kind)) throw new Error('upsertShaping: invalid kind');
+  const db = getDb();
+  const c = String(content).slice(0, 120);
+  if (SHAPING_SINGLETON.includes(kind)) {
+    db.prepare(`DELETE FROM companion_shaping WHERE companion_id = ? AND kind = ?`).run(companionId, kind);
+  }
+  db.prepare(`INSERT OR IGNORE INTO companion_shaping (companion_id, kind, content, raw_msg) VALUES (?, ?, ?, ?)`)
+    .run(companionId, kind, c, rawMsg ? String(rawMsg).slice(0, 200) : null);
+}
+
+export function listShaping(companionId, { kind = null } = {}) {
+  const db = getDb();
+  const sql = kind
+    ? `SELECT * FROM companion_shaping WHERE companion_id = ? AND kind = ? ORDER BY created_at DESC, id DESC`
+    : `SELECT * FROM companion_shaping WHERE companion_id = ? ORDER BY kind, created_at DESC, id DESC`;
+  return kind ? db.prepare(sql).all(companionId, kind) : db.prepare(sql).all(companionId);
+}
+
+export function deleteShaping(companionId, id) {
+  const db = getDb();
+  return db.prepare(`DELETE FROM companion_shaping WHERE companion_id = ? AND id = ?`).run(companionId, Number(id)).changes;
 }
 
 // ─── v1.8.0 #4: companion_open_loops CRUD ──────────────────────────────────
