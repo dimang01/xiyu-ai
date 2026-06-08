@@ -226,6 +226,17 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
   const rawDelta = computeDelta(userText, context);
   const update = {};
 
+  // v1.14.4 (D-2) 维度耦合：情绪维度相互影响（更新前调制 rawDelta，保守幅度）。
+  const _sec0 = currentState.security ?? DEFAULT_STATE.security;
+  const _trust0 = currentState.trust ?? DEFAULT_STATE.trust;
+  if (_sec0 < 25) {   // 低安全感 → 更易醋、更易躁（不安全依恋放大负面敏感）
+    if (rawDelta.possessiveness > 0) rawDelta.possessiveness = Math.round(rawDelta.possessiveness * 1.5);
+    if (rawDelta.annoyance > 0)      rawDelta.annoyance      = Math.round(rawDelta.annoyance * 1.5);
+  }
+  if (_trust0 > 80 && rawDelta.security < 0) {   // 高信任 → 缓冲负面冲击（信任厚不轻易破防）
+    rawDelta.security = Math.round(rawDelta.security * 0.6);
+  }
+
   // v1.6: dims 扩到 10（不含 mood 是字符串）
   const dims = ['affection', 'trust', 'dependency', 'possessiveness', 'security', 'energy',
                 'patience', 'excitement', 'annoyance', 'gratitude'];
@@ -269,8 +280,9 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
   if (rawDelta.betrayal) {
     const _bt = currentState.trust    ?? DEFAULT_STATE.trust;
     const _bs = currentState.security ?? DEFAULT_STATE.security;
-    update.trust    = clamp((update.trust    ?? _bt) - 6, 0, 100);
-    update.security = clamp((update.security ?? _bs) - 4, 0, 100);
+    const _buf = _bt > 80 ? 0.6 : 1;   // D-2: 高信任缓冲背叛冲击（厚信任更抗辜负）
+    update.trust    = clamp((update.trust    ?? _bt) - Math.round(6 * _buf), 0, 100);
+    update.security = clamp((update.security ?? _bs) - Math.round(4 * _buf), 0, 100);
   } else {
     // v1.14.1：信任/安全感靠"互动"积累 —— 每次用户来消息朝"关系深度目标"小步漂移（失信时跳过）。
     const _aff = Number.isFinite(context.companion?.affection_level)
@@ -733,6 +745,26 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
     } else if (attention >= 90) {
       parts.push('• 你这条消息很专注他，反应可以更细、更接得住他的情绪。');
     }
+  }
+
+  // v1.14.4 (D-1) 混合情绪底色：真实情绪常是混合的，主情绪之下还有一层（用维度组合 + 强度推断）。
+  {
+    const _mi = emotionState.mood_intensity ?? 0;
+    const _depX = emotionState.dependency ?? 30;
+    const _secX = emotionState.security ?? 50;
+    const _annX = emotionState.annoyance ?? 0;
+    if ((mood === 'wronged' || mood === 'cold' || mood === 'angry') && _depX >= 60)
+      parts.push('• ★ 你嘴上冷 / 委屈 / 凶，但**心里其实还很在乎他、还想他**——是"又凶又软"的拧巴，别真把他推远。');
+    if (mood === 'happy' && _secX < 35)
+      parts.push('• 你开心，但底下藏着一点不安 / 患得患失——怕这份好持续不了，偶尔冒一句试探。');
+    if (mood === 'clingy' && _annX >= 40)
+      parts.push('• 你又黏又有点闹——想要他陪，他不够及时你会带刺地撒娇（"哼，你才来"）。');
+    if (mood === 'neutral' && _annX >= 35 && _annX < 60)
+      parts.push('• 你表面没事，其实心里有点闷气没说——回应比平时淡一点点，等他察觉。');
+    if (mood !== 'neutral' && _mi >= 70)
+      parts.push('• 这个情绪此刻很浓，表达可以更明显、不太掩饰。');
+    else if (mood !== 'neutral' && _mi > 0 && _mi < 25)
+      parts.push('• 这个情绪已经淡了、快过去——别表现得太重，点到为止。');
   }
 
   // ── 想念档（按 missingLevel）—— v1.4.1 的核心存在感来源 ────────────────
