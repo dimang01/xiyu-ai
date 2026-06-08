@@ -32,7 +32,7 @@ import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
-import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply } from './moderation.mjs';
+import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -816,8 +816,9 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       throw err;
     }
 
-    // ── 出站审核：AI 回复过黑名单 ───────────────────────────────────────────
+    // ── 出站审核：AI 回复过黑名单 + 确定性防人设泄露 ───────────────────────
     reply = safeOutboundReply(reply);
+    reply = scrubPersonaLeak(reply, companion.name);
 
     // ── Persona Guard ─────────────────────────────────────────────────────────
     try {
