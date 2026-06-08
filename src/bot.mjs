@@ -33,7 +33,7 @@ import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk } from './moderat
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
-import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
+import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel, getNeglectStage, buildReunionHint } from './emotion_state.mjs';
 import { escalationLevel, escalationDirective } from './escalation.mjs';
 import { detectPhotoIntent, detectPhotoIntentSmart, hasUnsafePhotoContent } from './photo_intent.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
@@ -673,9 +673,11 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // v1.4.1: 算出 missingLevel 让 prompt 按"想念档"给出指令
     const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
     const neglectStage = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
-    const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel, neglectStage, dailySchedule });
+    // v1.14 P0: 久别重逢 → 走"修复弧"而非"失望变凉"（失望是她主动找时的状态；他主动回来=重逢修复）
+    const reunionHint = buildReunionHint(neglectStage, companion.attachment_style);
+    const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule });
     const preferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
-    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences }) + stickerHint + emotionHint + escalationDirective(esc.level);
+    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences }) + stickerHint + emotionHint + reunionHint + escalationDirective(esc.level);
     // 关系阶段刚升级 → 这条回复要自然体现这种变化
     const celebration = consumePendingCelebration(companion.id);
     if (celebration) {

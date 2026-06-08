@@ -8,7 +8,7 @@
  *
  * 跑：node scripts/neglect_stage_smoke.mjs
  */
-import { getNeglectStage, neglectStageIndex, buildEmotionPromptHint } from '../src/emotion_state.mjs';
+import { getNeglectStage, neglectStageIndex, buildEmotionPromptHint, buildReunionHint } from '../src/emotion_state.mjs';
 
 const hoursAgo = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
 
@@ -61,6 +61,13 @@ check('withdrawn 走冷淡抽离语气',
   hWith.includes('冷淡抽离'));
 check('none 仍走原想念档热切语气',
   hNone.includes('你怎么才来') && !hNone.includes('冷淡抽离'));
+
+// ── 4. 久别重逢修复弧（P0）────────────────────────────────────────────────
+check('none/missing 不触发重逢', buildReunionHint('none','secure')==='' && buildReunionHint('missing','anxious')==='');
+check('secure 重逢=坦诚大方',    buildReunionHint('disappointed','secure').includes('坦诚大方'));
+check('anxious 重逢=又惊又委屈',  buildReunionHint('disappointed','anxious').includes('又惊又委屈'));
+check('avoidant 重逢=端着晾他',   buildReunionHint('disappointed','avoidant').includes('端着'));
+check('重逢含修复标记+gap措辞',   buildReunionHint('withdrawn','secure').includes('修复时刻') && buildReunionHint('withdrawn','secure').includes('很久很久'));
 
 console.log(`\nneglect_stage_smoke: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
