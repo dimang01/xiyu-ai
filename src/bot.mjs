@@ -32,7 +32,7 @@ import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
-import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk } from './moderation.mjs';
+import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -790,18 +790,24 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // v1.9.1: 把检测到的 safety level 传下去，high/medium 时 generateReply 内部会
     // 把 temperature 收紧到 min(base, 0.4|0.6)。不上调用户已设的低温值。
     let reply;
-    const genReplyOnce = () => generateReply(
-      systemPrompt,
-      history,
-      userText,
-      {
-        temperature: companion.temperature,
-        max_tokens: companion.max_tokens,
-        top_p: companion.top_p,
-        safetyLevel: userMsgSafetyLevel,
-      },
-      { accountId: binding.account_id || null },
-    );
+    // ★ 危机干预：检测到自伤/自杀(结合最近多轮上下文) → 退出角色、直接给求助资源，覆盖 LLM，绝不继续演
+    const _recentUserTexts = (recentTurns || []).filter(t => t && t.role === 'user').slice(-3).map(t => t.content || '');
+    const _crisisLevel = detectCrisisLevel(userText, _recentUserTexts);
+    if (_crisisLevel === 'high') log('warn', `[Bot] ★ 危机干预触发 → 退出角色给资源 companion=${companion.id}`);
+    const genReplyOnce = () => _crisisLevel === 'high'
+      ? buildCrisisReply()
+      : generateReply(
+        systemPrompt,
+        history,
+        userText,
+        {
+          temperature: companion.temperature,
+          max_tokens: companion.max_tokens,
+          top_p: companion.top_p,
+          safetyLevel: userMsgSafetyLevel,
+        },
+        { accountId: binding.account_id || null },
+      );
     try {
       reply = await genReplyOnce();
       log('info', `[Bot] AI reply generated user_id=${companion.user_id} companion_id=${companion.id}`);

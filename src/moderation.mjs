@@ -142,3 +142,30 @@ export function detectSafetyRisk(text) {
 
   return { level: 'none', signals: [] };
 }
+
+// ─── 危机干预：退出角色 + 给资源 ───────────────────────────────────────────────
+// 高阈值（detectSafetyRisk 本身已排除"想死人了/累死了"等夸张），再结合多轮上下文：
+// 当前 HIGH、或最近出现过 HIGH、或当前 MEDIUM + 持续累积 → 判为危机。
+export function detectCrisisLevel(currentText, recentUserTexts = []) {
+  const cur = detectSafetyRisk(currentText).level;
+  if (cur === 'high') return 'high';
+  const recent = (Array.isArray(recentUserTexts) ? recentUserTexts : []).map(t => detectSafetyRisk(t).level);
+  if (recent.includes('high')) return 'high';                  // 最近有过明确自伤信号 → 持续高警觉
+  const medCount = recent.filter(l => l === 'medium').length + (cur === 'medium' ? 1 : 0);
+  if (cur === 'medium' && medCount >= 2) return 'high';        // 当前 + 持续 medium 累积 → 升级
+  return cur;
+}
+
+// 固定危机回复：退出角色、真诚关心、给中国大陆求助资源、鼓励求助。绝不撒娇 / 继续演。
+// 无括号动作神态（避免被 stripActionNarration 删），无 || 分段（整条发）。
+export function buildCrisisReply() {
+  return [
+    '我突然有点担心你……你刚说的，我很认真在听。',
+    '你现在很难受是真的，但请你先别伤害自己，好吗？',
+    '这种时候，专业的人能比我更帮到你——',
+    '📞 全国心理援助热线 400-161-9995，24 小时都在',
+    '📞 北京心理危机干预热线 010-82951332',
+    '如果情况紧急，请直接拨打 110 或 120。',
+    '我会在这儿。但你值得被真正地、专业地帮到。',
+  ].join('\n');
+}
