@@ -47,6 +47,7 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 
 | Capability | Description |
 |---|---|
+| **🖤 She cools off + attachment styles (v1.14)** ⭐⭐ | Ignore her for long and she shifts step by step: missing → testing → disappointed → withdrawn (no more endlessly clingy waiting). Optional **attachment styles** (secure / anxious / avoidant) set how fast she escalates and how clingy she is — switch in the dashboard. Security dips as she's neglected and warms back up when you reconnect |
 | **🌐 Bilingual zh/en (v1.13)** ⭐⭐ | Default Chinese; a one-tap 中/EN toggle (bottom-right) switches the whole UI to English and makes the AI reply in English too (`companions.locale`). AI-generated diary/memory content is translated **on-device in the browser** (never leaves the browser). Zero impact for existing users |
 | **She sleeps (v1.10.x)** ⭐⭐ | Default 00:30 bed / 07:30 wake (asymmetric daily jitter: bed -15/+45, wake ±10 min), adjustable via an **iOS-style circular dial** (drag the 🌙☀️ handles). Sends an "I'm going to sleep" goodnight → leaves a **grace window** (say "stay with me a bit" and she postpones ~20 min to chat) → once truly asleep, **both WeChat and web go silent** (messages queue), morning brings a greeting + "I fell asleep last night" catch-up. Once deep asleep pleas don't work — the **📞 Call her awake** button (pulsing) wakes her but she's grumpy. Can be turned off in the sleep card |
 | **Default starting point = "flirting"** | affection 35/100, stage = flirting. She likes you from day one, not built up from zero |
