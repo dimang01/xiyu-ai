@@ -113,6 +113,9 @@ const NIGHT_ENERGY_WORDS = ['晚安', '睡觉', '困了', '要睡了', '好累']
 const EXCITEMENT_WORDS = ['礼物', '惊喜', '好消息', '太棒了', '哇', '中奖', '升职', '通过了', '答应'];
 const CARING_WORDS     = ['多喝水', '注意身体', '早点睡', '吃饭了吗', '别熬夜', '陪我', '陪你', '我在'];
 const NAGGING_WORDS    = ['？？', '在吗在吗', '快回', '怎么不回', '在干嘛在干嘛'];  // 连发施压
+// v1.14.2 (A) 失信/重度冷漠 → 信任快速崩塌（信任崩塌≈建立 3×；诚信类冲击最大）
+const BETRAYAL_WORDS   = ['说话不算数', '食言', '反悔', '放鸽子', '放你鸽子', '爽约', '我骗你', '骗你的', '耍你', '懒得理你', '关我什么事', '与你无关', '说好的呢', '答应了又', '言而无信'];
+const JOKE_EXEMPT      = ['开玩笑', '逗你', '闹着玩', '骗你的啦', '哈哈', '嘻嘻', '嘿嘿'];  // 玩笑语境豁免
 
 /**
  * Update emotion dimensions based on user message content + context.
@@ -196,6 +199,12 @@ function computeDelta(userText = '', context = {}) {
     delta.patience   = (delta.patience   || 0) + 2;  // 用户认真打字 → 她也耐心
   }
 
+  // v1.14.2 (A)：失信/重度冷漠 → 信任崩塌（绕过 dampening，在 updateEmotionFromUserMessage 里直接扣）
+  if (BETRAYAL_WORDS.some(w => text.includes(w)) && !JOKE_EXEMPT.some(w => text.includes(w))) {
+    delta.betrayal = 1;
+    delta.mood = 'wronged';
+  }
+
   // Time-of-day energy
   const hour = new Date().getHours();
   if (hour >= 22 || hour < 7) {
@@ -234,18 +243,25 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
     update.mood = rawDelta.mood;
   }
 
-  // v1.14.1 重构：信任/安全感靠"互动"积累 —— 每次用户来消息，都朝"关系深度目标"小步漂移。
-  // （这段漂移原本错放在 idle 路径，导致"越不理她、信任越涨"的反因果；移到这里才对：聊了才积累。
-  //  系数比原 idle 小，因为互动比 30min 一次的 idle tick 频繁得多。）
-  const _aff = Number.isFinite(context.companion?.affection_level)
-    ? context.companion.affection_level
-    : (currentState.affection ?? DEFAULT_STATE.affection);
-  const _curTrust = update.trust ?? currentState.trust ?? DEFAULT_STATE.trust;
-  const _trustTarget = clamp(42 + _aff * 0.5, 30, 92);
-  update.trust = clamp(_curTrust + (_trustTarget - _curTrust) * 0.06, 0, 100);
-  const _curSec = update.security ?? currentState.security ?? DEFAULT_STATE.security;
-  const _secTarget = clamp(40 + _aff * 0.45, 25, 90);
-  update.security = clamp(_curSec + (_secTarget - _curSec) * 0.05, 0, 100);
+  // v1.14.2 (A) 信任负性偏差：失信/重度冷漠 → 信任快速崩塌（绕过 dampening，直接扣、会累积记仇）。
+  // 心理学：信任崩塌 ≈ 建立 3×；下方互动每次约 +1.5，失信一次 −6 ≈ 抹掉 4 次互动的积累。
+  if (rawDelta.betrayal) {
+    const _bt = currentState.trust    ?? DEFAULT_STATE.trust;
+    const _bs = currentState.security ?? DEFAULT_STATE.security;
+    update.trust    = clamp((update.trust    ?? _bt) - 6, 0, 100);
+    update.security = clamp((update.security ?? _bs) - 4, 0, 100);
+  } else {
+    // v1.14.1：信任/安全感靠"互动"积累 —— 每次用户来消息朝"关系深度目标"小步漂移（失信时跳过）。
+    const _aff = Number.isFinite(context.companion?.affection_level)
+      ? context.companion.affection_level
+      : (currentState.affection ?? DEFAULT_STATE.affection);
+    const _curTrust = update.trust ?? currentState.trust ?? DEFAULT_STATE.trust;
+    const _trustTarget = clamp(42 + _aff * 0.5, 30, 92);
+    update.trust = clamp(_curTrust + (_trustTarget - _curTrust) * 0.06, 0, 100);
+    const _curSec = update.security ?? currentState.security ?? DEFAULT_STATE.security;
+    const _secTarget = clamp(40 + _aff * 0.45, 25, 90);
+    update.security = clamp(_curSec + (_secTarget - _curSec) * 0.05, 0, 100);
+  }
 
   if (Object.keys(update).length === 0) return currentState;
 
@@ -340,6 +356,19 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
   const curEnergy = currentState.energy ?? DEFAULT_STATE.energy;
   const noise = Math.floor(Math.random() * 7) - 3;  // ±3 自然抖动
   update.energy = clamp(Math.round(curEnergy + (target - curEnergy) * 0.3 + noise), 0, 100);
+
+  // v1.14.2 (B) 短期/可变情绪按真实时间朝基线回归（每 30min idle tick 一截，不依赖"她是否回复"）。
+  // 心理学：情绪自然回归基线；正面衰减快(excitement)、负面慢(annoyance 持久)。
+  const _toward = (cur, base, rate, def) => {
+    const c = cur ?? def;
+    const n = clamp(Math.round(c + (base - c) * rate), 0, 100);
+    return n !== c ? n : undefined;
+  };
+  const _de = _toward(currentState.excitement,     30, 0.25, DEFAULT_STATE.excitement);     if (_de !== undefined) update.excitement     = _de;  // 正面快衰
+  const _da = _toward(currentState.annoyance,       0, 0.08, DEFAULT_STATE.annoyance);       if (_da !== undefined) update.annoyance      = _da;  // 负面慢衰
+  const _dp = _toward(currentState.possessiveness, 20, 0.05, DEFAULT_STATE.possessiveness); if (_dp !== undefined) update.possessiveness = _dp;  // 醋意消退
+  const _dt = _toward(currentState.patience,       60, 0.06, DEFAULT_STATE.patience);       if (_dt !== undefined) update.patience       = _dt;  // 休息恢复耐心
+  const _dg = _toward(currentState.gratitude,      40, 0.02, DEFAULT_STATE.gratitude);       if (_dg !== undefined) update.gratitude      = _dg;  // 极缓回归
 
   // v1.14.1 重构：信任/安全感不再在 idle 朝高目标"涨"——那是反因果（信任靠互动积累，已移到
   // updateEmotionFromUserMessage）。idle 改为：短期(<24h)持平；被冷落越久越"生疏"，朝随阶段
