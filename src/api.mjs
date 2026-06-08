@@ -166,6 +166,7 @@ import {
   getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, touchMemory,
   isCompanionOwnedByAccount,
   listPreferences, upsertPreference, deletePreference,  // v1.8.0 #3
+  listShaping,  // 共建留痕（你把她调教成什么样）
   getEmotionState, upsertEmotionState,
   getEmotionHistoryTrend,
   getDiaryEntries, countDiaryEntries,
@@ -1769,6 +1770,16 @@ router.get('/companions/:id/persona', requireAuth, (req, res) => {
     grouped[f.category].push(f.content);
   }
   return ok(res, { companion_id: id, total: facts.length, facts: grouped });
+});
+
+// GET /api/companions/:id/shaping — 你把她"调教"成了什么样（共建留痕）
+router.get('/companions/:id/shaping', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c = requireOwnedCompanion(req, res, id); if (!c) return;
+  const rows = listShaping(id);
+  const grouped = { nickname: [], style: [], taboo: [], pact: [], fact: [], lexicon: [] };
+  for (const r of rows) (grouped[r.kind] ||= []).push({ id: r.id, content: r.content });
+  return ok(res, { companion_id: id, total: rows.length, shaping: grouped });
 });
 
 // GET /api/companions/:id/avatar/suggest — 从预生成池里匹配 top 4

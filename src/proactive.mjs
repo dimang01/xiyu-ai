@@ -13,6 +13,7 @@ import {
   getCompanionPreferencesForPrompt,
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
   getRecentSafetyRisk,                        // v1.9.0 #1
+  listShaping,                                // 共建留痕（教过她的注入主动消息）
 } from './db.mjs';
 import { computeRelationshipStage, canAcceptConfession } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
@@ -31,6 +32,7 @@ import { sendCompanionPhoto } from './photo_sender.mjs';
 import { safeOutboundReply } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
+import { buildShapingPromptHint } from './shaping.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
@@ -520,7 +522,7 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   const _ns = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
   const emotionHint = buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule });
   const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
-  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences })}${stickerHint}${emotionHint}
+  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
