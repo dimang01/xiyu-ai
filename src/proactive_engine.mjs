@@ -207,8 +207,11 @@ export function shouldBackoffProactive(companion, context = {}) {
     : 0;
   const idleSinceUserH = lastUser ? (now - lastUser) / 3_600_000 : 0;
   const style = String(companion.attachment_style || 'secure').toLowerCase();
-  if (intensity !== 'clingy' && style !== 'anxious') {
-    if (style === 'avoidant') {
+  if (intensity !== 'clingy') {
+    if (style === 'anxious') {
+      // v1.14.5 (P2-5) 焦虑型会追，但有尊严上限：追到 ~5 天没任何回应也收手，别滑向 needy/纠缠。
+      if (idleSinceUserH > 120) return true;
+    } else if (style === 'avoidant') {
       if (idleSinceUserH > 24) return true;                          // 回避型：早抽离自保
     } else {
       if (idleSinceUserH > 72) return true;                          // secure：>72h 基本停
