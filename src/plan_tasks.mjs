@@ -25,6 +25,7 @@ import {
   saveDailySchedule, getDailySchedule,
   listEpisodicMemoriesOlderThan, deleteMemoriesByIds,   // v1.9.8 老记忆压缩
   cleanupProcessedMessages,                              // Issue #1 去重表清理
+  cleanupAiUsageEvents,                                  // P1-7 成本明细清理
 } from './db.mjs';
 import { applyMemoryDecayBatch } from './memory_v2.mjs';
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
@@ -495,6 +496,7 @@ async function runOnce(parts, name, shouldRun, fn) {
 async function runDaily(todayKey) {
   // Issue #1: 清理 7 天前的去重记录（防 processed_messages 无限增长）
   try { const n = cleanupProcessedMessages(7); if (n) log('info', `[PlanTasks] 清理 processed_messages ${n} 条`); } catch {}
+  try { const n = cleanupAiUsageEvents(60); if (n) log('info', `[PlanTasks] 清理 ai_usage_events ${n} 条`); } catch {}
   const targetKey = addDays(todayKey, -1);
   const { startSql, endSql } = shanghaiBoundsForDateKey(targetKey);
   const companions = getAllActiveCompanions();

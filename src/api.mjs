@@ -4162,6 +4162,47 @@ router.get('/admin/stats/ai-usage', requireAdmin, (req, res) => {
   });
 });
 
+// GET /api/admin/stats/cost?days=7 — P1-7 成本明细聚合（provider/model/capability/失败率/p95 延迟）
+router.get('/admin/stats/cost', requireAdmin, (req, res) => {
+  noStore(res);
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+  const since = Date.now() - days * 86_400_000;
+  const db = getDb();
+  const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
+  const totals = db.prepare(`
+    SELECT COUNT(*) events, COALESCE(SUM(estimated_cost),0) cost,
+           COALESCE(SUM(prompt_tokens+completion_tokens),0) tokens, COALESCE(SUM(images),0) images,
+           SUM(CASE WHEN status<>'ok' THEN 1 ELSE 0 END) errors
+    FROM ai_usage_events WHERE created_at >= ?`).get(since);
+  const groupBy = (col) => db.prepare(`
+    SELECT COALESCE(NULLIF(${col},''),'(未知)') AS key, COUNT(*) count,
+           COALESCE(SUM(estimated_cost),0) cost,
+           COALESCE(SUM(prompt_tokens+completion_tokens),0) tokens, COALESCE(SUM(images),0) images,
+           SUM(CASE WHEN status<>'ok' THEN 1 ELSE 0 END) errors
+    FROM ai_usage_events WHERE created_at >= ?
+    GROUP BY key ORDER BY cost DESC, count DESC LIMIT 20`).all(since).map(r => ({ ...r, cost: r6(r.cost) }));
+  const topUsers = db.prepare(`
+    SELECT CASE WHEN account_id IS NULL THEN '(系统)' ELSE 'account ' || account_id END AS key,
+           COUNT(*) count, COALESCE(SUM(estimated_cost),0) cost,
+           COALESCE(SUM(prompt_tokens+completion_tokens),0) tokens
+    FROM ai_usage_events WHERE created_at >= ?
+    GROUP BY account_id ORDER BY cost DESC, count DESC LIMIT 10`).all(since).map(r => ({ ...r, cost: r6(r.cost) }));
+  const lats = db.prepare(`SELECT latency_ms FROM ai_usage_events WHERE created_at >= ? AND latency_ms IS NOT NULL ORDER BY latency_ms`).all(since).map(r => r.latency_ms);
+  const p95 = lats.length ? lats[Math.min(lats.length - 1, Math.floor(lats.length * 0.95))] : null;
+  const currency = db.prepare(`SELECT currency FROM ai_usage_events WHERE created_at >= ? AND currency IS NOT NULL LIMIT 1`).get(since)?.currency || null;
+  return ok(res, {
+    days, currency,
+    pricing_configured: !!loadProviderPricing(),
+    total: { events: totals.events, cost: r6(totals.cost), tokens: totals.tokens, images: totals.images },
+    failure_rate: totals.events ? r6(totals.errors / totals.events) : 0,
+    p95_latency_ms: p95,
+    by_capability: groupBy('capability'),
+    by_model: groupBy('model'),
+    by_provider: groupBy('provider'),
+    top_users: topUsers,
+  });
+});
+
 // POST /api/admin/regenerate-password — 管理员自己重置自己的密码
 router.post('/admin/regenerate-password', requireAdmin, (req, res) => {
   const newPassword = regenerateAdminPassword();

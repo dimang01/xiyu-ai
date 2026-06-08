@@ -16,7 +16,7 @@
  */
 
 import { log } from './logger.mjs';
-import { recordAiUsage } from './db.mjs';
+import { recordAiUsage, recordAiUsageEvent } from './db.mjs';
 import { chatComplete } from './providers/chat.mjs';
 import { imageGenerate } from './providers/image.mjs';
 import { visionRecognize } from './providers/vision.mjs';
@@ -75,7 +75,15 @@ async function chatCompleteWithRetry(args, { label = 'chat' } = {}) {
 // ─── 图像生成 ─────────────────────────────────────────────────────────────
 
 export async function generateImage(prompt, { size = '1024x1024', referenceImage = null } = {}) {
-  return await imageGenerate(prompt, { size, referenceImage });
+  const _t0 = Date.now();
+  try {
+    const r = await imageGenerate(prompt, { size, referenceImage });
+    recordAiUsageEvent({ provider: process.env.IMAGE_PROVIDER, model: process.env.IMAGE_MODEL, capability: 'image', images: 1, latencyMs: Date.now() - _t0, status: 'ok' });
+    return r;
+  } catch (e) {
+    recordAiUsageEvent({ provider: process.env.IMAGE_PROVIDER, model: process.env.IMAGE_MODEL, capability: 'image', images: 0, latencyMs: Date.now() - _t0, status: 'error' });
+    throw e;
+  }
 }
 
 /**
@@ -284,7 +292,8 @@ export async function generateReply(personaPrompt, history, userMessage, params 
   if (safetyLevel && temperature !== rawTemp) {
     log('info', `[ai] safety-aware temp: ${rawTemp} → ${temperature} (risk=${safetyLevel})`);
   }
-  const { accountId = null } = ctx;
+  const { accountId = null, companionId = null } = ctx;
+  const _t0 = Date.now();
 
   const messages = [];
   for (const h of history) {
@@ -343,9 +352,19 @@ export async function generateReply(personaPrompt, history, userMessage, params 
         log('warn', `[ai] recordAiUsage 失败: ${e.message}`);
       }
     }
+    // P1-7 成本明细：chat 调用一律记一条（accountId 可空），含 token/延迟/状态/估算成本
+    recordAiUsageEvent({
+      accountId, companionId, provider: process.env.CHAT_PROVIDER, model: process.env.CHAT_MODEL,
+      capability: 'chat', promptTokens: usage?.prompt_tokens || 0, completionTokens: usage?.completion_tokens || 0,
+      latencyMs: Date.now() - _t0, status: reply === FALLBACK ? 'fallback' : 'ok',
+    });
     return reply;
   } catch (err) {
     log('error', `[ai] chat 错误: ${err.message}`);
+    recordAiUsageEvent({
+      accountId, companionId, provider: process.env.CHAT_PROVIDER, model: process.env.CHAT_MODEL,
+      capability: 'chat', latencyMs: Date.now() - _t0, status: 'error',
+    });
     return FALLBACK;
   }
 }
