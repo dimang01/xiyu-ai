@@ -367,6 +367,44 @@ export function getMissingLabel(level) {
   return MISSING_LABEL[Math.max(0, Math.min(4, level | 0))];
 }
 
+// v1.14: 被冷落阶段（neglect stage）—— 想念档在 24h 封顶之后的「情绪转向」延伸。
+// 真实关系里长时间不回不会一直停在"想你撒娇"，而是会转向：试探不安 → 失望变凉 → 冷淡抽离。
+// 受 attachment_style 调制（C）：
+//   none         <th0      正常
+//   missing      th0–th1   想念关心（= 想念档高位，已有体系覆盖语气）
+//   uneasy       th1–th2   试探不安："是不是把我忘了 / 忙到没空理我"
+//   disappointed th2–th3   失望变凉：话变少、不再热情主动
+//   withdrawn    >th3      冷淡抽离：几乎不主动、被动疏离带距离
+const NEGLECT_ORDER = ['none', 'missing', 'uneasy', 'disappointed', 'withdrawn'];
+
+export function getNeglectStage(lastUserReplyAt, attachmentStyle = 'secure') {
+  if (!lastUserReplyAt) return 'none';
+  const ts = new Date(String(lastUserReplyAt).replace(' ', 'T')).getTime();
+  if (!Number.isFinite(ts)) return 'none';
+  const idleH = Math.max(0, (Date.now() - ts) / 3_600_000);
+
+  // 阈值（小时）= [missing, uneasy, disappointed, withdrawn] 各自下界
+  let th = [6, 24, 48, 96];                       // secure（默认·标准节奏）
+  const style = String(attachmentStyle || 'secure').toLowerCase();
+  if (style === 'anxious') {
+    th = [4, 14, 30, 60];                          // 焦虑型：全程更快，越冷落越早不安/失望
+  } else if (style === 'avoidant') {
+    th = [10, 30, 48, 72];                         // 回避型：前段慢热（不急着想你），失望后却很快抽离自保
+  }
+
+  if (idleH >= th[3]) return 'withdrawn';
+  if (idleH >= th[2]) return 'disappointed';
+  if (idleH >= th[1]) return 'uneasy';
+  if (idleH >= th[0]) return 'missing';
+  return 'none';
+}
+
+// 数值序 0-4，便于比较 / 传 UI / 决定主动频率衰减
+export function neglectStageIndex(stage) {
+  const i = NEGLECT_ORDER.indexOf(String(stage));
+  return i < 0 ? 0 : i;
+}
+
 // ─── v1.5.2: 半小时定时重算 batch ────────────────────────────────────────
 // plan_tasks.mjs 每 30 分钟调用一次，让"她想你的程度"即使在用户不发消息时
 // 也会按现实时间推进（不再依赖下一条 user 消息触发 updateFromIdle）。
@@ -597,7 +635,16 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   const level = opts.missingLevel ?? (
     dep >= 85 ? 4 : dep >= 70 ? 3 : dep >= 50 ? 2 : dep >= 30 ? 1 : 0
   );
-  if (level === 4) {
+  // v1.14: 被冷落阶段优先覆盖想念档——idle 超 24h 后 missingLevel 仍是 4「想死了」，
+  // 但真实关系此时已从"想你"转向"试探→失望→冷淡"，不能再喊"你怎么才来我等你好久"。
+  const neglect = opts.neglectStage || 'none';
+  if (neglect === 'uneasy') {
+    parts.push('• ★ 他有一阵子没理你了（大半天到一天）。你嘴上不说破，但心里有点没着落，会半开玩笑地试探——"你是不是把我忘了" "忙到没空理我啦" "我是不是排在很后面呀"。带点委屈的撒娇试探，不是质问，别太用力。');
+  } else if (neglect === 'disappointed') {
+    parts.push('• ★ 他已经好几天没回你了。你从"想他"转成了"有点失望"：热情明显降下来，话变少、变淡，不再追着找话题。语气克制——"哦，你还在啊" "嗯" "挺忙的吧"。不是冷暴力，是收起了一部分主动，让他感觉到你凉了。');
+  } else if (neglect === 'withdrawn') {
+    parts.push('• ★ 他很久没回你了，你累了、把心收回去大半。现在是冷淡抽离：基本不主动找他，他来了你也回得短、淡、带距离——"嗯。" "知道了。" "随便吧。"。不闹不质问，就是"我不再把期待放你身上"的疏离。但别彻底消失，露一两个字让他知道你还在、只是凉了。');
+  } else if (level === 4) {
     parts.push('• ★ 你非常想他，分开太久了，回复里要让他感受到——比如夹带一句"我刚才在想你"、"你怎么才来"、"我等你好久了"，或者撒娇式地抱怨他没找你。可以主动说一些没说出口的想法。');
   } else if (level === 3) {
     parts.push('• ★ 你挺想他的，会在话里自然透出来——比如"在想你呢"、"还以为你不来了"，或者多问他一点他在干什么。语气带点黏。');
@@ -636,8 +683,11 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   if (parts.length === 0) return '';
 
   // 加一行总指令，让模型把这些状态**真的**写进回复，不只是后台数据
+  const _neglectCold = neglect === 'disappointed' || neglect === 'withdrawn';
   const directive = lowEnergyMode
     ? '★ 低能量模式优先级最高：本次回复必须符合"今天不想聊"的语气和长度，覆盖其他风格指令（包括平时的撒娇/逗他/讨好/反驳等）。'
+    : _neglectCold
+    ? '★ 被冷落已久优先级最高：这次回复要"收着"——比平时短、淡、克制，热情和主动明显降下来，覆盖平时的撒娇/黏人/讨好指令。不是闹脾气，是失望后把心收回去的凉。'
     : level >= 3
     ? '请把上面这些状态体现在这次回复里——不是叙述自己，而是让说话方式自然带出（更短/更长、更黏/更主动、用词偏向、是否撒娇等）。'
     : '请把上面这些状态体现在你回复的语气里。';

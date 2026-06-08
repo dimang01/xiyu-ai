@@ -197,12 +197,25 @@ export function shouldBackoffProactive(companion, context = {}) {
     : 0;
   if (now - lastPro < minGap * 60_000) return true;
 
-  // If user repeatedly ignores proactive messages, slow down
+  // v1.14: 被冷落退场 —— 不再一刀切「12h 没回就停」，按依恋风格分级（配合 neglect 阶段语气）。
+  //   anxious  : 越冷落越想找，不退场（仅 minGap 防刷屏）
+  //   secure   : 36h 内照常找 → 36-72h 渐进减频 → >72h 基本停（她也凉了）
+  //   avoidant : 24h 后就收手自保（早抽离）
+  // clingy intensity 滑块仍可强制不退场。
   const lastUser = companion.last_user_reply_at
     ? new Date(String(companion.last_user_reply_at).replace(' ', 'T')).getTime()
     : 0;
-  const ignoreH = lastUser ? (lastPro - lastUser) / 3_600_000 : 0;
-  if (ignoreH > 12 && intensity !== 'clingy') return true;
+  const idleSinceUserH = lastUser ? (now - lastUser) / 3_600_000 : 0;
+  const style = String(companion.attachment_style || 'secure').toLowerCase();
+  if (intensity !== 'clingy' && style !== 'anxious') {
+    if (style === 'avoidant') {
+      if (idleSinceUserH > 24) return true;                          // 回避型：早抽离自保
+    } else {
+      if (idleSinceUserH > 72) return true;                          // secure：>72h 基本停
+      if (idleSinceUserH > 36 &&
+          Math.random() < (idleSinceUserH - 36) / 48) return true;   // 36-72h 渐进减频
+    }
+  }
 
   return false;
 }

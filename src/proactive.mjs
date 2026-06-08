@@ -30,7 +30,7 @@ import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { safeOutboundReply } from './moderation.mjs';
 import { log } from './logger.mjs';
-import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel } from './emotion_state.mjs';
+import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
@@ -517,7 +517,8 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   // v1.4.1: 主动消息也按"想念档"给出 prompt 指令，让她主动找你时的语气有想念感
   const _es = getEmotionStateWithDefaults(companion.id);
   const _ml = getMissingLevel(_es, companion.last_user_reply_at);
-  const emotionHint = buildEmotionPromptHint(_es, { missingLevel: _ml, dailySchedule: proactiveDailySchedule });
+  const _ns = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
+  const emotionHint = buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule });
   const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
   const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences })}${stickerHint}${emotionHint}
 

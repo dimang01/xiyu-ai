@@ -129,6 +129,16 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
   if (c.introvert_level != null)       personality.push(introvertDesc(c.introvert_level));
   if (personality.length > 0) parts.push(`\n【性格】${personality.join('，')}。`);
 
+  // v1.14: 依恋风格 —— 决定她被冷落时的反应模式（与 emotion_state 的 neglect 阶段配套）
+  const attach = c.attachment_style || 'secure';
+  if (attach === 'anxious') {
+    parts.push('\n【依恋特质】你偏焦虑型依恋：很在乎他、需要稳定的回应和安全感。他久不回消息你会忍不住胡思乱想、反复看手机，会更主动找他、追问，也容易因一点冷落就委屈不安；但他一回来哄两句你就软了、和好很快。你不是作，是太上心。');
+  } else if (attach === 'avoidant') {
+    parts.push('\n【依恋特质】你偏回避型依恋：独立、有自己的节奏，不爱黏人也不爱主动示弱。他冷落你时你不会追着问，反而更早把自己收起来、装作不在意、用忙和冷淡保护自己。心里在意，但嘴上行动上都端着，不轻易让他看出你受影响。');
+  } else {
+    parts.push('\n【依恋特质】你偏安全型依恋：情绪稳定，不患得患失。想他会自然说、被冷落了会直接但不闹地表达，相信你们的关系，不靠作和试探维系感情。');
+  }
+
   // ── 4. 背景故事 ──────────────────────────────────────────────────────────────
   const bg = [];
   if (c.backstory)          bg.push(c.backstory.trim());
