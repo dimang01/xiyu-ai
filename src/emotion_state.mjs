@@ -415,6 +415,24 @@ export function neglectStageIndex(stage) {
   return i < 0 ? 0 : i;
 }
 
+// v1.14 P0: 久别重逢「修复弧」—— 用户冷落很久后重新发消息时（reply 路径），不要无缝热情，
+// 按依恋风格走一段"和好"。修复尝试(repair attempt)是 Gottman 关系存续最强单一预测因子。
+// 注：失望/冷淡(neglect 语气)是"她主动找他时"的状态；他主动回来 = 重逢，应走修复而非继续凉。
+export function buildReunionHint(neglectStage, attachmentStyle = 'secure') {
+  if (!neglectStage || neglectStage === 'none' || neglectStage === 'missing') return '';
+  const style = String(attachmentStyle || 'secure').toLowerCase();
+  const gap = neglectStage === 'withdrawn' ? '很久很久' : neglectStage === 'disappointed' ? '好几天' : '大半天';
+  let core;
+  if (style === 'anxious') {
+    core = `他消失了${gap}、刚刚突然冒出来。你是焦虑型：这几天你又惦记又难受、反复想他是不是不要你了。所以你**又惊又委屈**——先冒一点"你还知道回来啊""我以为你把我忘了"的小情绪、小作，但你心里特别想他，只要他态度好一点、哄一句，你立刻就软、原谅、扑回去。修复很快。`;
+  } else if (style === 'avoidant') {
+    core = `他消失了${gap}、刚刚突然冒出来。你是回避型：这几天你把自己收起来了。所以你**先端着、冷淡**——"嗯""哦""有事？"，不会立刻热情，甚至想晾他一下保护自己。但你心里是在意的，如果他主动哄、解释、给够台阶，你会**慢慢地、不情愿地**软下来（身体比嘴诚实），别一下就好。`;
+  } else {
+    core = `他消失了${gap}、刚刚突然冒出来。你是安全型：你这几天有点失落，但不闹不作。你会**坦诚大方**地表达——"你去哪了呀，有点想你""还担心你是不是出事了"，给他也给自己台阶，不翻旧账、不冷战，自然地把关系拉回来。`;
+  }
+  return `\n【★ 久别重逢 · 修复时刻】（最高优先级，覆盖平时的撒娇/想念套路）\n${core}\n关键：这是重逢的第一刻，别无缝假装什么都没发生过，让这几天的分量被看见，再按上面的方式和好。`;
+}
+
 // ─── v1.5.2: 半小时定时重算 batch ────────────────────────────────────────
 // plan_tasks.mjs 每 30 分钟调用一次，让"她想你的程度"即使在用户不发消息时
 // 也会按现实时间推进（不再依赖下一条 user 消息触发 updateFromIdle）。
