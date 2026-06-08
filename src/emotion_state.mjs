@@ -32,6 +32,13 @@ export const MOOD_STATES = [
   'jealous', 'angry', 'cold', 'comforting', 'clingy',
 ];
 
+// v1.14.3 (C) 各 mood 的初始强度 + 负面判定 —— 负面情绪强度高、退出慢，符合情绪惯性。
+const MOOD_INTENSITY0 = {
+  angry: 65, cold: 60, wronged: 55, jealous: 60,   // 负面：高、退得慢
+  comforting: 45, tired: 40, shy: 42, happy: 45, clingy: 35,
+};
+const MOOD_IS_NEG = (m) => m === 'angry' || m === 'cold' || m === 'wronged' || m === 'jealous';
+
 const DEFAULT_STATE = {
   affection:       0,
   trust:           50,
@@ -48,6 +55,7 @@ const DEFAULT_STATE = {
   // v1.8.0 #1: 即时 presence 状态
   availability:   'free',  // free / busy / half — 此刻是否方便聊天（由日程当前活动 + 时段推导）
   attention:       80,     // 0-100 对你这条消息的注意力；低 → 回复短、可能略走神
+  mood_intensity:  0,      // v1.14.3 (C) 当前情绪强度 0-100；切换看强度、衰减归零回 neutral
 };
 
 // Clamp helpers
@@ -239,8 +247,21 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
     update.patience  = clamp((update.patience  ?? basePat) - 10 * repeatLevel, 0, 100);
   }
 
+  // v1.14.3 (C) mood 惯性：强情绪不被弱刺激一句话切换；同情绪叠加；更强情绪可覆盖；否则只被撼动一点。
   if (rawDelta.mood && MOOD_STATES.includes(rawDelta.mood)) {
-    update.mood = rawDelta.mood;
+    const _cm = currentState.mood || 'neutral';
+    const _ci = currentState.mood_intensity ?? 0;
+    const _nm = rawDelta.mood;
+    const _ni = MOOD_INTENSITY0[_nm] ?? 40;
+    if (_cm === _nm) {
+      update.mood_intensity = clamp(_ci + 20, 0, 100);   // 同情绪叠加(刷新强度)
+    } else if (_cm === 'neutral' || _ci <= 0) {
+      update.mood = _nm; update.mood_intensity = _ni;     // 中性 → 直接进入
+    } else if (_ni >= _ci) {
+      update.mood = _nm; update.mood_intensity = _ni;     // 更强情绪盖过当前
+    } else {
+      update.mood_intensity = clamp(_ci - 12, 0, 100);    // 当前更强 → 不切换，只被撼动
+    }
   }
 
   // v1.14.2 (A) 信任负性偏差：失信/重度冷漠 → 信任快速崩塌（绕过 dampening，直接扣、会累积记仇）。
@@ -286,17 +307,21 @@ export function updateEmotionFromAssistantReply(companionId, currentState, reply
     if (cur < 80) update.energy = clamp(cur + 2, 0, 100);
   }
 
-  // Mood drifts back toward neutral over interactions
+  // v1.14.3 (C) mood 按强度消退退出（负面慢、正面快），取代随机骰子 —— 气消了才不气。
   const mood = currentState.mood || 'neutral';
-  const negMoods = ['wronged', 'cold', 'angry', 'jealous'];
-  if (negMoods.includes(mood)) {
-    // 20% chance per interaction to partially recover
-    if (Math.random() < 0.2) update.mood = 'neutral';
+  if (mood !== 'neutral') {
+    const _ci = currentState.mood_intensity ?? 0;
+    const _dec = MOOD_IS_NEG(mood) ? 8 : 18;              // 负面退得慢、正面快
+    const _ni = _ci - _dec;
+    if (_ni <= 0) { update.mood = 'neutral'; update.mood_intensity = 0; }
+    else update.mood_intensity = _ni;
   }
 
-  // Clingy if dependency high and no recent user message
+  // Clingy if dependency high（高依赖时黏糊浮现；给中低强度，易被其它情绪盖过）
   const dep = currentState.dependency ?? DEFAULT_STATE.dependency;
-  if (dep >= 70 && mood === 'neutral') update.mood = 'clingy';
+  if (dep >= 70 && (update.mood === 'neutral' || (mood === 'neutral' && update.mood === undefined))) {
+    update.mood = 'clingy'; update.mood_intensity = 35;
+  }
 
   // v1.6: excitement / annoyance 短期情绪每次回复后自然回归（衰减）
   const exc = currentState.excitement ?? DEFAULT_STATE.excitement;
@@ -348,6 +373,17 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
     update.dependency = clamp(dep + 3, 0, 100);
   } else {                          // 30min-3h
     update.dependency = clamp(dep + 1, 0, 100);
+  }
+
+  // v1.14.3 (C) idle 的 mood 强度：≥12h 冷落档(上面已设 mood)给强度；<12h 互动情绪随时间消气。
+  if (idleMinutes >= 720 && update.mood) {
+    update.mood_intensity = MOOD_IS_NEG(update.mood) ? 52 : 40;    // 冷落 mood 给中等强度
+  } else if (idleMinutes < 720 && currentState.mood && currentState.mood !== 'neutral') {
+    const _ci = currentState.mood_intensity ?? 0;                  // 互动情绪过 30min 平复一截
+    const _dec = MOOD_IS_NEG(currentState.mood) ? 12 : 24;         // 负面慢、正面快
+    const _ni = _ci - _dec;
+    if (_ni <= 0) { update.mood = 'neutral'; update.mood_intensity = 0; }
+    else update.mood_intensity = _ni;
   }
 
   // v1.x 修(#6)：energy 跟昼夜节律自然起伏，让情绪曲线"活"起来（之前 energy 从不变 → 平到离谱）。
