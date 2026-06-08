@@ -8,7 +8,7 @@
  */
 
 import 'dotenv/config';
-import { getDb, upsertPollBuf, getPollBuf, getActiveBotAccounts } from './src/db.mjs';
+import { getDb, upsertPollBuf, getPollBuf, getActiveBotAccounts, deactivateBindingIfNoCompanion } from './src/db.mjs';
 import {
   getUpdates,
   notifyStart,
@@ -121,7 +121,14 @@ async function runLoop(botId) {
 
       if (error) {
         if (sessionExpired) {
-          log('error', `[Pool] bot=${shortBot(botId)} session expired (errcode -14), stopping this loop. Re-bind via web QR.`);
+          let deactivated = false;
+          try { deactivated = deactivateBindingIfNoCompanion(botId); }
+          catch (e) { log('warn', `[Pool] bot=${shortBot(botId)} 停用空绑定失败: ${e.message}`); }
+          if (deactivated) {
+            log('info', `[Pool] bot=${shortBot(botId)} 会话过期且解析不出角色 → 已停用该死绑定（不再空轮询）`);
+          } else {
+            log('error', `[Pool] bot=${shortBot(botId)} session expired (errcode -14), stopping this loop. Re-bind via web QR.`);
+          }
           entry.expired = true;
           entry.running = false;
           break;

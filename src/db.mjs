@@ -2179,6 +2179,31 @@ export function getActiveWechatBinding(wechatUserId, botId) {
 }
 
 /**
+ * 降噪：某 botId 的活跃绑定若**解析不出任何 companion**（删角色后没重建 / 半成品账号），
+ * 把它 is_active=0 停掉，避免 pool 永远空轮询、每次重启刷 session-expired 错误。
+ * 有角色的绑定（真实用户，只是会话过期需重绑）**不动**。返回是否停用了。
+ */
+export function deactivateBindingIfNoCompanion(botId) {
+  if (!botId) return false;
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT wa.id, wa.companion_id,
+      (SELECT count(*) FROM companions c WHERE c.id = wa.companion_id) AS direct,
+      (SELECT count(*) FROM users u JOIN companions c2 ON c2.user_id = u.id
+         WHERE u.wechat_user_id = wa.wechat_user_id) AS viaUser
+    FROM wechat_accounts wa
+    WHERE wa.bot_id = ? AND wa.is_active = 1
+  `).all(botId);
+  if (!rows.length) return false;
+  const hasCompanion = rows.some(r => (r.companion_id && r.direct > 0) || r.viaUser > 0);
+  if (hasCompanion) return false;                 // 有角色 → 保留（需重绑）
+  const r = db.prepare(
+    `UPDATE wechat_accounts SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE bot_id = ? AND is_active = 1`,
+  ).run(botId);
+  return r.changes > 0;
+}
+
+/**
  * v1.9.4 安全修复：读权限对齐写权限，根除越权读。
  *
  * 之前版本通过 5 路 OR JOIN（含 historical_wa / wechat_user_id 隐式匹配）
