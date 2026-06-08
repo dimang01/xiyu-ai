@@ -20,7 +20,10 @@ const dcases = [
   ['别太正经放开点', 'style'], ['少发表情包', 'style'], ['我不吃香菜', 'taboo'],
   ['我最烦别人迟到', 'taboo'], ['别叫我宝', 'taboo'], ['答应我别查岗', 'pact'],
   ['我们说好不冷战', 'pact'], ['我是程序员', 'fact'],
+  // 真实 token 压测挖出的回归用例
+  ['我对花生过敏你记住', 'taboo'], ['我属狗的别忘了', 'fact'], ['咱俩约定好每天都要说晚安', 'pact'],
   ['今天天气不错', null], ['他叫我去开会', null], ['你叫我等一下', null], ['', null], ['哈哈哈你真可爱', null],
+  ['你过敏吗', null], ['他属狗', null],
 ];
 for (const [t, k] of dcases) {
   const r = sh.detectTeaching(t);

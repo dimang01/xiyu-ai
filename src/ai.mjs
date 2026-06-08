@@ -266,10 +266,14 @@ function stripActionNarration(text) {
   const cleaned = text
     .replace(/（[^（）]{0,50}）/g, '')      // 全角括号动作旁白（限长，避免吞正常长句）
     .replace(/\*[^*\n]{1,50}\*/g, '');      // *斜体* 动作
-  // 按气泡(||)重组，丢掉被洗空的气泡；全洗没了就退回原文，别让她空着
+  // 按气泡(||)重组，丢掉被洗空的气泡
   const segs = cleaned.split(/\s*(?:\|\||｜｜)\s*/).map(s => s.trim()).filter(Boolean);
   const out = segs.join('||').trim();
-  return out.length ? out : text;
+  if (out.length) return out;
+  // 整条都是括号/星号旁白（如「（笑）」「（你发了一大段我先消化下）」）：
+  // 去掉符号、保留里面的话，既不发空消息也不漏出旁白括号
+  const unwrapped = text.replace(/[（）*]/g, '').replace(/\s*(?:\|\||｜｜)\s*/g, '||').replace(/^\|+|\|+$/g, '').trim();
+  return unwrapped.length ? unwrapped : text;
 }
 
 export async function generateReply(personaPrompt, history, userMessage, params = {}, ctx = {}) {
