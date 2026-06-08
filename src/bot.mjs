@@ -23,6 +23,7 @@ import {
   getCompanionPreferencesForPrompt,
   recordSafetyEvent,
   upsertShaping, listShaping,
+  claimMessage,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
@@ -307,12 +308,12 @@ export async function handleMessage(rawMsg, botContext = {}) {
     rememberContextToken(ctx.botId, msg.fromUser, msg.contextToken);
   }
 
-  // 防重放
-  if (msg.msgId && processedIds.has(msg.msgId)) {
-    log('debug', `[Bot] 跳过重复 msgId=${msg.msgId}`);
-    return;
-  }
+  // 防重放：内存快速层 + 持久化兜底（claimMessage，重启不丢 → 修 Issue #1 重启重复回复）
   if (msg.msgId) {
+    if (processedIds.has(msg.msgId) || !claimMessage(msg.msgId)) {
+      log('debug', `[Bot] 跳过重复 msgId=${msg.msgId}`);
+      return;
+    }
     processedIds.add(msg.msgId);
     if (processedIds.size > 5000) {
       const arr = [...processedIds];
