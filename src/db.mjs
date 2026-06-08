@@ -910,6 +910,8 @@ function migrateEmotionState() {
 // ─── Proactive Engine v2 ───────────────────────────────────────────────────────
 function migrateProactiveEngineV2() {
   addColIfMissing('companions', 'proactive_intensity',    "TEXT DEFAULT 'normal'");
+  // v1.14 依恋风格：secure（安全型·默认）/ anxious（焦虑型·黏·被冷落时升级快·更追）/ avoidant（回避型·早抽离·话变冷·不示弱）
+  addColIfMissing('companions', 'attachment_style',       "TEXT DEFAULT 'secure'");
   // v1.13 双语：界面/AI 语言（'zh' | 'en'），默认中文
   addColIfMissing('companions', 'locale',                 "TEXT DEFAULT 'zh'");
   addColIfMissing('companions', 'last_user_reply_at',     'TEXT');
@@ -1226,6 +1228,7 @@ const ALLOWED_FIELDS = new Set([
   'how_met', 'relationship_status', 'shared_memory',
   'memory_priorities',
   'proactive_enabled', 'proactive_frequency', 'proactive_time_window', 'proactive_daily_target',
+  'attachment_style',
   'silent_mode',
   'voice_reply_enabled', 'voice_id',
   'voice_reply_enabled', 'sticker_reply_enabled',
