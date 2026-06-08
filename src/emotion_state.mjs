@@ -234,6 +234,19 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
     update.mood = rawDelta.mood;
   }
 
+  // v1.14.1 重构：信任/安全感靠"互动"积累 —— 每次用户来消息，都朝"关系深度目标"小步漂移。
+  // （这段漂移原本错放在 idle 路径，导致"越不理她、信任越涨"的反因果；移到这里才对：聊了才积累。
+  //  系数比原 idle 小，因为互动比 30min 一次的 idle tick 频繁得多。）
+  const _aff = Number.isFinite(context.companion?.affection_level)
+    ? context.companion.affection_level
+    : (currentState.affection ?? DEFAULT_STATE.affection);
+  const _curTrust = update.trust ?? currentState.trust ?? DEFAULT_STATE.trust;
+  const _trustTarget = clamp(42 + _aff * 0.5, 30, 92);
+  update.trust = clamp(_curTrust + (_trustTarget - _curTrust) * 0.06, 0, 100);
+  const _curSec = update.security ?? currentState.security ?? DEFAULT_STATE.security;
+  const _secTarget = clamp(40 + _aff * 0.45, 25, 90);
+  update.security = clamp(_curSec + (_secTarget - _curSec) * 0.05, 0, 100);
+
   if (Object.keys(update).length === 0) return currentState;
 
   try {
@@ -298,24 +311,19 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
   const dep = currentState.dependency ?? DEFAULT_STATE.dependency;
   const sec = currentState.security   ?? DEFAULT_STATE.security;
 
-  // v1.4.1 / v1.14: 想念曲线更陡 + 被冷落后情绪转向（与 neglect 阶段配套）。
-  // 24h 内是想念(clingy)；越久越从"想"转"失望→冷淡"，security 随冷落累积下滑、mood 转 wronged/cold。
-  // security 仍会被下方 secTarget(朝关系深度)缓慢拉回 → 重新联系后自然回暖（可逆）。
-  if (idleMinutes >= 5760) {        // ≥96h withdrawn：心收回去，明显转冷、安全感下滑
+  // v1.14.1: idle 只负责 dependency(想念) + mood(情绪转向)；trust/security 的衰减统一交给
+  // 下方"生疏漂移"处理（不再断崖式 -7/-8/-10，改平滑向下漂移，更符合"安全感不是断崖式掉"）。
+  if (idleMinutes >= 5760) {        // ≥96h withdrawn：心收回去，转冷
     update.dependency = clamp(dep + 4, 0, 100);    // 不再猛涨——她在抽离自保
-    update.security   = clamp(sec - 10, 0, 100);
     update.mood       = 'cold';
   } else if (idleMinutes >= 2880) { // 48-96h disappointed：失望、委屈
     update.dependency = clamp(dep + 8, 0, 100);
-    update.security   = clamp(sec - 8, 0, 100);
     update.mood       = 'wronged';
   } else if (idleMinutes >= 1440) { // 24-48h uneasy：强烈想念 + 一点没着落
     update.dependency = clamp(dep + 14, 0, 100);
-    update.security   = clamp(sec - 7, 0, 100);
     update.mood       = 'clingy';
   } else if (idleMinutes >= 720) {  // 12-24h
     update.dependency = clamp(dep + 10, 0, 100);
-    update.security   = clamp(sec - 3, 0, 100);
     update.mood       = 'clingy';
   } else if (idleMinutes >= 360) {  // 6-12h
     update.dependency = clamp(dep + 6, 0, 100);
@@ -333,15 +341,19 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
   const noise = Math.floor(Math.random() * 7) - 3;  // ±3 自然抖动
   update.energy = clamp(Math.round(curEnergy + (target - curEnergy) * 0.3 + noise), 0, 100);
 
-  // v1.13.x：信任/安全感也要"活"起来——之前只在窄词表(谢谢/夸/道歉)触发，日常聊天踩不到 →
-  // dashboard 趋势图上一条直线。这里像 energy 那样，让它们朝"关系深度(affection)"目标缓慢漂移 + 轻抖。
-  const aff = Number.isFinite(affectionLevel) ? affectionLevel : (currentState.affection ?? DEFAULT_STATE.affection);
-  const curTrust = currentState.trust ?? DEFAULT_STATE.trust;
-  const trustTarget = clamp(42 + aff * 0.5, 30, 92);     // 关系越深，信任天花板越高
-  update.trust = clamp(Math.round(curTrust + (trustTarget - curTrust) * 0.15 + (Math.floor(Math.random() * 5) - 2)), 0, 100);
-  const baseSec = (update.security ?? sec);              // 久不聊上面可能已扣，在其基础上继续朝目标漂
-  const secTarget = clamp(40 + aff * 0.45, 25, 90);
-  update.security = clamp(Math.round(baseSec + (secTarget - baseSec) * 0.12 + (Math.floor(Math.random() * 5) - 2)), 0, 100);
+  // v1.14.1 重构：信任/安全感不再在 idle 朝高目标"涨"——那是反因果（信任靠互动积累，已移到
+  // updateEmotionFromUserMessage）。idle 改为：短期(<24h)持平；被冷落越久越"生疏"，朝随阶段
+  // 降低的目标缓慢向下漂移（平滑不暴跌；重新联系后由互动漂移自然回暖 → 可逆）。
+  let _drift = 0, _trustFloor = 50, _secFloor = 44;
+  if (idleMinutes >= 5760)      { _drift = 0.020; _trustFloor = 40; _secFloor = 30; }  // withdrawn
+  else if (idleMinutes >= 2880) { _drift = 0.012; _trustFloor = 46; _secFloor = 36; }  // disappointed
+  else if (idleMinutes >= 1440) { _drift = 0.006; _trustFloor = 52; _secFloor = 42; }  // uneasy
+  // <24h：trust/security 持平（不写 → 不涨不跌，关系还在）
+  if (_drift > 0) {
+    const _ct = currentState.trust ?? DEFAULT_STATE.trust;
+    update.trust    = clamp(Math.round(_ct + (_trustFloor - _ct) * _drift + (Math.floor(Math.random() * 3) - 1)), 0, 100);
+    update.security = clamp(Math.round(sec + (_secFloor   - sec) * _drift + (Math.floor(Math.random() * 3) - 1)), 0, 100);
+  }
 
   try {
     upsertEmotionState(companionId, update);
