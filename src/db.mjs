@@ -905,6 +905,8 @@ function migrateEmotionState() {
   // attention:    0-100  （对你这次消息的注意力。低 → 回复短/略走神/略有延迟感）
   addColIfMissing('companion_emotion_state', 'availability', "TEXT DEFAULT 'free'");
   addColIfMissing('companion_emotion_state', 'attention',    'INTEGER DEFAULT 80');
+  // v1.14.3 (C): mood 强度 0-100 —— 让情绪有"惯性"，不被弱刺激一句话切换；负面退出慢。
+  addColIfMissing('companion_emotion_state', 'mood_intensity', 'INTEGER DEFAULT 0');
 }
 
 // ─── Proactive Engine v2 ───────────────────────────────────────────────────────
