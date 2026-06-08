@@ -57,35 +57,60 @@ function generatePassword(len = PASSWORD_LEN) {
   return out;
 }
 
+// admin 密码 scrypt 哈希（P0：.admin-credentials 不再明文存密码）
+function hashPassword(password, salt = crypto.randomBytes(16)) {
+  const saltBuf = Buffer.isBuffer(salt) ? salt : Buffer.from(String(salt), 'hex');
+  return { saltHex: saltBuf.toString('hex'), hashHex: crypto.scryptSync(String(password), saltBuf, 32).toString('hex') };
+}
+function verifyPassword(password, saltHex, hashHex) {
+  try {
+    const hash = crypto.scryptSync(String(password), Buffer.from(saltHex, 'hex'), 32);
+    const want = Buffer.from(hashHex, 'hex');
+    return hash.length === want.length && crypto.timingSafeEqual(hash, want);
+  } catch { return false; }
+}
+
 /**
- * 读取或初始化管理员凭据。返回 { username, password }。
- * 没有凭据文件时自动生成并打印一次密码到日志。
+ * 读取或初始化管理员凭据。返回 { username, salt, hash }。
+ * 没有凭据文件时自动生成并打印一次明文密码到日志；旧明文凭据自动升级为 scrypt 哈希（密码不变）。
  */
 export function loadAdminCredentials() {
   if (existsSync(CRED_FILE)) {
     const raw = readFileSync(CRED_FILE, 'utf-8').trim();
     const parts = raw.split(':');
+    // 新格式：username:scrypt:salt:hash
+    if (parts.length === 4 && parts[1] === 'scrypt') {
+      return { username: parts[0], salt: parts[2], hash: parts[3] };
+    }
+    // 旧明文格式 username:password → 自动升级为 scrypt 哈希（密码不变，用户继续用原密码登录）
     if (parts.length === 2 && parts[0] && parts[1]) {
-      return { username: parts[0], password: parts[1] };
+      const { saltHex, hashHex } = hashPassword(parts[1]);
+      try {
+        writeFileSync(CRED_FILE, `${parts[0]}:scrypt:${saltHex}:${hashHex}`, { encoding: 'utf-8', mode: 0o600 });
+        chmodSync(CRED_FILE, 0o600);
+        log('info', '[Admin] 凭据已从明文升级为 scrypt 哈希（密码不变，仍用原密码登录）');
+      } catch (e) { log('warn', `[Admin] 哈希升级写入失败: ${e.message}`); }
+      return { username: parts[0], salt: saltHex, hash: hashHex };
     }
     log('warn', `[Admin] 凭据文件格式损坏，将重新生成`);
   }
   const username = 'admin';
   const password = generatePassword();
+  const { saltHex, hashHex } = hashPassword(password);
   try {
-    writeFileSync(CRED_FILE, `${username}:${password}`, { encoding: 'utf-8', mode: 0o600 });
+    writeFileSync(CRED_FILE, `${username}:scrypt:${saltHex}:${hashHex}`, { encoding: 'utf-8', mode: 0o600 });
     chmodSync(CRED_FILE, 0o600);
     log('info', '======================================================');
     log('info', '  [Admin] 已生成管理员凭据：');
     log('info', `  username: ${username}`);
     log('info', `  password: ${password}`);
-    log('info', `  文件位置：${CRED_FILE}`);
+    log('info', `  文件位置：${CRED_FILE}（仅存哈希）`);
     log('info', '  请妥善保存此密码，登录后无法找回（可重新生成）');
     log('info', '======================================================');
   } catch (e) {
     log('error', `[Admin] 无法写入凭据文件: ${e.message}`);
   }
-  return { username, password };
+  return { username, salt: saltHex, hash: hashHex };
 }
 
 /**
@@ -94,7 +119,8 @@ export function loadAdminCredentials() {
 export function regenerateAdminPassword() {
   const current = loadAdminCredentials();
   const newPassword = generatePassword();
-  writeFileSync(CRED_FILE, `${current.username}:${newPassword}`, { encoding: 'utf-8', mode: 0o600 });
+  const { saltHex, hashHex } = hashPassword(newPassword);
+  writeFileSync(CRED_FILE, `${current.username}:scrypt:${saltHex}:${hashHex}`, { encoding: 'utf-8', mode: 0o600 });
   chmodSync(CRED_FILE, 0o600);
   log('info', `[Admin] 管理员密码已重新生成`);
   return newPassword;
@@ -141,11 +167,9 @@ export function verifyAdminCredentials(username, password) {
   const cred = loadAdminCredentials();
   if (typeof username !== 'string' || typeof password !== 'string') return false;
   const u = Buffer.from(username);
-  const p = Buffer.from(password);
   const eu = Buffer.from(cred.username);
-  const ep = Buffer.from(cred.password);
-  if (u.length !== eu.length || p.length !== ep.length) return false;
-  return crypto.timingSafeEqual(u, eu) && crypto.timingSafeEqual(p, ep);
+  if (u.length !== eu.length || !crypto.timingSafeEqual(u, eu)) return false;
+  return verifyPassword(password, cred.salt, cred.hash);
 }
 
 export function requireAdmin(req, res, next) {
