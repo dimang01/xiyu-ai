@@ -97,6 +97,22 @@
         <div id="stats-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4"></div>
       </section>
 
+      <!-- 成本概览 (P1-7) -->
+      <section>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-[20px] font-bold tracking-tightest">成本概览 <span id="cost-range" class="text-[13px] text-mute font-medium"></span></h2>
+          <select id="cost-days" class="text-[13px] border border-line rounded-lg px-2 py-1 bg-white">
+            <option value="1">今日</option><option value="7" selected>近 7 天</option><option value="30">近 30 天</option>
+          </select>
+        </div>
+        <div id="cost-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4"></div>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="bg-white rounded-2xl p-5 shadow-card"><div class="text-[13px] font-bold mb-2">按能力（哪类最烧钱）</div><div id="cost-by-cap" class="text-[13px]"></div></div>
+          <div class="bg-white rounded-2xl p-5 shadow-card"><div class="text-[13px] font-bold mb-2">按模型</div><div id="cost-by-model" class="text-[13px]"></div></div>
+        </div>
+        <div id="cost-note" class="text-[12px] text-mute mt-2"></div>
+      </section>
+
       <!-- 账号列表 -->
       <section>
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -178,6 +194,7 @@
       document.getElementById('view-login').classList.add('hidden');
       document.getElementById('view-main').classList.remove('hidden');
       loadStats();
+      loadCost();
       loadAccounts();
     }
 
@@ -225,6 +242,41 @@
         </div>
       `).join('');
     }
+
+    // ─── 成本概览 (P1-7) ───
+    async function loadCost() {
+      const days = document.getElementById('cost-days').value || '7';
+      const { ok, data } = await call('/api/admin/stats/cost?days=' + days);
+      if (!ok) return;
+      const s = data.data;
+      const cur = s.currency || '';
+      const sym = cur === 'CNY' ? '¥' : cur === 'USD' ? '$' : '';
+      const money = (n) => n == null ? '—' : sym + Number(n).toFixed(4) + (sym ? '' : ' ' + cur);
+      document.getElementById('cost-range').textContent = '· 近 ' + s.days + ' 天';
+      const cells = [
+        { label: '总成本', val: money(s.total.cost) },
+        { label: '调用次数', val: (s.total.events || 0).toLocaleString() },
+        { label: '图片数', val: (s.total.images || 0).toLocaleString() },
+        { label: '失败率', val: ((s.failure_rate || 0) * 100).toFixed(1) + '%' },
+        { label: 'p95 延迟', val: s.p95_latency_ms == null ? '—' : s.p95_latency_ms + 'ms' },
+      ];
+      document.getElementById('cost-grid').innerHTML = cells.map(c => `
+        <div class="bg-white rounded-2xl p-5 shadow-card">
+          <div class="text-[12px] text-mute font-medium">${c.label}</div>
+          <div class="text-[22px] font-bold tracking-tight mt-1">${c.val}</div>
+        </div>`).join('');
+      const rows = (arr) => ((arr || []).slice(0, 8).map(r => `
+        <div class="flex justify-between py-1 border-b border-line/40">
+          <span class="text-mute">${escapeHtml(r.key)} <span class="text-[11px]">×${r.count}</span></span>
+          <span class="mono font-semibold">${money(r.cost)}</span>
+        </div>`).join('') || '<div class="text-mute">暂无数据</div>');
+      document.getElementById('cost-by-cap').innerHTML = rows(s.by_capability);
+      document.getElementById('cost-by-model').innerHTML = rows(s.by_model);
+      document.getElementById('cost-note').textContent = s.pricing_configured
+        ? '成本为估算值（按 config/provider_pricing.json）。'
+        : '⚠️ 未配置 config/provider_pricing.json，成本显示为空——填入真实价格后才会计算。';
+    }
+    document.getElementById('cost-days').addEventListener('change', loadCost);
 
     // ─── 账号列表 ───
     let pagerState = { limit: 50, offset: 0, total: 0, search: null };

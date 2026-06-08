@@ -1,35 +1,24 @@
 {
-  "_comment": "Copy to provider_pricing.json and fill in actual prices. This file is an example only — prices change frequently, do not rely on any values here.",
+  "_comment": "复制为 provider_pricing.json（已 gitignore）并填真实价格。价格经常变，这里的数值仅为占位示例，请勿当真。chat 按 input/output_per_1m_tokens 计，image 按 per_image 计。同一份配置请尽量统一 currency，否则后台成本汇总会把不同币种直接相加。",
   "deepseek": {
-    "chat": {
-      "input_per_1m_tokens": 0,
-      "output_per_1m_tokens": 0,
-      "currency": "USD"
-    }
+    "chat": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0, "currency": "CNY" }
   },
-  "openai": {
-    "chat": {
-      "input_per_1m_tokens": 0,
-      "output_per_1m_tokens": 0,
-      "currency": "USD"
-    },
-    "image": {
-      "per_image": 0,
-      "currency": "USD"
-    }
-  },
-  "anthropic": {
-    "chat": {
-      "input_per_1m_tokens": 0,
-      "output_per_1m_tokens": 0,
-      "currency": "USD"
-    }
+  "302ai": {
+    "image": { "per_image": 0, "currency": "CNY" },
+    "chat": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0, "currency": "CNY" }
   },
   "zhipu": {
-    "chat": {
-      "input_per_1m_tokens": 0,
-      "output_per_1m_tokens": 0,
-      "currency": "CNY"
-    }
+    "chat": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0, "currency": "CNY" },
+    "vision": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0, "currency": "CNY" }
+  },
+  "gemini": {
+    "chat": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0, "currency": "USD" }
+  },
+  "openai": {
+    "chat": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0, "currency": "USD" },
+    "image": { "per_image": 0, "currency": "USD" }
+  },
+  "anthropic": {
+    "chat": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0, "currency": "USD" }
   }
 }

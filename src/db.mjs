@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import crypto from 'crypto';
 import path from 'node:path';
 import fs from 'node:fs';
+import { estimateProviderCost, loadProviderPricing } from './provider_costs.mjs';
 
 const DB_PATH = process.env.DB_PATH || path.resolve(process.cwd(), 'data/bot.db');
 // 确保 data 目录存在
@@ -250,6 +251,27 @@ function initAiUsageTable() {
     );
     CREATE INDEX IF NOT EXISTS idx_ai_usage_day ON ai_usage_daily(day);
     CREATE INDEX IF NOT EXISTS idx_ai_usage_account_day ON ai_usage_daily(account_id, day DESC);
+
+    -- P1-7：AI 用量明细（按 provider/model/capability 维度 + 估算成本 + 延迟 + 状态）
+    CREATE TABLE IF NOT EXISTS ai_usage_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      companion_id INTEGER,
+      provider TEXT,
+      model TEXT,
+      capability TEXT NOT NULL,            -- chat/image/vision/asr/tts/embedding/search
+      prompt_tokens INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      images INTEGER DEFAULT 0,
+      audio_seconds INTEGER DEFAULT 0,
+      latency_ms INTEGER,
+      status TEXT DEFAULT 'ok',            -- ok/error/fallback
+      estimated_cost REAL,
+      currency TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_events_created ON ai_usage_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_events_cap ON ai_usage_events(capability, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS companion_daily_schedule (
       companion_id INTEGER NOT NULL,
@@ -1619,6 +1641,41 @@ export function recordAiUsage({ accountId, promptTokens = 0, completionTokens = 
       message_count     = message_count + excluded.message_count,
       updated_at        = CURRENT_TIMESTAMP
   `).run(accountId, dayStr, promptTokens | 0, completionTokens | 0, messages | 0);
+}
+
+/**
+ * P1-7：记录一条 AI 用量明细（含 provider/model/capability/延迟/状态 + 估算成本）。
+ * best-effort：任何异常都吞掉，绝不影响主请求。accountId 可空（系统调用也记，成本才全）。
+ */
+export function recordAiUsageEvent({
+  accountId = null, companionId = null, provider = '', model = '', capability = 'chat',
+  promptTokens = 0, completionTokens = 0, images = 0, audioSeconds = 0,
+  latencyMs = null, status = 'ok',
+} = {}) {
+  try {
+    const modelType = capability === 'image' ? 'image' : 'chat'; // pricing 表按 chat/image 计价
+    const { estimated_cost, currency } = estimateProviderCost(
+      { provider, model_type: modelType, prompt_tokens: promptTokens, completion_tokens: completionTokens, images },
+      loadProviderPricing(),
+    );
+    getDb().prepare(`
+      INSERT INTO ai_usage_events
+        (account_id, companion_id, provider, model, capability, prompt_tokens, completion_tokens,
+         images, audio_seconds, latency_ms, status, estimated_cost, currency, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      accountId, companionId, String(provider || ''), String(model || ''), String(capability || 'chat'),
+      promptTokens | 0, completionTokens | 0, images | 0, audioSeconds | 0,
+      latencyMs == null ? null : (latencyMs | 0), String(status || 'ok'), estimated_cost, currency, Date.now(),
+    );
+  } catch { /* best-effort，绝不让计量打断主流程 */ }
+}
+
+export function cleanupAiUsageEvents(days = 60) {
+  try {
+    return getDb().prepare('DELETE FROM ai_usage_events WHERE created_at < ?')
+      .run(Date.now() - days * 86_400_000).changes;
+  } catch { return 0; }
 }
 
 export function getAccountUsageSummary(accountId) {
