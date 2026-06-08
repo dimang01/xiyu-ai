@@ -42,5 +42,8 @@ jobs:
       - name: 情绪机 1000 轮压测 + fuzzing
         run: node scripts/emotion_stress_test.mjs
 
+      - name: 危机干预 safety 护栏
+        run: node scripts/safety_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
