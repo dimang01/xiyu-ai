@@ -583,6 +583,13 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Issue #1: 持久化消息去重（防止重启后重复回复）。轻量专表，7 天清理。
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      msg_id       TEXT PRIMARY KEY,
+      processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_processed_messages_at ON processed_messages(processed_at);
+
     CREATE TABLE IF NOT EXISTS proactive_schedules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -3703,6 +3710,18 @@ export function upsertUserProfile(userId, companionId, data) {
 }
 
 // ─── messages ────────────────────────────────────────────────────────────────
+
+// Issue #1 持久化去重：首次 claim 返回 true(可处理)，重复返回 false。重启不丢。
+export function claimMessage(msgId) {
+  if (!msgId) return true;   // 无 msgId 不去重，放行
+  const info = getDb().prepare('INSERT OR IGNORE INTO processed_messages (msg_id) VALUES (?)').run(String(msgId));
+  return info.changes === 1;
+}
+export function cleanupProcessedMessages(days = 7) {
+  try { return getDb().prepare("DELETE FROM processed_messages WHERE processed_at < datetime('now', ?)").run(`-${days} days`).changes; }
+  catch { return 0; }
+}
+
 export function saveMessage({ msgId, fromUser, toUser, msgType, content, mediaUrl, mediaMime, direction }) {
   const db = getDb();
   try {
