@@ -577,6 +577,8 @@ function companionSummary(companion) {
     // v1.9.10 Bug 5：dashboard 有沉默模式 toggle 但之前漏返回 silent_mode 字段，
     // 用户开了刷新就回关（同 Bug 3 模式）。
     silent_mode: !!companion.silent_mode,
+    // v1.14 依恋风格 selector：同 proactive_daily_target/silent_mode 的"漏返回→切了又恢复"模式
+    attachment_style: fallbackText(companion.attachment_style, 'secure'),
   };
 }
 

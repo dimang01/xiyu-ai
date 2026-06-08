@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 语法检查 (node --check 全 src + scripts)
+        run: find src scripts -name '*.mjs' -exec node --check {} \;
+
+      - name: import 链 smoke
+        run: npm run check:imports
+
+      - name: 字段漂移检查
+        run: npm run check:field-drift
+
+      - name: neglect / 依恋 / reunion smoke
+        run: node scripts/neglect_stage_smoke.mjs
+
+      - name: 共建独特性 shaping smoke
+        run: node scripts/shaping_smoke.mjs
+
+      - name: 情绪机 1000 轮压测 + fuzzing
+        run: node scripts/emotion_stress_test.mjs
+
+# 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
+# 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
