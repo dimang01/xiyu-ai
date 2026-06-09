@@ -6,6 +6,7 @@ import path from 'node:path';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import sharp from 'sharp';
 import { generateImage, generateReply } from './ai.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
@@ -226,6 +227,29 @@ export function realismTailFor(scene) {
     : [...REALISM_CORE, ...REALISM_PERSON];
 }
 
+// v1.19.0: i2i 参考图「裁脸」——把锁定参考图裁成只剩头/脸的方形再喂给 i2i。
+// 实测：参考图带背景+身体时，gemini i2i 在「同光照」(如白天)场景会偷懒沿用参考图的
+// 背景甚至全身构图，文字压不住；裁成只剩脸后，i2i 没有背景/身体可抄，场景与构图只能
+// 按文字重建（脸仍锁得住）。参考图是系统生成的近景人像，脸在上-中部，故取居中偏上方形。
+// 可 PHOTO_I2I_FACE_CROP=0 关闭；比例/位置可调。
+export async function cropReferenceToFace(buf) {
+  if (String(process.env.PHOTO_I2I_FACE_CROP ?? '1').toLowerCase() === '0') return buf;
+  try {
+    const ratio = Number(process.env.PHOTO_I2I_FACE_CROP_RATIO) || 0.62;
+    const topOff = Number.isFinite(Number(process.env.PHOTO_I2I_FACE_CROP_TOP)) ? Number(process.env.PHOTO_I2I_FACE_CROP_TOP) : 0.06;
+    const img = sharp(buf);
+    const { width: W, height: H } = await img.metadata();
+    if (!W || !H) return buf;
+    const side = Math.max(64, Math.round(Math.min(W, H) * Math.min(0.95, Math.max(0.3, ratio))));
+    const left = Math.max(0, Math.round((W - side) / 2));
+    const top = Math.max(0, Math.round(H * Math.min(0.4, Math.max(0, topOff))));
+    const cropH = Math.min(side, H - top);
+    return await sharp(buf).extract({ left, top, width: Math.min(side, W - left), height: cropH }).png().toBuffer();
+  } catch {
+    return buf; // 裁剪失败就用原图，不阻断发图
+  }
+}
+
 function buildScenePrompt({ activity, timeSlot, mood }) {
   const activityText = String(activity || 'quiet daily moment').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
   const moodText = String(mood || '').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
@@ -237,9 +261,9 @@ function buildScenePrompt({ activity, timeSlot, mood }) {
   ].join(', ');
 }
 
-function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
+export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
   const referenceNote = referenceImagePath && providerCapabilities?.referenceImage
-    ? 'use the provided reference image ONLY for facial identity and likeness (keep the same face); do NOT copy its pose, body crop, framing or composition — strictly follow the text prompt for shot framing, distance and pose (a close waist-up phone shot unless the text says it is a scenery/POV shot)'
+    ? 'use the provided reference image for FACE IDENTITY ONLY (keep the same face and likeness); completely IGNORE and REPLACE the reference image background, location, lighting, time of day, clothing and body pose — build the entire scene, background, lighting, time of day and outfit strictly from this text prompt. The photo time of day and setting MUST match the text (e.g. if the text says night, it must look like night), never the reference. Frame as a close waist-up phone shot unless the text says it is a scenery/POV shot'
     : 'keep the same adult person identity using the stable description';
   // 去重：planner 写的 imagePrompt 常已含部分质感词，拼接前剔掉重复，
   // 避免顶到 900 字上限把独有的质感词（skin texture / grain / DoF）截掉。
@@ -345,9 +369,11 @@ export async function sendCompanionPhoto({
     let referenceImage = null;
     if (visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
       try {
-        const refBuf = await readFile(visual.referenceImagePath);
-        referenceImage = `data:${refMimeFromPath(visual.referenceImagePath)};base64,${refBuf.toString('base64')}`;
-        log('debug', `[Photo] i2i 参考图已载入 companion=${companion.id} bytes=${refBuf.length}`);
+        const rawRef = await readFile(visual.referenceImagePath);
+        const refBuf = await cropReferenceToFace(rawRef); // 裁脸：去掉背景/身体，逼场景按文字
+        const mime = refBuf === rawRef ? refMimeFromPath(visual.referenceImagePath) : 'image/png';
+        referenceImage = `data:${mime};base64,${refBuf.toString('base64')}`;
+        log('debug', `[Photo] i2i 参考图已载入 companion=${companion.id} raw=${rawRef.length} cropped=${refBuf.length}`);
       } catch (e) {
         log('warn', `[Photo] 读取参考图失败 companion=${companion.id}: ${e.message}`);
       }
