@@ -178,19 +178,32 @@ function cooldownState(companion) {
   return { cooling: remainingMs > 0, remainingMs: Math.max(0, remainingMs) };
 }
 
+// v1.18.0: 真人手机照质感层 —— 逼出"真照片"而非"AI 塑料图"。
+// 真实肤质 + 轻颗粒 + 自然景深 + 真实环境光，反磨皮 / 反过曝 / 反高饱和影楼感。
+// 这是所有生图（planner 决策图 + 程序兜底图）进入 generateImage 前的统一质感尾巴。
+export const REALISM_TAIL = Object.freeze([
+  'realistic candid phone snapshot',
+  'shot on a smartphone camera, authentic amateur phone photo',
+  'natural film-like grain, true-to-life skin texture with subtle natural imperfections',
+  'natural depth of field with a softly blurred real background',
+  'natural ambient lighting, true-to-life slightly muted color grade',
+  'candid unretouched look, real photographed person not a smooth 3d render',
+  'everyday environment',
+  'slightly imperfect framing',
+  'not overly polished',
+  'not a studio portrait',
+  'safe adult everyday content',
+  'modest everyday content',
+]);
+
 function buildScenePrompt({ activity, timeSlot, mood }) {
   const activityText = String(activity || 'quiet daily moment').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
   const moodText = String(mood || '').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  // 场景层只描述「在做什么 + 光线 + 氛围」，质感统一由 buildFinalImagePrompt 的 REALISM_TAIL 兜底。
   return [
     `realistic casual phone snapshot of an adult woman during ${activityText || 'an ordinary daily moment'}`,
     `${timeSlot || 'afternoon'} natural lighting`,
     moodText ? `subtle ${moodText} atmosphere` : 'ordinary-life atmosphere',
-    'everyday environment',
-    'slightly imperfect framing',
-    'not overly polished',
-    'not a studio portrait',
-    'safe adult everyday content',
-    'modest everyday content',
   ].join(', ');
 }
 
@@ -198,18 +211,18 @@ function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabiliti
   const referenceNote = referenceImagePath && providerCapabilities?.referenceImage
     ? 'use the provided reference image ONLY for facial identity and likeness (keep the same face); do NOT copy its pose, body crop, framing or composition — strictly follow the text prompt for shot framing, distance and pose (a close waist-up phone shot unless the text says it is a scenery/POV shot)'
     : 'keep the same adult person identity using the stable description';
+  // 去重：planner 写的 imagePrompt 常已含部分质感词，拼接前剔掉重复，
+  // 避免顶到 900 字上限把独有的质感词（skin texture / grain / DoF）截掉。
+  const sceneLower = String(scenePrompt || '').toLowerCase();
+  const tail = REALISM_TAIL.filter((t) => {
+    const key = t.split(',')[0].trim().toLowerCase();
+    return key && !sceneLower.includes(key);
+  });
   const prompt = [
     identityPrompt,
     scenePrompt,
     referenceNote,
-    'realistic casual phone snapshot',
-    'natural lighting',
-    'everyday environment',
-    'slightly imperfect framing',
-    'not overly polished',
-    'not a studio portrait',
-    'safe adult everyday content',
-    'modest everyday content',
+    ...tail,
   ].filter(Boolean).join(', ');
   return sanitizePhotoPrompt(prompt);
 }

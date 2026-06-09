@@ -365,7 +365,7 @@ function dayPartHint(h) {
   if (h < 12) return { id: 'morning', label: '上午', light: 'clean bright daylight', scenes: 'desk study, library, classroom, cafe, on the way outside' };
   if (h < 14) return { id: 'noon', label: '中午', light: 'bright midday light', scenes: 'lunch table, cafeteria, sunny outdoor walk' };
   if (h < 17) return { id: 'afternoon', label: '下午', light: 'warm slanted afternoon light', scenes: 'cafe with notebook, sunny window, park bench, study desk' };
-  if (h < 19) return { id: 'dusk', label: '傍晚', light: 'golden hour, warm orange sunset', scenes: 'walking home, balcony, sky over street, train window' };
+  if (h < 19) return { id: 'dusk', label: '傍晚', light: 'golden hour fading into blue hour, a warm orange sunset glow low on the horizon under a deep blue twilight sky, moody atmospheric ambient light', scenes: 'seaside boardwalk, riverside walk, walking home, balcony with the evening sky, city street as the lights come on, sky over the sea, palm-lined promenade' };
   if (h < 22) return { id: 'evening', label: '晚上', light: 'cozy indoor warm artificial light, lamps, screens', scenes: 'sofa with tea, study desk lamp, watching show, late dinner' };
   return         { id: 'night', label: '夜晚', light: 'low warm bedside lamp, dark room, near sleep', scenes: 'in bed scrolling phone, pajamas, pillow, dim bedroom' };
 }
@@ -428,10 +428,21 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
   const appearance = compactAppearance(companion);
   const facialCue = moodToFacialCue(companion?.current_mood);
   const clothingEn = clothingStyleToEnglish(companion?.clothing_style);
-  // selfie vs candid：用户主动要照片 (request) 或主动 selfie 类 trigger → 自拍角度
-  const isSelfie = trigger === 'user_request' || trigger === 'request' || trigger === 'selfie' || /自拍|看看你|看一下你|你的样子/.test(userText || '');
-  // v1.17.x: 风景 POV —— 提到晚霞/天空等景时，拍"她眼前的景本身"(像真人发"你看这个")，而不是站景前的人像/全身照
-  const isScenery = /晚霞|夕阳|日落|余晖|落日|晚霞|火烧云|天空|云|海边?|湖|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|窗外/.test(String(userText || '') + String(companion?.current_scene || ''));
+  // v1.18.0: shot mode 三态 + 优先级修正。
+  // 旧 bug：用户明说"发张自拍"，但只要 current_scene 含晚霞/海，isScenery 就抢先命中，
+  // 把人画成远处一个小背影（纯风景），违背"想看你"的意图。
+  // 修：拆「想看她(自拍)」「想看景(POV)」「场景本身有没有景」三个信号，按意图定优先级，
+  // 并新增 ENV_SELFIE(环境自拍)——人是主体近景，背后是那个景做氛围（最贴真实情侣自拍）。
+  const _ptxt = String(userText || '');
+  const _pscene = String(companion?.current_scene || '');
+  const sceneIsScenic = /晚霞|夕阳|日落|余晖|落日|火烧云|天空|云海?|海边?|湖泊?|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|窗外|江边?|河边?/.test(_ptxt + _pscene);
+  const wantsSelfie = /自拍|看看你|看一下你|看看你的|你的样子|你长(啥|什么)样|想看你|拍张你|你的脸|露(个|张)?脸/.test(_ptxt);
+  const wantsScenery = /(拍|看看|给我看|分享|来张|来一张|发张).{0,6}(晚霞|夕阳|日落|余晖|落日|火烧云|天空|云|海|湖|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|外面|窗外)|外面.{0,4}(什么样|怎么样|长啥样)/.test(_ptxt);
+  const selfieCapable = trigger === 'user_request' || trigger === 'request' || trigger === 'selfie';
+  const shotMode = (wantsScenery && !wantsSelfie) ? 'SCENERY'
+    : (wantsSelfie || selfieCapable) ? (sceneIsScenic ? 'ENV_SELFIE' : 'SELFIE')
+    : sceneIsScenic ? 'SCENERY'
+    : 'CANDID';
 
   return `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
@@ -442,7 +453,12 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - plausible scenes for this hour: ${dp.scenes}
 
 - trigger: ${trigger}
-- shot mode: ${isScenery ? 'SCENERY-POV (主体是她眼前的景本身——晚霞/天空/海等，第一人称 POV 看出去，只拍那个景；她最多一只手/衣角/背影局部入镜，绝不是站在景前的人像或全身照，像真人随手拍"你看这个"发给对方)' : isSelfie ? 'SELFIE (smartphone front camera, arm partially visible, slight upward angle)' : 'CANDID (someone else might take it, or set on table)'}
+- shot mode: ${
+  shotMode === 'ENV_SELFIE' ? 'ENVIRONMENTAL SELFIE（她是绝对主角：smartphone front-camera selfie, one arm reaching toward the camera, framed from the chest or waist up, her face clearly in sharp focus；同时人在户外，身后是当前那个景——晚霞/海/城市灯光等——作为氛围背景且自然虚化(softly out of focus behind her)，像真人在好看的地方拍的"环境自拍"发给对象：人是主体、景是身后的氛围，绝不是把人缩成远处小背影的风景图，也绝不是全身照）'
+  : shotMode === 'SELFIE' ? 'SELFIE（smartphone front-camera selfie, one arm partially visible reaching toward the camera, framed from the chest or waist up, face clearly in focus；日常室内/户外随手自拍，背景真实且自然虚化）'
+  : shotMode === 'SCENERY' ? 'SCENERY-POV（主体是她眼前的景本身——晚霞/天空/海等，第一人称 POV 看出去，只拍那个景；她最多一只手/衣角/背影局部入镜，绝不是站在景前的人像或全身照，像真人随手拍"你看这个"发给对方）'
+  : 'CANDID（someone else might take it, or set on table；framed chest or waist up, natural everyday moment）'
+}
 - companion name: ${safeText(companion?.name || '她', 40)}
 - companion appearance: ${appearance}
 - companion clothing in english: ${clothingEn}
@@ -462,12 +478,17 @@ ${recent || '(none)'}
 2. 明确要求看你/发照片时可更倾向发送，但仍要自然。
 3. 主动照片必须低频，像临时想分享当下。
 ★★★ imagePrompt 美学强约束（v1.10.34）★★★
-4. imagePrompt 必须是英文。**主角必须是 naturally pretty young woman, fresh and photogenic, gentle delicate facial features, soft warm smile, clear soft skin, well-groomed natural beauty**（不要 plain / haggard / exhausted / tired）。
+4. imagePrompt 必须是英文。**主角必须是 naturally pretty young woman, fresh and photogenic, gentle delicate facial features, soft warm smile**（不要 plain / haggard / exhausted / tired）。**但必须是一张真实手机随手拍的「真人照片」——真实自然的肤质（有细微纹理、毛孔、自然光影，不要 airbrushed / over-smoothed / waxy / plastic / poreless / 3d render / CGI doll face），五官有真人那种轻微不对称，像小红书/朋友圈的真实生活自拍，不是影楼写真也不是网红磨皮假图。**
 5. imagePrompt 必须显式包含上面 "companion current mood / facial cue" 给的英文表情描述（如 "bright warm smile, soft cheerful eyes"），不允许 expressionless 或 sad-looking。
 6. imagePrompt 必须显式包含上面 "companion clothing in english" 的英文着装关键词。**禁止 navy office sweater / formal collar shirt / professional attire**。
-7. **shot mode = SCENERY-POV**：imagePrompt 主体写那个景（如 "warm orange sunset glow over the city skyline, soft drifting clouds, first-person POV looking out from a balcony"），人物几乎不入镜（最多 "a hand or sleeve at the edge of the frame" 或 "a small back silhouette in the corner"），**景是绝对主角，不要把人画成主体、更不要全身像**。**shot mode = SELFIE**：写 "smartphone selfie POV, front-facing camera, arm partially visible at edge of frame, slight upward angle, casual home setting"。**shot mode = CANDID**：写 "candid phone snapshot, slightly imperfect framing, natural everyday moment"。**人像照（SELFIE / CANDID）一律近景**：用 "framed from the chest or waist up, close intimate phone-photo distance, face clearly in focus" 这类写法 —— 真实恋爱里女友发的照片几乎都是近景半身（脸 / 上半身 / 生活细节），**不要 full-length head-to-toe standing portrait**（那像街拍或证件照，不像女友随手自拍）。
+7. **必须严格按上面给出的 shot mode 写构图**：
+   - **ENVIRONMENTAL SELFIE**：人是绝对主角的近景自拍（chest/waist up, face in sharp focus, one arm reaching toward camera），身后是当前那个景（晚霞/海/城市灯光等）做氛围且自然虚化——像真人在好看的地方拍给对象的"环境自拍"。**人是主体、景是背景**，绝不能缩成远处小背影。
+   - **SELFIE**：近景手机自拍（chest/waist up, face in focus），背景是真实日常环境（居家/书桌/街道）且自然虚化，**不是纯白墙或影楼背景**。
+   - **SCENERY-POV**：主体写那个景（如 "warm sunset glow over the sea, first-person POV looking out"），人几乎不入镜（最多 "a hand or sleeve at the edge of the frame"），**景是绝对主角**。
+   - **CANDID**：随手抓拍，slightly imperfect framing, natural everyday moment。
+   **所有人像照（ENVIRONMENTAL SELFIE / SELFIE / CANDID）一律近景半身**："framed from the chest or waist up, close intimate phone-photo distance, face clearly in focus"——真实恋爱里女友发的照片几乎都是近景半身，**绝不要 full-length head-to-toe standing portrait / 全身照**（那像街拍或证件照，不像女友随手自拍）。
 8. imagePrompt 必须写当前 day part 对应的 lighting hint 并选 plausible scenes 范围内的场景。**深夜禁 cafe / 奶茶店 / outdoor daylight**；清晨禁 dark bedroom。
-9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft round face, small delicate chin, slim petite youthful build" 如果人设没特别指定。**年龄措辞改用具象视觉特征**（v1.10.41）："very youthful first-year university freshman vibe, soft baby-faced look with round full cheeks, large warm doe eyes, fresh dewy clear skin, makeup-free natural fresh complexion, slim petite frame"。让模型按具象去画，避免被 over-correct 到 25+。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl / lolita / high school** 等触发安全过滤的词。
+9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft natural face, slim petite youthful build" 如果人设没特别指定。**年龄措辞改用具象视觉特征**（v1.10.41）："youthful early-college vibe, soft natural features, warm bright eyes, fresh clear complexion with realistic natural skin texture, light or no makeup, slim petite frame"。**关键：肤质必须真实有细节（细微毛孔/纹理/自然光影），不要 dewy / glossy / airbrushed / poreless 那种磨皮塑料感；脸要像真人手机照片，不是娃娃脸或 3D 渲染。** 让模型按具象去画，既避免被 over-correct 到 25+，也避免变成假娃娃脸。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl / lolita / high school** 等触发安全过滤的词。
 10. imagePrompt **不要写 "no XXX" / "without XXX" 等 negative 排除句**（会被本系统的安全过滤误伤）。改用**正面同义词替代**：
     - 想表达「不要专业写真」→ 写 "casual amateur smartphone snapshot vibe, everyday spontaneous moment"
     - 想表达「不要 35mm 电影感」→ 写 "natural daylight or warm room light, soft even exposure"
