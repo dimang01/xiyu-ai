@@ -440,8 +440,11 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
   const sceneIsScenic = /晚霞|夕阳|日落|余晖|落日|火烧云|天空|云海?|海边?|湖泊?|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|窗外|江边?|河边?/.test(_ptxt + _pscene);
   const wantsSelfie = /自拍|看看你|看一下你|看看你的|你的样子|你长(啥|什么)样|想看你|拍张你|你的脸|露(个|张)?脸/.test(_ptxt);
   const wantsScenery = /(拍|看看|给我看|分享|来张|来一张|发张).{0,6}(晚霞|夕阳|日落|余晖|落日|火烧云|天空|云|海|湖|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|外面|窗外)|外面.{0,4}(什么样|怎么样|长啥样)/.test(_ptxt);
+  // v1.19.2: ACTIVITY-POV —— 用户想看"她手头正在做的事/作业/工作内容"(拍物不拍脸)。
+  const wantsActivity = /(拍|看看|给我看|发张?|晒).{0,6}(作业|功课|工作|手头|笔记|手账|代码|方案|文档|在写的|在做的|在看的|在画的|在弄的|在练的|画|稿|书)|你(在|手头)?(写|做|弄|画|忙|敲|看|读|练|弹|搞)(的|了|啥|什么|到哪了?|多少了?)|(作业|功课|工作|代码|方案|稿|笔记|手账|画).{0,6}(到哪了?|多少了?|拍张?|看看|给我看)/.test(_ptxt);
   const selfieCapable = trigger === 'user_request' || trigger === 'request' || trigger === 'selfie';
-  const shotMode = (wantsScenery && !wantsSelfie) ? 'SCENERY'
+  const shotMode = wantsActivity ? 'ACTIVITY_POV'
+    : (wantsScenery && !wantsSelfie) ? 'SCENERY'
     : (wantsSelfie || selfieCapable) ? (sceneIsScenic ? 'ENV_SELFIE' : 'SELFIE')
     : sceneIsScenic ? 'SCENERY'
     : 'CANDID';
@@ -456,7 +459,8 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 
 - trigger: ${trigger}
 - shot mode: ${
-  shotMode === 'ENV_SELFIE' ? 'ENVIRONMENTAL SELFIE（她是绝对主角：smartphone front-camera selfie, one arm reaching toward the camera, framed from the chest or waist up, her face clearly in sharp focus；同时人在户外，身后是当前那个景——晚霞/海/城市灯光等——作为氛围背景且自然虚化(softly out of focus behind her)，像真人在好看的地方拍的"环境自拍"发给对象：人是主体、景是身后的氛围，绝不是把人缩成远处小背影的风景图，也绝不是全身照）'
+  shotMode === 'ACTIVITY_POV' ? 'ACTIVITY-POV（她拍自己正在做的事/手头的东西给对方看，像"你看我在写的作业"。first-person POV 低头看自己的桌面/手头：**主体是那个作业本/电脑屏幕/工作内容/手头的物件**——写满字的笔记本+笔、屏幕上的文档或代码、画了一半的画、做饭的案板等，桌面/物体填满画面；**绝不出现她的脸、不是自拍**，最多一只手或衣袖在画面边缘(握着笔/手放键盘上)；写明当前时段光线如 warm desk lamp at night / soft daylight by the window。规则 4/5/6/9（人物外貌/表情/着装）对它不适用）'
+  : shotMode === 'ENV_SELFIE' ? 'ENVIRONMENTAL SELFIE（她是绝对主角：smartphone front-camera selfie, one arm reaching toward the camera, framed from the chest or waist up, her face clearly in sharp focus；同时人在户外，身后是当前那个景——晚霞/海/城市灯光等——作为氛围背景且自然虚化(softly out of focus behind her)，像真人在好看的地方拍的"环境自拍"发给对象：人是主体、景是身后的氛围，绝不是把人缩成远处小背影的风景图，也绝不是全身照）'
   : shotMode === 'SELFIE' ? 'SELFIE（smartphone front-camera selfie, one arm partially visible reaching toward the camera, framed from the chest or waist up, face clearly in focus；日常室内/户外随手自拍，背景真实且自然虚化）'
   : shotMode === 'SCENERY' ? 'SCENERY-POV（主体是她眼前的景本身——晚霞/天空/海等，那个景填满画面，像真人随手拍"你看这个"发给对方；最多一只手或衣角出现在画面极边缘，**手机/相机本身绝不能出现在画面里**（别写 holding a phone / a phone in frame）；绝不是站在景前的人像或全身照）'
   : 'CANDID（someone else might take it, or set on table；framed chest or waist up, natural everyday moment）'
@@ -480,13 +484,14 @@ ${recent || '(none)'}
 2. 明确要求看你/发照片时可更倾向发送，但仍要自然。
 3. 主动照片必须低频，像临时想分享当下。
 ★★★ imagePrompt 美学强约束（v1.10.34）★★★
-4. imagePrompt 必须是英文。**主角必须是 naturally pretty young woman, fresh and photogenic, gentle delicate facial features, soft warm smile**（不要 plain / haggard / exhausted / tired）。**但必须是一张真实手机随手拍的「真人照片」——真实自然的肤质（有细微纹理、毛孔、自然光影，不要 airbrushed / over-smoothed / waxy / plastic / poreless / 3d render / CGI doll face），五官有真人那种轻微不对称，像小红书/朋友圈的真实生活自拍，不是影楼写真也不是网红磨皮假图。**
+4. imagePrompt 必须是英文。**（若 shot mode = SCENERY-POV 或 ACTIVITY-POV，本条及 5/6/9 不适用：只写景/桌面物件、绝不写人物外貌/脸/表情/着装。）** 其余机位下，**主角必须是 naturally pretty young woman, fresh and photogenic, gentle delicate facial features, soft warm smile**（不要 plain / haggard / exhausted / tired）。**但必须是一张真实手机随手拍的「真人照片」——真实自然的肤质（有细微纹理、毛孔、自然光影，不要 airbrushed / over-smoothed / waxy / plastic / poreless / 3d render / CGI doll face），五官有真人那种轻微不对称，像小红书/朋友圈的真实生活自拍，不是影楼写真也不是网红磨皮假图。**
 5. imagePrompt 必须显式包含上面 "companion current mood / facial cue" 给的英文表情描述（如 "bright warm smile, soft cheerful eyes"），不允许 expressionless 或 sad-looking。
 6. imagePrompt 必须显式包含上面 "companion clothing in english" 的英文着装关键词。**禁止 navy office sweater / formal collar shirt / professional attire**。
 7. **必须严格按上面给出的 shot mode 写构图**：
    - **ENVIRONMENTAL SELFIE**：人是绝对主角的近景自拍（chest/waist up, face in sharp focus, one arm reaching toward camera），身后是当前那个景（晚霞/海/城市灯光等）做氛围且自然虚化——像真人在好看的地方拍给对象的"环境自拍"。**人是主体、景是背景**，绝不能缩成远处小背影。
    - **SELFIE**：近景手机自拍（chest/waist up, face in focus），背景是真实日常环境（居家/书桌/街道）且自然虚化，**不是纯白墙或影楼背景**。
    - **SCENERY-POV**：主体写那个景（如 "warm sunset glow over the sea, looking out over the water, the scenery fills the frame"），**景填满画面、是绝对主角**；最多 "a hand or sleeve at the very edge of the frame"，**绝不能让手机/相机出现在画面里**（别写 holding a phone / a phone in frame / taking a photo —— 否则模型会把一只手举着手机怼在镜头前，很出戏）。**SCENERY-POV 时只写景本身，不要写任何人物外貌/表情/着装/skin —— 规则 4/5/6/9 对它不适用**（写了 skin/face/young woman 会让模型硬塞一个人进画面当主体）。
+   - **ACTIVITY-POV**：拍她手头正在做的事/东西（作业本+笔、电脑屏幕上的文档/代码、画到一半的画、做饭案板…），first-person POV 低头看桌面，**那个物件/作业/工作内容填满画面、是绝对主角**；**绝不出现她的脸、不是自拍**，最多一只手或衣袖在画面边缘；写当前时段光线。**只写桌面/物件不写人物外貌/表情/着装 —— 规则 4/5/6/9 对它不适用**。
    - **CANDID**：随手抓拍，slightly imperfect framing, natural everyday moment。
    **所有人像照（ENVIRONMENTAL SELFIE / SELFIE / CANDID）一律近景半身**："framed from the chest or waist up, close intimate phone-photo distance, face clearly in focus"——真实恋爱里女友发的照片几乎都是近景半身，**绝不要 full-length head-to-toe standing portrait / 全身照**（那像街拍或证件照，不像女友随手自拍）。
    **自拍动作要有变化、别死板**：不要每张都正脸怼镜头——另一只手可以自然地比耶/撑下巴/拨头发/拿着奶茶或笔，头可以微侧，视线可以不完全看镜头（看向别处或低头浅笑），像真人随手抓拍的多样姿势（仍保持近景半身、脸清晰）。从这些里随机挑一种，别千篇一律。
