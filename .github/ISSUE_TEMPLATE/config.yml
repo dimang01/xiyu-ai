@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞（私密报告）
+    url: https://github.com/dimang01/xiyu-ai/security/advisories/new
+    about: 漏洞请走 Security Advisory 或邮箱 xiyuai@proton.me，不要开公开 issue
