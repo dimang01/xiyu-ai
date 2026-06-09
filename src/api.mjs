@@ -220,7 +220,7 @@ function blockIfHosted(_req, res, next) {
 
 const VERIFICATION_PURPOSES = new Set(['login', 'register', 'reset_password']);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USERNAME_RE = /^[a-zA-Z0-9_]{3,32}$/;
+const USERNAME_RE = /^[一-龥a-zA-Z0-9_]{2,20}$/;  // v1.17.x: 允许中文用户名（2-20 位，中文/字母/数字/下划线）
 const CODE_TTL_MS = 5 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -2391,11 +2391,8 @@ router.post('/setup/local-account',
     const rawUsername = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     const password    = typeof req.body?.password === 'string' ? req.body.password        : '';
     const username    = rawUsername.toLowerCase();
-    if (!username || username.length < 3 || username.length > 32) {
-      return res.status(400).json({ ok: false, message: '用户名须为 3–32 位' });
-    }
-    if (!/^[a-zA-Z0-9_]{3,32}$/.test(rawUsername)) {
-      return res.status(400).json({ ok: false, message: '用户名只能包含字母、数字、下划线（3–32 位）' });
+    if (!USERNAME_RE.test(rawUsername)) {
+      return res.status(400).json({ ok: false, message: '用户名须为 2–20 位，支持中文、字母、数字、下划线' });
     }
     if (password.length < 6) {
       return res.status(400).json({ ok: false, message: '本地登录密码至少 6 位' });
