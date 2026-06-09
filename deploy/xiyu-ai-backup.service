@@ -1,0 +1,24 @@
+# 溪语 AI · 数据库定时备份 service（配合 xiyu-ai-backup.timer 使用）
+#
+# 安装：
+#   sudo cp deploy/xiyu-ai-backup.{service,timer} /etc/systemd/system/
+#   按实际路径改下面的 WorkingDirectory / ExecStart
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now xiyu-ai-backup.timer
+# 验证：
+#   systemctl list-timers xiyu-ai-backup.timer
+#   sudo systemctl start xiyu-ai-backup.service && journalctl -u xiyu-ai-backup -n 5
+
+[Unit]
+Description=Xiyu AI SQLite backup
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/xiyu-ai
+ExecStart=/usr/bin/bash scripts/backup-db.sh
+# 备份保留天数 / 异机目录按需打开：
+# Environment=KEEP_DAYS=30
+# Environment=BACKUP_DIR=/mnt/nas/xiyu-backups
+NoNewPrivileges=true
+PrivateTmp=true
