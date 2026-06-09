@@ -3524,6 +3524,9 @@ function migrateReminderPush() {
 // 这里改的是「全新部署」的 schema 默认，两边保持一致。
 function migrateProactiveDailyTarget() {
   addColIfMissing('companions', 'proactive_daily_target', 'INTEGER DEFAULT 4');
+  // v1.16.x: 未回连发计数（读空气刹车）—— AI 每发一条主动消息 +1、用户回消息清零；
+  // 连发到阈值 shouldBackoffProactive 就闭嘴，防"用户不回还自说自话轰炸"。
+  addColIfMissing('companions', 'proactive_unanswered', 'INTEGER DEFAULT 0');
 }
 
 // v1.5: 沉默陪伴模式
@@ -3561,6 +3564,14 @@ export function getProactiveLastSent(companionId) {
 export function markWindowLastCallSent(companionId) {
   const now = Math.floor(Date.now() / 1000);
   getDb().prepare(`UPDATE companions SET last_lastcall_at = ? WHERE id = ?`).run(now, companionId);
+}
+
+// v1.16.x: 未回连发计数（读空气刹车）。AI 每发一条主动消息 +1；用户一回消息清零。
+export function bumpProactiveUnanswered(companionId) {
+  getDb().prepare(`UPDATE companions SET proactive_unanswered = COALESCE(proactive_unanswered,0) + 1 WHERE id = ?`).run(companionId);
+}
+export function clearProactiveUnanswered(companionId) {
+  getDb().prepare(`UPDATE companions SET proactive_unanswered = 0 WHERE id = ?`).run(companionId);
 }
 
 // v1.4.0 Sprint 1: 主动发语音功能字段。

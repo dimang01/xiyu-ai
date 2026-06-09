@@ -9,7 +9,7 @@ import {
   getCompanionById, getBotContextForCompanion, getDb,
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
-  recordProactiveSentTimestamp, getProactiveLastSent, markWindowLastCallSent,
+  recordProactiveSentTimestamp, getProactiveLastSent, markWindowLastCallSent, bumpProactiveUnanswered,
   getCompanionPreferencesForPrompt,
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
   getRecentSafetyRisk,                        // v1.9.0 #1
@@ -822,6 +822,8 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
   }
   // Record proactive sent for engine backoff tracking
   try { recordProactiveSent(companion.id); } catch {}
+  // v1.16.x: 未回连发计数 +1（读空气刹车）——用户回消息时由 bot.mjs 清零
+  try { bumpProactiveUnanswered(companion.id); } catch {}
 
   // 首次主动消息成就（静默）
   tryAchievement(companion.id, 'first_proactive_message');
