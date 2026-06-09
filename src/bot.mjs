@@ -26,7 +26,7 @@ import {
   claimMessage, clearProactiveUnanswered,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
-import { buildSystemPrompt } from './companion.mjs';
+import { buildSystemPrompt, buildFirstTurnHint } from './companion.mjs';
 import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach, canAcceptConfession, daysSinceMeet, DAYS_TO_LOVER } from './memory.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
@@ -688,6 +688,11 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const shapingConfirmHint = buildShapingConfirmHint(_taught);
     const shapingHint = buildShapingPromptHint(listShaping(companion.id));
     let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + escalationDirective(esc.level);
+    // v1.16.x: 首轮破冰 —— 她还没回过任何消息(全新对话) → 首次回复精心破冰(onboarding 留人)
+    try {
+      const _prior = getRecentHistory(msg.fromUser, botId, 6) || [];
+      if (!_prior.some(m => m.direction === 'out')) systemPrompt += buildFirstTurnHint(companion);
+    } catch (e) { log('warn', `[Bot] firstTurn check failed: ${e.message}`); }
     // 关系阶段刚升级 → 这条回复要自然体现这种变化
     const celebration = consumePendingCelebration(companion.id);
     if (celebration) {
