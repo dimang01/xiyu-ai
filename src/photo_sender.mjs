@@ -262,9 +262,14 @@ function buildScenePrompt({ activity, timeSlot, mood }) {
 }
 
 export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
-  const referenceNote = referenceImagePath && providerCapabilities?.referenceImage
-    ? 'use the provided reference image for FACE IDENTITY ONLY (keep the same face and likeness); completely IGNORE and REPLACE the reference image background, location, lighting, time of day, clothing and body pose — build the entire scene, background, lighting, time of day and outfit strictly from this text prompt. The photo time of day and setting MUST match the text (e.g. if the text says night, it must look like night), never the reference. Frame as a close waist-up phone shot unless the text says it is a scenery/POV shot'
-    : 'keep the same adult person identity using the stable description';
+  // v1.19.2: SCENERY/ACTIVITY-POV 无人脸 —— 不写人物 identity，也不写"keep the same face"
+  // 的 referenceNote（否则 i2i 会硬把脸塞进无脸的桌面/风景 POV，如电脑前的工作 POV 变成人脸 candid）。
+  const sceneryShot = isSceneryScene(scenePrompt);
+  const referenceNote = sceneryShot
+    ? 'first-person POV photo of the scene/objects in front of her — do NOT show her face, do NOT make it a selfie; the objects/scenery fill the frame, at most one hand or sleeve at the edge'
+    : (referenceImagePath && providerCapabilities?.referenceImage
+      ? 'use the provided reference image for FACE IDENTITY ONLY (keep the same face and likeness); completely IGNORE and REPLACE the reference image background, location, lighting, time of day, clothing and body pose — build the entire scene, background, lighting, time of day and outfit strictly from this text prompt. The photo time of day and setting MUST match the text (e.g. if the text says night, it must look like night), never the reference. Frame as a close waist-up phone shot unless the text says it is a scenery/POV shot'
+      : 'keep the same adult person identity using the stable description');
   // 去重：planner 写的 imagePrompt 常已含部分质感词，拼接前剔掉重复，
   // 避免顶到 900 字上限把独有的质感词（skin texture / grain / DoF）截掉。
   const sceneLower = String(scenePrompt || '').toLowerCase();
@@ -273,7 +278,7 @@ export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCap
     return key && !sceneLower.includes(key);
   });
   const prompt = [
-    identityPrompt,
+    sceneryShot ? '' : identityPrompt,   // 无脸 POV 不写人物外貌描述
     scenePrompt,
     referenceNote,
     ...tail,
@@ -366,8 +371,9 @@ export async function sendCompanionPhoto({
     }
     // v1.10.53: image-to-image —— provider 支持参考图且有锁定/自动 ref 时，把 ref
     // 图字节作为 input image 喂进生图，真正锚定同一张脸（不再只塞进文字 note）。
+    // v1.19.2: SCENERY/ACTIVITY-POV 无人脸 —— 不传参考图（走 t2i），否则 i2i 会把脸塞进桌面/风景 POV。
     let referenceImage = null;
-    if (visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
+    if (!isSceneryScene(scenePrompt) && visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
       try {
         const rawRef = await readFile(visual.referenceImagePath);
         const refBuf = await cropReferenceToFace(rawRef); // 裁脸：去掉背景/身体，逼场景按文字
