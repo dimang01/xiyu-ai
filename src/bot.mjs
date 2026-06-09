@@ -90,8 +90,9 @@ const BIND_CODE_RE = /(?:^绑定\s*)?(XYU-\d{6})$/i;
 //   短消息（1-10 字）：~2-5s（手机打字真实感）
 //   中等消息（10-50 字）：~3-10s
 //   长消息（50+字）：上限 15s（避免用户等太久）
-const REPLY_DELAY_MIN_MS = 2_000;
-const REPLY_DELAY_MAX_MS = 15_000;
+// 计时常量做成 env 可调（仅影响打字延迟节奏，不改内容/安全/图片）：沙箱/压测可调低提速。
+const REPLY_DELAY_MIN_MS = Number.isFinite(Number(process.env.REPLY_DELAY_MIN_MS)) ? Number(process.env.REPLY_DELAY_MIN_MS) : 2_000;
+const REPLY_DELAY_MAX_MS = Number.isFinite(Number(process.env.REPLY_DELAY_MAX_MS)) ? Number(process.env.REPLY_DELAY_MAX_MS) : 15_000;
 
 // v1.9.11: 破冰延迟（用户长时间沉默后第一条消息）
 // 阈值可调：默认沉默 ≥ 30 分钟视为"破冰场景"，下次回复加额外延迟。
@@ -120,7 +121,7 @@ function computeIcebreakerDelay(lastUserReplyAt) {
   const jitter = base * (Math.random() * 0.5 - 0.25);
   return Math.max(ICEBREAKER_DELAY_MIN_MS, Math.round(base + jitter));
 }
-const REPLY_DELAY_PER_CHAR_MS = 150;
+const REPLY_DELAY_PER_CHAR_MS = Number.isFinite(Number(process.env.REPLY_DELAY_PER_CHAR_MS)) ? Number(process.env.REPLY_DELAY_PER_CHAR_MS) : 150;
 function computeReplyDelay(text) {
   const len = (text || '').length;
   const base = len * REPLY_DELAY_PER_CHAR_MS;
