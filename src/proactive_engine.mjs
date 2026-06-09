@@ -208,6 +208,9 @@ export function shouldBackoffProactive(companion, context = {}) {
   const idleSinceUserH = lastUser ? (now - lastUser) / 3_600_000 : 0;
   const style = String(companion.attachment_style || 'secure').toLowerCase();
   if (intensity !== 'clingy') {
+    // v1.16.x: 读空气——连发 N 条主动消息用户一条没回 → 闭嘴，等他先开口（防自说自话轰炸赶人）。
+    const unansweredLimit = Number(process.env.PROACTIVE_UNANSWERED_LIMIT || 3);
+    if ((companion.proactive_unanswered || 0) >= unansweredLimit) return true;
     if (style === 'anxious') {
       // v1.14.5 (P2-5) 焦虑型会追，但有尊严上限：追到 ~5 天没任何回应也收手，别滑向 needy/纠缠。
       if (idleSinceUserH > 120) return true;

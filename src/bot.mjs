@@ -23,7 +23,7 @@ import {
   getCompanionPreferencesForPrompt,
   recordSafetyEvent,
   upsertShaping, listShaping,
-  claimMessage,
+  claimMessage, clearProactiveUnanswered,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
@@ -476,6 +476,8 @@ export async function handleMessage(rawMsg, botContext = {}) {
 async function processUserTurn({ companion, binding, ctx, botId, fromUser, contextToken, userText }) {
   const msg = { fromUser, contextToken };
   inflightUsers.add(fromUser);  // 回复期间占用，防同一用户并发回复（调用前已查 has）
+  // v1.16.x: 用户开口了 → 清零"未回连发"计数，主动消息刹车解除
+  try { clearProactiveUnanswered(companion.id); } catch {}
   try {
     // v1.10.38: regex fast path + LLM 兜底。regex 命中 strong → 直接 strong；
     // 不命中 → LLM 二分类（轻量短 token）兜底，终结 regex 漏识别循环。
