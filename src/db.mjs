@@ -1251,7 +1251,7 @@ const JSON_ARRAY_FIELDS = new Set([
 const BOOL_FIELDS = new Set([
   'use_kaomoji', 'can_joke', 'avoid_cheesy', 'no_pressure', 'occasional_tantrum',
   'encouraging', 'proactive_enabled', 'voice_reply_enabled', 'sticker_reply_enabled',
-  'memory_enabled', 'silent_mode',
+  'memory_enabled', 'silent_mode', 'first_love',
 ]);
 const ALLOWED_FIELDS = new Set([
   'name', 'age', 'role_title', 'avatar_url',
