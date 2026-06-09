@@ -132,17 +132,44 @@
 
 ---
 
+## 2026-06 · 实际走过的路线（P2 之后）
+
+P2 系列收尾后，路线没有按"Future"清单走，而是转向了**真人感纵深**——
+指导原则：真人感 = 减法，北极星是「愿意在真实生活的空隙给你温柔和陪伴」。
+
+| 版本段 | 主题 | 状态 |
+|---|---|---|
+| v1.6.x | 真实发图链路 + 视觉人设 + 11 维情绪 + 安全加固 | ✅ |
+| v1.7.x | 反讨好（不讨好/逗他/端着/低能量/dislikes） | ✅ |
+| v1.8.x | Inner OS 内心独白 + open loops + 偏好账本 + presence | ✅ |
+| v1.10.x | 睡眠系统 + 语音情绪 + 连发合并 + 选脸 + i2i | ✅ |
+| v1.11-12 | 关系节奏（时间喂大感情）+ 表白弧 + 不完美记忆 | ✅ |
+| v1.13.x | 中英双语 + 主动消息留存调优（默认 10→4） | ✅ |
+| v1.14.x | 被冷落逐级转变 + 三种依恋风格 | ✅ |
+| v1.15-16 | 真人感系列 #1-#5（纯 prompt 不够，配确定性兜底） | ✅ |
+| v1.17.x | 留存漏斗（挽留/升温/读空气/破冰） | ✅ |
+| v1.18-19 | 照片真实感大改 + 初恋特质 Phase-1 | ✅ |
+
+### 下一步候选（2026-06-10 评估，按优先级）
+
+1. **「她今天就是不想聊」低能量模式做透 + 关系低谷→冷→和好弧**
+   （哲学里明确"故意压着、单独做透"的两条；容易做坏，先设计挽回路径）
+2. **分享卡片**：日记/纪念日瞬间一键生成去隐私化分享图——用户的"晒"=获客飞轮
+3. **留存观察**：用 retention_dashboard 看第 7 天留存者的前 3 天行为再定动作
+4. **未成年人保护软门槛**（Issue #3 剩余）：注册年龄声明 + 未成年拒绝
+5. Demo GIF / 开发者渠道发布（V2EX、linux.do、r/selfhosted、r/LocalLLaMA）
+
 ## Future · Beyond — Planned
 
-- Anniversary / reminder proactive push (table exists, not yet pushed)
-- Multi-language persona support
-- Local Ollama integration
-- TTS voice reply synthesis
 - Plugin hook system (pre/post message)
 - One-click cloud hosting templates
 - Webhook support for external integrations
 - REST API versioning
+- 讯飞 / 腾讯云 ASR 真实现（目前占位）
+
+（原清单中 Multi-language persona、TTS voice reply、Local Ollama
+已分别在 v1.13 / v1.4 / 自定义网关中落地。）
 
 ---
 
-*Last updated: 2026-05*
+*Last updated: 2026-06-10（对应 v1.19.3）*
