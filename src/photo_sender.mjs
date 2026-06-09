@@ -178,28 +178,58 @@ function cooldownState(companion) {
   return { cooling: remainingMs > 0, remainingMs: Math.max(0, remainingMs) };
 }
 
-// v1.18.0: 真人手机照质感层 —— 逼出"真照片"而非"AI 塑料图"。
-// 真实肤质 + 轻颗粒 + 自然景深 + 真实环境光，反磨皮 / 反过曝 / 反高饱和影楼感。
-// 这是所有生图（planner 决策图 + 程序兜底图）进入 generateImage 前的统一质感尾巴。
-export const REALISM_TAIL = Object.freeze([
-  'realistic candid phone snapshot',
-  'shot on a smartphone camera, authentic amateur phone photo',
-  'natural film-like grain, true-to-life skin texture with subtle natural imperfections',
-  'natural depth of field with a softly blurred real background',
-  'natural ambient lighting, true-to-life slightly muted color grade',
-  'candid unretouched look, real photographed person not a smooth 3d render',
-  'everyday environment',
-  'slightly imperfect framing',
-  'not overly polished',
-  'not a studio portrait',
+// v1.19.0: 真人手机照质感层 —— 逼出"真照片"而非"AI 塑料图"。
+// 研究 + 60 张实测结论：① 人像≠风景，给风景写 "skin texture" 是错的，必须分层；
+// ② 反塑料靠 raw/unretouched/film grain + 具体的小瑕疵(毛孔/碎发/轻微不对称)，
+//    并避开 8k/ultra/flawless/perfect skin 这类"越写越假"的反效果词(在 planner 里禁)。
+// 这是所有生图(planner 决策图 + 程序兜底图)进入 generateImage 前的统一质感尾巴。
+export const REALISM_CORE = Object.freeze([
+  'shot on a modern smartphone, casual amateur snapshot, raw unedited photo',
+  'natural film grain, true-to-life natural colors, balanced natural exposure',
+  'realistic natural lighting with soft natural shadows',
+  'natural depth of field, softly blurred real background',
+  'slightly imperfect handheld framing, candid unposed everyday moment',
+  'authentic everyday photo with a natural casual feel',
   'safe adult everyday content',
   'modest everyday content',
 ]);
+// 主角是人时叠加：毛孔/碎发/轻微不对称——"不完美"才是真（正面措辞，不写 no/not）。
+export const REALISM_PERSON = Object.freeze([
+  'natural realistic skin with fine visible pores and subtle texture',
+  'a few stray flyaway hairs, subtle natural facial asymmetry',
+  'soft realistic highlights on the skin, sharp natural focus on the eyes',
+  'fresh natural complexion with light or no makeup',
+]);
+// 主体是景时叠加：分层纵深 + 大气 + 自然色（绝不写 skin/face）。
+export const REALISM_SCENERY = Object.freeze([
+  'wide natural phone-camera perspective, layered depth from foreground to far background',
+  'soft atmospheric depth, realistic dynamic range, true-to-life natural color palette',
+]);
+
+// 从 scene 文本判断主体是「人」还是「景」。多数照片主角是她，故默认人物；
+// 仅在明确的风景标记(POV/looking out/skyline...)且无人物标记时判风景。
+// 误判风险=回到旧的一刀切，不会比 v1.18.0 更差。
+export function isSceneryScene(scene) {
+  const s = String(scene || '').toLowerCase();
+  // 人物主体的强信号（含 ENV_SELFIE：它带 selfie/woman/reaching toward camera）。
+  // 注意：用 "her face" 而非裸 "face"，否则风景里 "glow on faces"(路人) 会误判成人物。
+  const person = /\bselfie\b|self-portrait|environmental selfie|\bwoman\b|\bgirl\b|chest[- ]?up|waist[- ]?up|\bportrait\b|young woman|her face|reaching toward (the )?camera/;
+  if (person.test(s)) return false;
+  // 其余只要有风景信号就判景。
+  const scenery = /scenery[- ]?pov|first[- ]?person pov|\bpov\b|looking out|fills the frame|skyline|landscape|\bthe view\b|sunset over|night market|street scene|city lights/;
+  return scenery.test(s);
+}
+
+export function realismTailFor(scene) {
+  return isSceneryScene(scene)
+    ? [...REALISM_CORE, ...REALISM_SCENERY]
+    : [...REALISM_CORE, ...REALISM_PERSON];
+}
 
 function buildScenePrompt({ activity, timeSlot, mood }) {
   const activityText = String(activity || 'quiet daily moment').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
   const moodText = String(mood || '').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
-  // 场景层只描述「在做什么 + 光线 + 氛围」，质感统一由 buildFinalImagePrompt 的 REALISM_TAIL 兜底。
+  // 场景层只描述「在做什么 + 光线 + 氛围」，质感统一由 buildFinalImagePrompt 的 realismTailFor 兜底。
   return [
     `realistic casual phone snapshot of an adult woman during ${activityText || 'an ordinary daily moment'}`,
     `${timeSlot || 'afternoon'} natural lighting`,
@@ -214,7 +244,7 @@ function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabiliti
   // 去重：planner 写的 imagePrompt 常已含部分质感词，拼接前剔掉重复，
   // 避免顶到 900 字上限把独有的质感词（skin texture / grain / DoF）截掉。
   const sceneLower = String(scenePrompt || '').toLowerCase();
-  const tail = REALISM_TAIL.filter((t) => {
+  const tail = realismTailFor(scenePrompt).filter((t) => {
     const key = t.split(',')[0].trim().toLowerCase();
     return key && !sceneLower.includes(key);
   });

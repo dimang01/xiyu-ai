@@ -456,7 +456,7 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - shot mode: ${
   shotMode === 'ENV_SELFIE' ? 'ENVIRONMENTAL SELFIE（她是绝对主角：smartphone front-camera selfie, one arm reaching toward the camera, framed from the chest or waist up, her face clearly in sharp focus；同时人在户外，身后是当前那个景——晚霞/海/城市灯光等——作为氛围背景且自然虚化(softly out of focus behind her)，像真人在好看的地方拍的"环境自拍"发给对象：人是主体、景是身后的氛围，绝不是把人缩成远处小背影的风景图，也绝不是全身照）'
   : shotMode === 'SELFIE' ? 'SELFIE（smartphone front-camera selfie, one arm partially visible reaching toward the camera, framed from the chest or waist up, face clearly in focus；日常室内/户外随手自拍，背景真实且自然虚化）'
-  : shotMode === 'SCENERY' ? 'SCENERY-POV（主体是她眼前的景本身——晚霞/天空/海等，第一人称 POV 看出去，只拍那个景；她最多一只手/衣角/背影局部入镜，绝不是站在景前的人像或全身照，像真人随手拍"你看这个"发给对方）'
+  : shotMode === 'SCENERY' ? 'SCENERY-POV（主体是她眼前的景本身——晚霞/天空/海等，那个景填满画面，像真人随手拍"你看这个"发给对方；最多一只手或衣角出现在画面极边缘，**手机/相机本身绝不能出现在画面里**（别写 holding a phone / a phone in frame）；绝不是站在景前的人像或全身照）'
   : 'CANDID（someone else might take it, or set on table；framed chest or waist up, natural everyday moment）'
 }
 - companion name: ${safeText(companion?.name || '她', 40)}
@@ -484,18 +484,18 @@ ${recent || '(none)'}
 7. **必须严格按上面给出的 shot mode 写构图**：
    - **ENVIRONMENTAL SELFIE**：人是绝对主角的近景自拍（chest/waist up, face in sharp focus, one arm reaching toward camera），身后是当前那个景（晚霞/海/城市灯光等）做氛围且自然虚化——像真人在好看的地方拍给对象的"环境自拍"。**人是主体、景是背景**，绝不能缩成远处小背影。
    - **SELFIE**：近景手机自拍（chest/waist up, face in focus），背景是真实日常环境（居家/书桌/街道）且自然虚化，**不是纯白墙或影楼背景**。
-   - **SCENERY-POV**：主体写那个景（如 "warm sunset glow over the sea, first-person POV looking out"），人几乎不入镜（最多 "a hand or sleeve at the edge of the frame"），**景是绝对主角**。
+   - **SCENERY-POV**：主体写那个景（如 "warm sunset glow over the sea, looking out over the water, the scenery fills the frame"），**景填满画面、是绝对主角**；最多 "a hand or sleeve at the very edge of the frame"，**绝不能让手机/相机出现在画面里**（别写 holding a phone / a phone in frame / taking a photo —— 否则模型会把一只手举着手机怼在镜头前，很出戏）。**SCENERY-POV 时只写景本身，不要写任何人物外貌/表情/着装/skin —— 规则 4/5/6/9 对它不适用**（写了 skin/face/young woman 会让模型硬塞一个人进画面当主体）。
    - **CANDID**：随手抓拍，slightly imperfect framing, natural everyday moment。
    **所有人像照（ENVIRONMENTAL SELFIE / SELFIE / CANDID）一律近景半身**："framed from the chest or waist up, close intimate phone-photo distance, face clearly in focus"——真实恋爱里女友发的照片几乎都是近景半身，**绝不要 full-length head-to-toe standing portrait / 全身照**（那像街拍或证件照，不像女友随手自拍）。
-8. imagePrompt 必须写当前 day part 对应的 lighting hint 并选 plausible scenes 范围内的场景。**深夜禁 cafe / 奶茶店 / outdoor daylight**；清晨禁 dark bedroom。
-9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft natural face, slim petite youthful build" 如果人设没特别指定。**年龄措辞改用具象视觉特征**（v1.10.41）："youthful early-college vibe, soft natural features, warm bright eyes, fresh clear complexion with realistic natural skin texture, light or no makeup, slim petite frame"。**关键：肤质必须真实有细节（细微毛孔/纹理/自然光影），不要 dewy / glossy / airbrushed / poreless 那种磨皮塑料感；脸要像真人手机照片，不是娃娃脸或 3D 渲染。** 让模型按具象去画，既避免被 over-correct 到 25+，也避免变成假娃娃脸。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl / lolita / high school** 等触发安全过滤的词。
+8. imagePrompt 必须写当前 day part 对应的 lighting hint 并选 plausible scenes 范围内的场景。**深夜禁 cafe / 奶茶店 / outdoor daylight**；清晨禁 dark bedroom。**像摄影师一样点明光位和镜头**(真实感最大杠杆)：光位如 "soft window light from the side, gentle natural shadows" / "warm sunset backlight"；镜头——自拍写 "phone front camera, close natural selfie perspective, shallow depth of field"，风景写 "wide natural phone-camera perspective"。
+9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft natural face, slim petite youthful build" 如果人设没特别指定。**年龄措辞改用具象视觉特征**（v1.10.41）："youthful early-college vibe, soft natural features, warm bright eyes, fresh clear complexion with realistic natural skin texture, light or no makeup, slim petite frame"。**关键：肤质必须真实有细节（细微毛孔/纹理/自然光影），不要 dewy / glossy / airbrushed / poreless 那种磨皮塑料感；脸要像真人手机照片，不是娃娃脸或 3D 渲染。** 让模型按具象去画，既避免被 over-correct 到 25+，也避免变成假娃娃脸。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl / lolita / high school** 等触发安全过滤的词。**另：绝不要写 8k / 4k / ultra realistic / ultra HD / masterpiece / hyperreal / flawless skin / perfect skin / porcelain skin / glossy glow —— 研究与实测均证明这些词会让模型出过度锐化的塑料假脸；真实感要靠 raw photo / unretouched / natural skin texture / fine pores / film grain / 具体小瑕疵(碎发/轻微不对称)来写。**
 10. imagePrompt **不要写 "no XXX" / "without XXX" 等 negative 排除句**（会被本系统的安全过滤误伤）。改用**正面同义词替代**：
     - 想表达「不要专业写真」→ 写 "casual amateur smartphone snapshot vibe, everyday spontaneous moment"
     - 想表达「不要 35mm 电影感」→ 写 "natural daylight or warm room light, soft even exposure"
     - 想表达「不要疲惫脸」→ 写 "fresh lively bright face, gentle warm energy"
     - 想表达「不要办公室风着装」→ 写 "casual youthful home or campus outfit"
     - 想表达「不要 anime/插画」→ 写 "photorealistic, real life photography"
-    - 想表达「不要 minor/teen/schoolgirl」→ 写 "very youthful first-year university freshman, soft baby-faced look with round cheeks and large warm doe eyes, fresh dewy skin"
+    - 想表达「不要 minor/teen/schoolgirl」→ 写 "youthful early-college vibe, soft natural features, warm bright eyes, fresh clear complexion with realistic natural skin texture and fine pores"（不要 dewy/baby-faced/round-cheeks 那种磨皮娃娃脸）
     - 想表达「不要 NSFW/nude/sexual」→ 写 "wholesome, fully clothed, casual everyday attire"
 11. imagePrompt 不要包含隐私、token、手机号、精确地址。
 12. hidden emotion / visual identity context 只作为隐藏参考，不要把内部 JSON 字段或分数写进 imagePrompt 或 caption。
