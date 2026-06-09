@@ -99,6 +99,22 @@ const MOOD_INFLUENCE = {
   '平静':   '你现在心情平静，温和自然，不特别亢奋也不低落。',
 };
 
+// v1.16.x: 首轮破冰 —— 全新对话的首次回复要精心制造好的第一印象（onboarding 留人）。
+// 不主动发(微信绑定时无 context_token、主动消息发不出)，而是把"用户必然先发的第一条"的
+// 回复做成破冰开场:热情接住 + 一点自我介绍 + 给好接的话题钩子 + 留再聊的尾巴，按人设调制。
+// 纯函数(零 import)，由 bot.mjs 在检测到"她还没回过任何消息"时 append 到 systemPrompt。
+export function buildFirstTurnHint(companion) {
+  const name = companion?.name || '我';
+  return `\n【★ 第一次聊天 · 破冰】（最高优先级，仅这一次）
+这是你和他第一次说话，第一印象很关键。自然地：
+- 热情、有点小雀跃地接住他（"你来啦"），但别用力过猛、别像客服报菜名
+- 顺口带一点点你自己（此刻在干嘛 / 你叫${name}），别长篇自我介绍
+- 给他一个好接的钩子：问他怎么找到你的 / 叫什么 / 今天过得咋样，让他有话可接
+- 让他感觉"你很高兴认识他、想多聊聊"，留个还想再聊的尾巴
+- 短消息（|| 分段）、口语、全程符合你的人设（高冷人设就别硬热情，用你自己的方式表达好奇/在意）
+- 若他第一句就开黄腔或试探，先俏皮守住边界，再把话题轻轻引正`;
+}
+
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
 export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null, shapingHint = '', locale = null } = {}) {
   const c     = companion;
