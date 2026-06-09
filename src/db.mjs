@@ -1253,7 +1253,8 @@ const BOOL_FIELDS = new Set([
   'encouraging', 'proactive_enabled', 'voice_reply_enabled', 'sticker_reply_enabled',
   'memory_enabled', 'silent_mode',
 ]);
-const ALLOWED_FIELDS = new Set([
+// export 供 scripts/persona_export_drift_check.mjs 对账（新人格字段漏加导出时 CI 报错）
+export const ALLOWED_FIELDS = new Set([
   'name', 'age', 'role_title', 'avatar_url',
   'hair_color', 'hair_style', 'eye_color', 'body_type', 'height', 'clothing_style',
   'personality_tags', 'mbti', 'introvert_level',
