@@ -19,10 +19,11 @@ const PERSONA_FIELDS = [
   'intimacy_level',
   'speech_styles', 'use_emoji_level', 'use_kaomoji', 'reply_length',
   'can_joke', 'avoid_cheesy', 'no_pressure', 'occasional_tantrum', 'encouraging', 'nsfw_level',
-  'hobbies', 'favorite_food', 'favorite_music', 'pet_preference',
+  'hobbies', 'favorite_food', 'favorite_music', 'pet_preference', 'dislikes',
   'how_met', 'relationship_status', 'shared_memory',
   'memory_priorities',
-  'proactive_enabled', 'proactive_frequency', 'proactive_time_window',
+  'proactive_enabled', 'proactive_frequency', 'proactive_time_window', 'proactive_daily_target',
+  'attachment_style', 'first_love', 'locale',
   'voice_reply_enabled', 'sticker_reply_enabled',
   'call_user_as', 'user_call_her_as',
   'persona_prompt', 'forbidden_topics',
@@ -35,8 +36,12 @@ const PERSONA_FIELDS = [
   'temperature', 'max_tokens', 'top_p',
 ];
 
-// Fields intentionally excluded from export (security / privacy)
-// account_id, user_id, bot_id, email, bot_token, secrets, avatar_url
+// Fields intentionally excluded from export (security / privacy / runtime state)
+// account_id, user_id, bot_id, email, bot_token, secrets, avatar_url,
+// voice_id (provider 绑定资源，跨部署不通用),
+// silent_mode / current_mood / affection_level / scene_history (运行时状态，导入后应重新开始)
+// 新增人格字段时必须同步 PERSONA_FIELDS + IMPORT_*_FIELDS + DEFAULTS，
+// 漂移由 scripts/persona_export_drift_check.mjs 在 CI 拦截。
 const IMPORT_STRING_FIELDS = new Set([
   'name', 'role_title', 'hair_color', 'hair_style', 'eye_color', 'body_type',
   'clothing_style', 'intimacy_level', 'mbti', 'reply_length', 'favorite_food',
@@ -44,17 +49,23 @@ const IMPORT_STRING_FIELDS = new Set([
   'call_user_as', 'user_call_her_as', 'persona_prompt', 'relationship_stage',
   'current_scene', 'backstory', 'family_background', 'education',
   'voice_style', 'chat_mode_active', 'proactive_frequency', 'proactive_time_window',
+  'attachment_style', 'locale',
 ]);
 const IMPORT_INT_FIELDS = new Set([
   'age', 'height', 'introvert_level', 'use_emoji_level', 'use_kaomoji',
   'can_joke', 'avoid_cheesy', 'no_pressure', 'occasional_tantrum', 'encouraging',
   'nsfw_level', 'memory_enabled', 'proactive_enabled', 'voice_reply_enabled',
-  'sticker_reply_enabled', 'max_tokens',
+  'sticker_reply_enabled', 'max_tokens', 'first_love', 'proactive_daily_target',
 ]);
 const IMPORT_FLOAT_FIELDS = new Set(['temperature', 'top_p', 'voice_speed']);
 const IMPORT_JSON_FIELDS = new Set([
   'personality_tags', 'speech_styles', 'hobbies', 'memory_priorities',
-  'forbidden_topics', 'chat_modes',
+  'forbidden_topics', 'chat_modes', 'dislikes',
+]);
+// 枚举字段：导入值不在白名单内时丢弃，落回 DEFAULTS（防垃圾值进 prompt）
+const IMPORT_ENUM_VALUES = new Map([
+  ['attachment_style', new Set(['secure', 'anxious', 'avoidant'])],
+  ['locale', new Set(['zh', 'en'])],
 ]);
 
 // Patterns that suggest injected credentials / prompts
@@ -126,7 +137,10 @@ export function sanitizeImportedCompanion(payload) {
   const companionFields = {};
 
   for (const [key, val] of Object.entries(raw)) {
-    if (IMPORT_STRING_FIELDS.has(key)) {
+    if (IMPORT_ENUM_VALUES.has(key)) {
+      const s = String(val ?? '');
+      if (IMPORT_ENUM_VALUES.get(key).has(s)) companionFields[key] = s;
+    } else if (IMPORT_STRING_FIELDS.has(key)) {
       const s = String(val ?? '').slice(0, 4000);
       companionFields[key] = SENSITIVE_PATTERN.test(s) ? '' : s;
     } else if (IMPORT_INT_FIELDS.has(key)) {
@@ -184,52 +198,12 @@ export async function importCompanionForUser(userId, accountId, botId, payload, 
   const { companionFields, personaFacts, coreMemories } = sanitizeImportedCompanion(payload);
 
   const now = new Date().toISOString();
+  // 列清单从 PERSONA_FIELDS 派生（全部是代码内白名单常量，无注入面）：
+  // 新增人格字段只需改 PERSONA_FIELDS + IMPORT_*_FIELDS + DEFAULTS 三处，INSERT 不会再漂移
+  const insertCols = ['user_id', 'bot_id', ...PERSONA_FIELDS, 'created_at', 'updated_at'];
   const insertCompanion = db.prepare(`
-    INSERT INTO companions (
-      user_id, bot_id,
-      name, age, role_title,
-      hair_color, hair_style, eye_color, body_type, height, clothing_style,
-      personality_tags, mbti, introvert_level,
-      intimacy_level,
-      speech_styles, use_emoji_level, use_kaomoji, reply_length,
-      can_joke, avoid_cheesy, no_pressure, occasional_tantrum, encouraging, nsfw_level,
-      hobbies, favorite_food, favorite_music, pet_preference,
-      how_met, relationship_status, shared_memory,
-      memory_priorities,
-      proactive_enabled, proactive_frequency, proactive_time_window,
-      voice_reply_enabled, sticker_reply_enabled,
-      call_user_as, user_call_her_as,
-      persona_prompt, forbidden_topics,
-      memory_enabled,
-      relationship_stage, current_scene,
-      backstory, family_background, education,
-      voice_style, voice_speed,
-      chat_modes, chat_mode_active,
-      temperature, max_tokens, top_p,
-      created_at, updated_at
-    ) VALUES (
-      @user_id, @bot_id,
-      @name, @age, @role_title,
-      @hair_color, @hair_style, @eye_color, @body_type, @height, @clothing_style,
-      @personality_tags, @mbti, @introvert_level,
-      @intimacy_level,
-      @speech_styles, @use_emoji_level, @use_kaomoji, @reply_length,
-      @can_joke, @avoid_cheesy, @no_pressure, @occasional_tantrum, @encouraging, @nsfw_level,
-      @hobbies, @favorite_food, @favorite_music, @pet_preference,
-      @how_met, @relationship_status, @shared_memory,
-      @memory_priorities,
-      @proactive_enabled, @proactive_frequency, @proactive_time_window,
-      @voice_reply_enabled, @sticker_reply_enabled,
-      @call_user_as, @user_call_her_as,
-      @persona_prompt, @forbidden_topics,
-      @memory_enabled,
-      @relationship_stage, @current_scene,
-      @backstory, @family_background, @education,
-      @voice_style, @voice_speed,
-      @chat_modes, @chat_mode_active,
-      @temperature, @max_tokens, @top_p,
-      @created_at, @updated_at
-    )
+    INSERT INTO companions (${insertCols.join(', ')})
+    VALUES (${insertCols.map(col => '@' + col).join(', ')})
   `);
 
   const defaults = {
@@ -240,10 +214,12 @@ export async function importCompanionForUser(userId, accountId, botId, payload, 
     intimacy_level: '慢慢熟悉',
     speech_styles: '["自然口语"]', use_emoji_level: 5, use_kaomoji: 0, reply_length: '适中(3-4句)',
     can_joke: 1, avoid_cheesy: 0, no_pressure: 0, occasional_tantrum: 0, encouraging: 1, nsfw_level: 0,
-    hobbies: '[]', favorite_food: null, favorite_music: null, pet_preference: null,
+    hobbies: '[]', favorite_food: null, favorite_music: null, pet_preference: null, dislikes: '[]',
     how_met: null, relationship_status: '普通朋友', shared_memory: null,
     memory_priorities: '["我的喜好","情绪变化"]',
     proactive_enabled: 1, proactive_frequency: '适中', proactive_time_window: '07:30-24:00',
+    proactive_daily_target: 4,
+    attachment_style: 'secure', first_love: 1, locale: 'zh',
     voice_reply_enabled: 0, sticker_reply_enabled: 0,
     call_user_as: '你', user_call_her_as: null,
     persona_prompt: '', forbidden_topics: '[]',
@@ -282,4 +258,9 @@ export async function importCompanionForUser(userId, accountId, botId, payload, 
   return { companionId };
 }
 
-export { EXPORT_SCHEMA, MAX_IMPORT_BYTES };
+export {
+  EXPORT_SCHEMA, MAX_IMPORT_BYTES,
+  // 供 scripts/persona_export_drift_check.mjs 对账（CI 防字段漂移）
+  PERSONA_FIELDS, IMPORT_STRING_FIELDS, IMPORT_INT_FIELDS,
+  IMPORT_FLOAT_FIELDS, IMPORT_JSON_FIELDS, IMPORT_ENUM_VALUES,
+};
