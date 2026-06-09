@@ -6,6 +6,7 @@ import path from 'node:path';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import sharp from 'sharp';
 import { generateImage, generateReply } from './ai.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
@@ -178,28 +179,81 @@ function cooldownState(companion) {
   return { cooling: remainingMs > 0, remainingMs: Math.max(0, remainingMs) };
 }
 
-// v1.18.0: 真人手机照质感层 —— 逼出"真照片"而非"AI 塑料图"。
-// 真实肤质 + 轻颗粒 + 自然景深 + 真实环境光，反磨皮 / 反过曝 / 反高饱和影楼感。
-// 这是所有生图（planner 决策图 + 程序兜底图）进入 generateImage 前的统一质感尾巴。
-export const REALISM_TAIL = Object.freeze([
-  'realistic candid phone snapshot',
-  'shot on a smartphone camera, authentic amateur phone photo',
-  'natural film-like grain, true-to-life skin texture with subtle natural imperfections',
-  'natural depth of field with a softly blurred real background',
-  'natural ambient lighting, true-to-life slightly muted color grade',
-  'candid unretouched look, real photographed person not a smooth 3d render',
-  'everyday environment',
-  'slightly imperfect framing',
-  'not overly polished',
-  'not a studio portrait',
+// v1.19.0: 真人手机照质感层 —— 逼出"真照片"而非"AI 塑料图"。
+// 研究 + 60 张实测结论：① 人像≠风景，给风景写 "skin texture" 是错的，必须分层；
+// ② 反塑料靠 raw/unretouched/film grain + 具体的小瑕疵(毛孔/碎发/轻微不对称)，
+//    并避开 8k/ultra/flawless/perfect skin 这类"越写越假"的反效果词(在 planner 里禁)。
+// 这是所有生图(planner 决策图 + 程序兜底图)进入 generateImage 前的统一质感尾巴。
+export const REALISM_CORE = Object.freeze([
+  'shot on a modern smartphone, casual amateur snapshot, raw unedited photo',
+  'natural film grain, true-to-life natural colors, balanced natural exposure',
+  'realistic natural lighting with soft natural shadows',
+  'natural depth of field, softly blurred real background',
+  'slightly imperfect handheld framing, candid unposed everyday moment',
+  'authentic everyday photo with a natural casual feel',
   'safe adult everyday content',
   'modest everyday content',
 ]);
+// 主角是人时叠加：毛孔/碎发/轻微不对称——"不完美"才是真（正面措辞，不写 no/not）。
+export const REALISM_PERSON = Object.freeze([
+  'natural realistic skin with fine visible pores and subtle texture',
+  'a few stray flyaway hairs, subtle natural facial asymmetry',
+  'soft realistic highlights on the skin, sharp natural focus on the eyes',
+  'fresh natural complexion with light or no makeup',
+]);
+// 主体是景时叠加：分层纵深 + 大气 + 自然色（绝不写 skin/face）。
+export const REALISM_SCENERY = Object.freeze([
+  'wide natural phone-camera perspective, layered depth from foreground to far background',
+  'soft atmospheric depth, realistic dynamic range, true-to-life natural color palette',
+]);
+
+// 从 scene 文本判断主体是「人」还是「景」。多数照片主角是她，故默认人物；
+// 仅在明确的风景标记(POV/looking out/skyline...)且无人物标记时判风景。
+// 误判风险=回到旧的一刀切，不会比 v1.18.0 更差。
+export function isSceneryScene(scene) {
+  const s = String(scene || '').toLowerCase();
+  // 人物主体的强信号（含 ENV_SELFIE：它带 selfie/woman/reaching toward camera）。
+  // 注意：用 "her face" 而非裸 "face"，否则风景里 "glow on faces"(路人) 会误判成人物。
+  const person = /\bselfie\b|self-portrait|environmental selfie|\bwoman\b|\bgirl\b|chest[- ]?up|waist[- ]?up|\bportrait\b|young woman|her face|reaching toward (the )?camera/;
+  if (person.test(s)) return false;
+  // 其余只要有风景信号就判景。
+  const scenery = /scenery[- ]?pov|first[- ]?person pov|\bpov\b|looking out|fills the frame|skyline|landscape|\bthe view\b|sunset over|night market|street scene|city lights/;
+  return scenery.test(s);
+}
+
+export function realismTailFor(scene) {
+  return isSceneryScene(scene)
+    ? [...REALISM_CORE, ...REALISM_SCENERY]
+    : [...REALISM_CORE, ...REALISM_PERSON];
+}
+
+// v1.19.0: i2i 参考图「裁脸」——把锁定参考图裁成只剩头/脸的方形再喂给 i2i。
+// 实测：参考图带背景+身体时，gemini i2i 在「同光照」(如白天)场景会偷懒沿用参考图的
+// 背景甚至全身构图，文字压不住；裁成只剩脸后，i2i 没有背景/身体可抄，场景与构图只能
+// 按文字重建（脸仍锁得住）。参考图是系统生成的近景人像，脸在上-中部，故取居中偏上方形。
+// 可 PHOTO_I2I_FACE_CROP=0 关闭；比例/位置可调。
+export async function cropReferenceToFace(buf) {
+  if (String(process.env.PHOTO_I2I_FACE_CROP ?? '1').toLowerCase() === '0') return buf;
+  try {
+    const ratio = Number(process.env.PHOTO_I2I_FACE_CROP_RATIO) || 0.62;
+    const topOff = Number.isFinite(Number(process.env.PHOTO_I2I_FACE_CROP_TOP)) ? Number(process.env.PHOTO_I2I_FACE_CROP_TOP) : 0.06;
+    const img = sharp(buf);
+    const { width: W, height: H } = await img.metadata();
+    if (!W || !H) return buf;
+    const side = Math.max(64, Math.round(Math.min(W, H) * Math.min(0.95, Math.max(0.3, ratio))));
+    const left = Math.max(0, Math.round((W - side) / 2));
+    const top = Math.max(0, Math.round(H * Math.min(0.4, Math.max(0, topOff))));
+    const cropH = Math.min(side, H - top);
+    return await sharp(buf).extract({ left, top, width: Math.min(side, W - left), height: cropH }).png().toBuffer();
+  } catch {
+    return buf; // 裁剪失败就用原图，不阻断发图
+  }
+}
 
 function buildScenePrompt({ activity, timeSlot, mood }) {
   const activityText = String(activity || 'quiet daily moment').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
   const moodText = String(mood || '').replace(/[^\p{L}\p{N}\s,.-]/gu, ' ').replace(/\s+/g, ' ').trim();
-  // 场景层只描述「在做什么 + 光线 + 氛围」，质感统一由 buildFinalImagePrompt 的 REALISM_TAIL 兜底。
+  // 场景层只描述「在做什么 + 光线 + 氛围」，质感统一由 buildFinalImagePrompt 的 realismTailFor 兜底。
   return [
     `realistic casual phone snapshot of an adult woman during ${activityText || 'an ordinary daily moment'}`,
     `${timeSlot || 'afternoon'} natural lighting`,
@@ -207,14 +261,14 @@ function buildScenePrompt({ activity, timeSlot, mood }) {
   ].join(', ');
 }
 
-function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
+export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
   const referenceNote = referenceImagePath && providerCapabilities?.referenceImage
-    ? 'use the provided reference image ONLY for facial identity and likeness (keep the same face); do NOT copy its pose, body crop, framing or composition — strictly follow the text prompt for shot framing, distance and pose (a close waist-up phone shot unless the text says it is a scenery/POV shot)'
+    ? 'use the provided reference image for FACE IDENTITY ONLY (keep the same face and likeness); completely IGNORE and REPLACE the reference image background, location, lighting, time of day, clothing and body pose — build the entire scene, background, lighting, time of day and outfit strictly from this text prompt. The photo time of day and setting MUST match the text (e.g. if the text says night, it must look like night), never the reference. Frame as a close waist-up phone shot unless the text says it is a scenery/POV shot'
     : 'keep the same adult person identity using the stable description';
   // 去重：planner 写的 imagePrompt 常已含部分质感词，拼接前剔掉重复，
   // 避免顶到 900 字上限把独有的质感词（skin texture / grain / DoF）截掉。
   const sceneLower = String(scenePrompt || '').toLowerCase();
-  const tail = REALISM_TAIL.filter((t) => {
+  const tail = realismTailFor(scenePrompt).filter((t) => {
     const key = t.split(',')[0].trim().toLowerCase();
     return key && !sceneLower.includes(key);
   });
@@ -315,9 +369,11 @@ export async function sendCompanionPhoto({
     let referenceImage = null;
     if (visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
       try {
-        const refBuf = await readFile(visual.referenceImagePath);
-        referenceImage = `data:${refMimeFromPath(visual.referenceImagePath)};base64,${refBuf.toString('base64')}`;
-        log('debug', `[Photo] i2i 参考图已载入 companion=${companion.id} bytes=${refBuf.length}`);
+        const rawRef = await readFile(visual.referenceImagePath);
+        const refBuf = await cropReferenceToFace(rawRef); // 裁脸：去掉背景/身体，逼场景按文字
+        const mime = refBuf === rawRef ? refMimeFromPath(visual.referenceImagePath) : 'image/png';
+        referenceImage = `data:${mime};base64,${refBuf.toString('base64')}`;
+        log('debug', `[Photo] i2i 参考图已载入 companion=${companion.id} raw=${rawRef.length} cropped=${refBuf.length}`);
       } catch (e) {
         log('warn', `[Photo] 读取参考图失败 companion=${companion.id}: ${e.message}`);
       }
