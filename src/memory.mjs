@@ -33,9 +33,20 @@ export function computeRelationshipStage(affection) {
 // 好感每日上限 DAILY_CAP，55 分以上增幅衰减 —— 防一次聊天无脑刷到恋人/深爱。
 export const AFFECTION_LOVER = Number(process.env.AFFECTION_LOVER) || 55;
 export const AFFECTION_DEEP  = Number(process.env.AFFECTION_DEEP)  || 80;
-export const DAYS_TO_LOVER         = Number(process.env.DAYS_TO_LOVER ?? 14);
+export const DAYS_TO_LOVER         = Number(process.env.DAYS_TO_LOVER ?? 5);   // v1.16.x: 14→5（重度用户第一周能尝到恋人；仍需"已表白+好感≥55"防秒升）
 export const DAYS_AS_LOVER_TO_DEEP = Number(process.env.DAYS_AS_LOVER_TO_DEEP ?? 30);
-export const AFFECTION_DAILY_CAP   = Number(process.env.AFFECTION_DAILY_CAP ?? 8);
+export const AFFECTION_DAILY_CAP   = Number(process.env.AFFECTION_DAILY_CAP ?? 8);  // 恋人段基准（env 兼容）
+
+// v1.16.x: 好感日上限改为「按当前好感动态」—— 新人期升温快（热恋期效应），越接近恋人/深爱越慢
+// （老夫老妻效应）。解决"重度用户聊几十条被固定 cap=8 压到陌生人、头一周没奔头就流失"。
+// 仍防一天无脑刷到顶：一天最多 +25，到恋人需 5 天 + 表白 + 好感≥55。
+export function affectionDailyCap(curAff = 0) {
+  const a = Number(curAff) || 0;
+  if (a < 30)              return Number(process.env.AFFECTION_DAILY_CAP_NEW  ?? 25); // 陌生→暧昧前：新人期最快
+  if (a < AFFECTION_LOVER) return Number(process.env.AFFECTION_DAILY_CAP_AMBI ?? 15); // 暧昧→恋人前：还能较快
+  if (a < AFFECTION_DEEP)  return AFFECTION_DAILY_CAP;                                 // 恋人：原值 8，放缓
+  return Number(process.env.AFFECTION_DAILY_CAP_DEEP ?? 5);                            // 深爱：最慢、最珍贵
+}
 
 const STAGE_RANK = ['陌生人', '朋友', '暧昧', '恋人', '深爱'];
 const stageRank = (s) => Math.max(0, STAGE_RANK.indexOf(s));
@@ -112,7 +123,8 @@ export function syncUpdateCompanionState(companion, userMsg, botReply) {
   if (delta > 0 && curAff >= AFFECTION_LOVER) delta = Math.max(1, Math.round(delta * 0.5)); // 恋人后增幅减半，深爱更慢
   const today = shanghaiDateKey();
   const gainedToday = (companion.affection_day === today) ? (companion.affection_today || 0) : 0; // 跨天自动重置
-  if (delta > 0) delta = Math.min(delta, Math.max(0, AFFECTION_DAILY_CAP - gainedToday));       // 每日上限只限正向
+  const dailyCap = affectionDailyCap(curAff);                                                     // v1.16.x 动态上限：新人期快、亲密后慢
+  if (delta > 0) delta = Math.min(delta, Math.max(0, dailyCap - gainedToday));                    // 每日上限只限正向
   fields.affection_day   = today;
   fields.affection_today = gainedToday + Math.max(0, delta);
 
