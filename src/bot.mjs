@@ -473,7 +473,7 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
 // v1.10.53: 单轮回复处理（photo-intent + 文本回复管线）。由 burst flush 合并后调用，
 // COALESCE 关闭时直接调用。msg 为 shim，保留移植代码里的 msg.fromUser/.contextToken 写法。
-async function processUserTurn({ companion, binding, ctx, botId, fromUser, contextToken, userText }) {
+async function processUserTurn({ companion, binding, ctx, botId, fromUser, contextToken, userText, _mergeDepth = 0 }) {
   const msg = { fromUser, contextToken };
   inflightUsers.add(fromUser);  // 回复期间占用，防同一用户并发回复（调用前已查 has）
   // v1.16.x: 用户开口了 → 清零"未回连发"计数，主动消息刹车解除
@@ -843,6 +843,20 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
 
     // ── Update emotion after reply ────────────────────────────────────────────
     try { updateEmotionFromAssistantReply(companion.id, emotionState, reply, { companion }); } catch {}
+
+    // v1.16.x: 发送前二次合并 —— 生成这条回复期间，用户又冒了新消息（慢连发间隔 > COALESCE 窗口，
+    // 没并到上一轮）。别急着把这条发出去，否则会和下一轮回复背靠背叠成连珠炮、各自查户口。把新消息
+    // 并进来整段重回一次，最终只回一条"把连发当一轮"的合并回复。_mergeDepth 防极端持续连发死循环。
+    {
+      const _pend = pendingBursts.get(fromUser);
+      if (_pend && _pend.parts.length && _mergeDepth < 3) {
+        if (_pend.timer) clearTimeout(_pend.timer);
+        pendingBursts.delete(fromUser);
+        const _merged = [userText, ..._pend.parts].join('\n');
+        log('info', `[Bot] 发送前二次合并：生成期间又收到 ${_pend.parts.length} 条 → 合并重回 companion=${companion.id} depth=${_mergeDepth + 1}`);
+        return await processUserTurn({ ..._pend.turn, userText: _merged, _mergeDepth: _mergeDepth + 1 });
+      }
+    }
 
     // ── 像真人一样：把回复按 || 拆成多条短消息，逐条发送 ─────────────────
     // 每条之间：typing indicator + 短停顿，模拟"先发一条再打下一条"
