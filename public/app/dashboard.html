@@ -787,6 +787,17 @@
             <button type="button" data-val="avoidant" class="attach-opt py-2 text-[12px] font-bold rounded-xl border border-sakura-soft text-mute transition-all">回避型</button>
           </div>
           <p class="mt-3 text-[11px] text-mute font-medium leading-relaxed" id="attach-desc"></p>
+          <!-- v1.19.3 初恋特质开关 -->
+          <div class="mt-4 pt-4 border-t border-sakura-soft/60 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-[13px] font-bold">你是她的初恋</p>
+              <p class="text-[11px] text-mute font-medium mt-0.5 leading-relaxed">她从没正经谈过恋爱：不懂套路、容易紧张想多、偷偷珍惜每个「第一次」。只笨在恋爱的来回，不笨在在乎你。</p>
+            </div>
+            <label class="toggle shrink-0">
+              <input id="t-first-love" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+          </div>
         </div>
 
         <!-- M3 共建留痕：你把她调教成了什么样 -->
@@ -1671,12 +1682,15 @@
       const tMemory = document.getElementById('t-memory');
       const tVoice = document.getElementById('t-voice');
       const tSilent = document.getElementById('t-silent');
+      const tFirstLove = document.getElementById('t-first-love');
       const silentOrb = document.getElementById('silent-orb');
       tProactive.checked = !!c.proactive_enabled;
       tSticker.checked = !!c.sticker_reply_enabled;
       tMemory.checked = c.memory_enabled !== false;   // 默认开
       tVoice.checked = !!c.voice_reply_enabled;        // v1.4.0 默认关
       if (tSilent) tSilent.checked = !!c.silent_mode;
+      // v1.19.3 初恋默认开：undefined/null/1 都算开，与 buildSystemPrompt 一致
+      if (tFirstLove) tFirstLove.checked = !(c.first_love === 0 || c.first_love === false);
       function paintSilentOrb(on) {
         if (silentOrb) silentOrb.style.display = on ? '' : 'none';
       }
@@ -1706,6 +1720,12 @@
       tSticker.addEventListener('change', () => patchCompanion('sticker_reply_enabled', tSticker.checked));
       tMemory.addEventListener('change', () => patchCompanion('memory_enabled', tMemory.checked));
       tVoice.addEventListener('change', () => patchCompanion('voice_reply_enabled', tVoice.checked));
+      if (tFirstLove) {
+        tFirstLove.addEventListener('change', async () => {
+          await patchCompanion('first_love', tFirstLove.checked);
+          showToast(tFirstLove.checked ? '已开启 · 你是她的初恋' : '已关闭 · 她谈过恋爱');
+        });
+      }
       if (tSilent) {
         tSilent.addEventListener('change', async () => {
           await patchCompanion('silent_mode', tSilent.checked);

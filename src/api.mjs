@@ -579,6 +579,8 @@ function companionSummary(companion) {
     silent_mode: !!companion.silent_mode,
     // v1.14 依恋风格 selector：同 proactive_daily_target/silent_mode 的"漏返回→切了又恢复"模式
     attachment_style: fallbackText(companion.attachment_style, 'secure'),
+    // v1.19.3 初恋开关：同上模式第三次。默认开（null/undefined 视为 1，仅显式 0 算关）
+    first_love: (companion.first_love === 0 || companion.first_love === false) ? 0 : 1,
   };
 }
 

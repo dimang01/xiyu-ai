@@ -1251,7 +1251,7 @@ const JSON_ARRAY_FIELDS = new Set([
 const BOOL_FIELDS = new Set([
   'use_kaomoji', 'can_joke', 'avoid_cheesy', 'no_pressure', 'occasional_tantrum',
   'encouraging', 'proactive_enabled', 'voice_reply_enabled', 'sticker_reply_enabled',
-  'memory_enabled', 'silent_mode',
+  'memory_enabled', 'silent_mode', 'first_love',
 ]);
 // export 供 scripts/persona_export_drift_check.mjs 对账（新人格字段漏加导出时 CI 报错）
 export const ALLOWED_FIELDS = new Set([
