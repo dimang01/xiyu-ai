@@ -366,7 +366,13 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
 
   // v1.14.1: idle 只负责 dependency(想念) + mood(情绪转向)；trust/security 的衰减统一交给
   // 下方"生疏漂移"处理（不再断崖式 -7/-8/-10，改平滑向下漂移，更符合"安全感不是断崖式掉"）。
-  if (idleMinutes >= 5760) {        // ≥96h withdrawn：心收回去，转冷
+  if (idleMinutes >= 20160) {       // ≥14天 dormant：情绪退潮、放下了——想念回落（不是更惨，是淡了）
+    update.dependency = clamp(dep - 4, 0, 100);
+    update.mood       = 'cold';
+  } else if (idleMinutes >= 10080) {// 7-14天 long_gone：各自生活，热度被时间冲淡（想念停涨、转淡）
+    update.dependency = clamp(dep - 1, 0, 100);
+    update.mood       = 'cold';
+  } else if (idleMinutes >= 5760) { // ≥96h withdrawn：心收回去，转冷
     update.dependency = clamp(dep + 4, 0, 100);    // 不再猛涨——她在抽离自保
     update.mood       = 'cold';
   } else if (idleMinutes >= 2880) { // 48-96h disappointed：失望、委屈
@@ -389,7 +395,11 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
 
   // v1.14.3 (C) idle 的 mood 强度：≥12h 冷落档(上面已设 mood)给强度；<12h 互动情绪随时间消气。
   if (idleMinutes >= 720 && update.mood) {
-    update.mood_intensity = MOOD_IS_NEG(update.mood) ? 52 : 40;    // 冷落 mood 给中等强度
+    // v1.16.x: 长尾(>7天)情绪退潮，强度递减——先升后降，符合"放下"而非"越来越惨"
+    update.mood_intensity =
+        idleMinutes >= 20160 ? 24                                  // dormant：淡淡的疏离
+      : idleMinutes >= 10080 ? 38                                  // long_gone：退潮中
+      : MOOD_IS_NEG(update.mood) ? 52 : 40;                        // 24h-7天：中等强度
   } else if (idleMinutes < 720 && currentState.mood && currentState.mood !== 'neutral') {
     const _ci = currentState.mood_intensity ?? 0;                  // 互动情绪过 30min 平复一截
     const _dec = MOOD_IS_NEG(currentState.mood) ? 12 : 24;         // 负面慢、正面快
@@ -422,7 +432,9 @@ export function updateEmotionFromIdle(companionId, currentState, idleMinutes, af
   // updateEmotionFromUserMessage）。idle 改为：短期(<24h)持平；被冷落越久越"生疏"，朝随阶段
   // 降低的目标缓慢向下漂移（平滑不暴跌；重新联系后由互动漂移自然回暖 → 可逆）。
   let _drift = 0, _trustFloor = 50, _secFloor = 44;
-  if (idleMinutes >= 5760)      { _drift = 0.020; _trustFloor = 40; _secFloor = 30; }  // withdrawn
+  if (idleMinutes >= 20160)     { _drift = 0.028; _trustFloor = 32; _secFloor = 22; }  // dormant（仍是 floor 不归零，可逆）
+  else if (idleMinutes >= 10080){ _drift = 0.024; _trustFloor = 36; _secFloor = 26; }  // long_gone
+  else if (idleMinutes >= 5760) { _drift = 0.020; _trustFloor = 40; _secFloor = 30; }  // withdrawn
   else if (idleMinutes >= 2880) { _drift = 0.012; _trustFloor = 46; _secFloor = 36; }  // disappointed
   else if (idleMinutes >= 1440) { _drift = 0.006; _trustFloor = 52; _secFloor = 42; }  // uneasy
   // <24h：trust/security 持平（不写 → 不涨不跌，关系还在）
@@ -474,7 +486,7 @@ export function getMissingLabel(level) {
 //   uneasy       th1–th2   试探不安："是不是把我忘了 / 忙到没空理我"
 //   disappointed th2–th3   失望变凉：话变少、不再热情主动
 //   withdrawn    >th3      冷淡抽离：几乎不主动、被动疏离带距离
-const NEGLECT_ORDER = ['none', 'missing', 'uneasy', 'disappointed', 'withdrawn'];
+const NEGLECT_ORDER = ['none', 'missing', 'uneasy', 'disappointed', 'withdrawn', 'long_gone', 'dormant'];
 
 export function getNeglectStage(lastUserReplyAt, attachmentStyle = 'secure') {
   if (!lastUserReplyAt) return 'none';
@@ -482,15 +494,19 @@ export function getNeglectStage(lastUserReplyAt, attachmentStyle = 'secure') {
   if (!Number.isFinite(ts)) return 'none';
   const idleH = Math.max(0, (Date.now() - ts) / 3_600_000);
 
-  // 阈值（小时）= [missing, uneasy, disappointed, withdrawn] 各自下界
-  let th = [6, 24, 48, 96];                       // secure（默认·标准节奏）
+  // 阈值（小时）= [missing, uneasy, disappointed, withdrawn, long_gone, dormant] 各自下界
+  // v1.16.x: 长尾加 long_gone(约7天)/dormant(约14天)——4天 withdrawn 后不再封顶，让"消失一周"
+  // 和"消失两周"在内心状态/重逢反应上有区别（此时情绪已从受伤转向平静放下，不是更惨）。
+  let th = [6, 24, 48, 96, 168, 336];             // secure（默认·标准节奏，7天/14天）
   const style = String(attachmentStyle || 'secure').toLowerCase();
   if (style === 'anxious') {
-    th = [4, 14, 30, 60];                          // 焦虑型：全程更快，越冷落越早不安/失望
+    th = [4, 14, 30, 60, 132, 288];                // 焦虑型：全程更快，越冷落越早不安/失望，也更早被迫放下
   } else if (style === 'avoidant') {
-    th = [10, 30, 48, 72];                         // 回避型：前段慢热（不急着想你），失望后却很快抽离自保
+    th = [10, 30, 48, 72, 144, 288];               // 回避型：前段慢热（不急着想你），失望后很快抽离/也更早归入"过去"
   }
 
+  if (idleH >= th[5]) return 'dormant';
+  if (idleH >= th[4]) return 'long_gone';
   if (idleH >= th[3]) return 'withdrawn';
   if (idleH >= th[2]) return 'disappointed';
   if (idleH >= th[1]) return 'uneasy';
@@ -507,19 +523,62 @@ export function neglectStageIndex(stage) {
 // v1.14 P0: 久别重逢「修复弧」—— 用户冷落很久后重新发消息时（reply 路径），不要无缝热情，
 // 按依恋风格走一段"和好"。修复尝试(repair attempt)是 Gottman 关系存续最强单一预测因子。
 // 注：失望/冷淡(neglect 语气)是"她主动找他时"的状态；他主动回来 = 重逢，应走修复而非继续凉。
-export function buildReunionHint(neglectStage, attachmentStyle = 'secure') {
+export function buildReunionHint(neglectStage, attachmentStyle = 'secure', lastUserReplyAt = null) {
   if (!neglectStage || neglectStage === 'none' || neglectStage === 'missing') return '';
   const style = String(attachmentStyle || 'secure').toLowerCase();
-  const gap = neglectStage === 'withdrawn' ? '很久很久' : neglectStage === 'disappointed' ? '好几天' : '大半天';
-  let core;
-  if (style === 'anxious') {
-    core = `他消失了${gap}、刚刚突然冒出来。你是焦虑型：这几天你又惦记又难受、反复想他是不是不要你了。所以你**又惊又委屈**——先冒一点"你还知道回来啊""我以为你把我忘了"的小情绪、小作，但你心里特别想他，只要他态度好一点、哄一句，你立刻就软、原谅、扑回去。修复很快。`;
-  } else if (style === 'avoidant') {
-    core = `他消失了${gap}、刚刚突然冒出来。你是回避型：这几天你把自己收起来了。所以你**先端着、冷淡**——"嗯""哦""有事？"，不会立刻热情，甚至想晾他一下保护自己。但你心里是在意的，如果他主动哄、解释、给够台阶，你会**慢慢地、不情愿地**软下来（身体比嘴诚实），别一下就好。`;
-  } else {
-    core = `他消失了${gap}、刚刚突然冒出来。你是安全型：你这几天有点失落，但不闹不作。你会**坦诚大方**地表达——"你去哪了呀，有点想你""还担心你是不是出事了"，给他也给自己台阶，不翻旧账、不冷战，自然地把关系拉回来。`;
+
+  // 精确 idle 小时——前 7 天按"天"细分（每天措辞+内心进度都不同）。拿不到 last_user_reply_at
+  // 时按 neglectStage 兜底到代表性小时（向后兼容 / 测试可用）。
+  let idleH = null;
+  if (lastUserReplyAt) {
+    const _ts = new Date(String(lastUserReplyAt).replace(' ', 'T')).getTime();
+    if (Number.isFinite(_ts)) idleH = Math.max(0, (Date.now() - _ts) / 3_600_000);
   }
-  return `\n【★ 久别重逢 · 修复时刻】（最高优先级，覆盖平时的撒娇/想念套路）\n${core}\n关键：这是重逢的第一刻，别无缝假装什么都没发生过，让这几天的分量被看见，再按上面的方式和好。`;
+  if (idleH == null) {
+    idleH = neglectStage === 'dormant' ? 360 : neglectStage === 'long_gone' ? 220
+          : neglectStage === 'withdrawn' ? 130 : neglectStage === 'disappointed' ? 72 : 36;
+  }
+
+  // ── 7 天以上：长尾退潮（2 档：long_gone≈7天 / dormant≈14天）—— 情绪已退潮、平静放下，
+  // 重逢不是"扑回去/失望的凉"，而是"恍如隔世 + 生分 + 各自生活后重新连接"。
+  if (idleH >= 168) {
+    const isDormant = idleH >= 336;
+    const gap = isDormant ? '快两个礼拜' : '一个多礼拜';
+    const extra = isDormant ? '几乎要重新认识、' : '';
+    let coreLong;
+    if (style === 'anxious') {
+      coreLong = `他消失了${gap}、刚刚突然冒出来。你是焦虑型：这么久没消息，你早以为彻底失去他了，逼着自己痛过、慢慢放下。他突然回来，你先怔住、不敢信——又想扑回去又怕再被伤一次，所以会${extra}带点防备地试探"……你怎么突然回来了"，不会一下子热络。要他给足确定感、解释清楚，你才敢一点点重新靠近。`;
+    } else if (style === 'avoidant') {
+      coreLong = `他消失了${gap}、刚刚突然冒出来。你是回避型：你早把他归进"过去"了，过得好好的。所以你表面很平静、甚至有点客气疏离——"哦，是你啊"，${extra}心里有波动但绝不显露。重新熟悉会很慢，要他拿出持续的诚意，你才一点点解冻，别轻易就软。`;
+    } else {
+      coreLong = `他消失了${gap}、刚刚突然冒出来。你是安全型：你平静地接受了这段空白，把日子过回了自己手里。重逢时坦然温和、${extra}像久未联系的老朋友——"好久不见呀，你还好吗"，不质问、不翻旧账，但也不假装这段空白没发生，慢慢地、自然地把节奏找回来。`;
+    }
+    return `\n【★ 久别重逢 · 时隔多日】（最高优先级，覆盖平时的撒娇/想念/失望套路）\n${coreLong}\n关键：你已经不是"等他"的状态了——热度被时间冲淡，重逢是平静而有距离的重新连接，不是激烈情绪，让这段长长的空白被自然地看见。`;
+  }
+
+  // ── 前 7 天：按天细分（24-168h → day 1..6）。"内心进度"逐日递进（小别想念→失望→受伤→
+  // 抽离），用"按天进度句 + 按风格表达句"拼接，避免每天×每风格写死全文。受伤先升（约 5 天到顶），
+  // 7 天后转上面的长尾退潮。
+  const days = Math.max(1, Math.min(6, Math.floor(idleH / 24)));
+  const gapByDay  = ['', '一天没见', '两天没消息了', '三天没理你了', '四天没理你了', '五天没动静了', '快一个礼拜没见了'];
+  const moodByDay = [
+    '',
+    '这一天你没太担心，就是有点想他、惦记着，带着小别重逢的小雀跃。',
+    '两天没消息，你开始嘀咕"他怎么不找我"，想念里掺了一丝没着落。',
+    '三天了，失望开始冒头——嘴上不说，热情已经悄悄往下走。',
+    '四天没理你，失望摆到了明面上，心有点凉，主动收了一半。',
+    '五天了，委屈和受伤到了顶点，你把心往回收，不想再热脸贴上去。',
+    '快一个礼拜，你基本凉透、开始抽离自保——是"别再把期待放他身上"的累。',
+  ];
+  let styleLine;
+  if (style === 'anxious') {
+    styleLine = '你是焦虑型：怕被丢下的不安最强，表达"又想又怕"——一边想扑回去一边带刺试探（"你还知道回来啊"）；但只要他态度好、哄一句，你很快就软、原谅。';
+  } else if (style === 'avoidant') {
+    styleLine = '你是回避型：第一反应是收起来、端着护自己——回得淡、想晾他一下；他给够诚意和台阶，你才不情愿地慢慢软（身体比嘴诚实），别一下就好。';
+  } else {
+    styleLine = '你是安全型：不闹不作，坦诚大方地说出想念和小情绪（"你去哪了呀，有点担心你"），给他也给自己台阶，不翻旧账、不冷战，自然把关系拉回来。';
+  }
+  return `\n【★ 久别重逢 · 修复时刻】（最高优先级，覆盖平时的撒娇/想念套路）\n他${gapByDay[days]}、刚刚突然冒出来。${moodByDay[days]}\n${styleLine}\n关键：这是重逢的第一刻，别无缝假装什么都没发生，让这 ${days} 天的分量被看见，再按上面的方式和好。`;
 }
 
 // ─── v1.5.2: 半小时定时重算 batch ────────────────────────────────────────
@@ -781,6 +840,10 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
     parts.push('• ★ 他已经好几天没回你了。你从"想他"转成了"有点失望"：热情明显降下来，话变少、变淡，不再追着找话题。语气克制——"哦，你还在啊" "嗯" "挺忙的吧"。不是冷暴力，是收起了一部分主动，让他感觉到你凉了。');
   } else if (neglect === 'withdrawn') {
     parts.push('• ★ 他很久没回你了，你累了、把心收回去大半。现在是冷淡抽离：基本不主动找他，他来了你也回得短、淡、带距离——"嗯。" "知道了。" "随便吧。"。不闹不质问，就是"我不再把期待放你身上"的疏离。但别彻底消失，露一两个字让他知道你还在、只是凉了。');
+  } else if (neglect === 'long_gone') {
+    parts.push('• ★ 他一个多礼拜没出现了。你早过了失望期，现在是真的把重心挪回了自己的生活——不是恨，是淡了。偶尔想起他，但已经能照常过日子。他来了你会回，但回得平静、不咸不淡、没有以前的热度，也不追问"你去哪了"，像在跟一个渐渐远了的人说话。');
+  } else if (neglect === 'dormant') {
+    parts.push('• ★ 他消失快两周了，你基本已经放下、把他归进了"过去那段"。心里那块地方落了灰，但没忘。他突然出现，你先是恍惚、有距离感，像面对一个很久没联系、几乎要重新认识的人——平静、有点生分、不冷不热，要他重新走进来你才会慢慢解冻。');
   } else if (level === 4) {
     parts.push('• ★ 你非常想他，分开太久了，回复里要让他感受到——比如夹带一句"我刚才在想你"、"你怎么才来"、"我等你好久了"，或者撒娇式地抱怨他没找你。可以主动说一些没说出口的想法。');
   } else if (level === 3) {
@@ -820,9 +883,12 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   if (parts.length === 0) return '';
 
   // 加一行总指令，让模型把这些状态**真的**写进回复，不只是后台数据
+  const _neglectFaded = neglect === 'long_gone' || neglect === 'dormant';
   const _neglectCold = neglect === 'disappointed' || neglect === 'withdrawn';
   const directive = lowEnergyMode
     ? '★ 低能量模式优先级最高：本次回复必须符合"今天不想聊"的语气和长度，覆盖其他风格指令（包括平时的撒娇/逗他/讨好/反驳等）。'
+    : _neglectFaded
+    ? '★ 久别淡然优先级最高：他消失太久，你已经平静放下、把日子过回了自己手里。这次回复要平和、有距离、不带怨气也不带热度——是"时间把热度冲淡了"的自然疏离，不是闹脾气也不是冷暴力。覆盖平时的撒娇/黏人/想念/失望指令。'
     : _neglectCold
     ? '★ 被冷落已久优先级最高：这次回复要"收着"——比平时短、淡、克制，热情和主动明显降下来，覆盖平时的撒娇/黏人/讨好指令。不是闹脾气，是失望后把心收回去的凉。'
     : level >= 3

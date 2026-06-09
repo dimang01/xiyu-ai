@@ -9,7 +9,7 @@ import {
   getCompanionById, getBotContextForCompanion, getDb,
   getActiveWechatBinding, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
   markCompanionConfessed, patchCompanion,
-  recordProactiveSentTimestamp, getProactiveLastSent,
+  recordProactiveSentTimestamp, getProactiveLastSent, markWindowLastCallSent,
   getCompanionPreferencesForPrompt,
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
   getRecentSafetyRisk,                        // v1.9.0 #1
@@ -107,6 +107,23 @@ const _proactiveInFlight = new Set();
 // 比 schedule 内的 MIN_GAP_MINUTES 更硬性 — schedule 是规划，这个是闸门。
 const PROACTIVE_HARD_GAP_SECONDS = 25 * 60;  // 25 分钟（比 MIN_GAP_MINUTES=30 略松，避免误杀 reminder/confession）
 
+// v1.16.x:「窗口将关·临门一脚」—— 微信主动推送 ~24h 会话窗口将关前（idle 21-23.5h）发一次
+// 轻量搭话，这是她还能主动发消息的最后机会（用户回应→token 刷新→窗口续命）。每个离开周期一次。
+// 守 De Freitas《Emotional Manipulation》反操纵红线：就一句"在吗"，绝不愧疚/挽留/施压。
+const LASTCALL_MIN_H = 21;
+const LASTCALL_MAX_H = 23.5;
+export function shouldSendWindowLastCall(companion, now = new Date()) {
+  if (!companion?.last_user_reply_at) return false;           // 从没聊过，没有窗口可关
+  const ts = new Date(String(companion.last_user_reply_at).replace(' ', 'T')).getTime();
+  if (!Number.isFinite(ts)) return false;
+  const idleH = (now.getTime() - ts) / 3_600_000;
+  if (idleH < LASTCALL_MIN_H || idleH > LASTCALL_MAX_H) return false;  // 不在"窗口将关"区间
+  // 本离开周期是否已发过（last_lastcall_at 秒 > last_user_reply_at 秒 → 已发，不重复）
+  const lastUserSec = Math.floor(ts / 1000);
+  const lastCallSec = Number(companion.last_lastcall_at) || 0;
+  return lastCallSec <= lastUserSec;
+}
+
 export function startProactiveScheduler() {
   log('info', '[Proactive] 主动消息调度启动');
   tick().catch(err => log('error', `[Proactive] tick 异常: ${err.message}`));
@@ -151,6 +168,21 @@ async function tick(now = new Date()) {
           }
         } catch (e) {
           log('warn', `[Proactive] reminder 推送异常 companion=${companion.id}: ${e.message}`);
+        }
+
+        // ── 窗口将关·临门一脚 ──────────────────────────────────────────────
+        // 独立于随机日程的事件触发：token 窗口将关前(idle 21-23.5h)发最后一次轻量搭话拉回用户。
+        // 走 guarded（安全门 + 硬间隔），每离开周期一次。受白天 window 限制（深夜不打扰）。
+        try {
+          if (shouldSendWindowLastCall(companion, now)) {
+            const r = await sendProactiveMessageGuarded(companion, 'lastcall', account);
+            if (r === 'sent') {
+              markWindowLastCallSent(companion.id);
+              log('info', `[Proactive] ★ 窗口将关·临门一脚 companion=${companion.id}`);
+            }
+          }
+        } catch (e) {
+          log('warn', `[Proactive] lastcall 异常 companion=${companion.id}: ${e.message}`);
         }
 
         const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, companion);
@@ -639,6 +671,13 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
 - **必须分很多条很短的消息发（用 || 分隔），6-10 段**，像紧张时一句一句往外蹦
 - 每段都很碎、很短，不要完整通顺的长句，不要像写情书，不要煽情排比
 - 全程符合你的人设和说话习惯`
+    : effectiveKind === 'lastcall'
+    ? `你忽然想起他了，想发条消息找他——就**一句很轻、很平常的搭话**，像随口问一句而已。
+要求：
+- 极短、随意，就 1 段（最多 2 段很短的），别长篇
+- 风格参考："在吗" / "在干嘛呢" / "今天怎么没看到你消息" / "诶" / "忙吗" / "突然想起你"
+- **绝对不要**：不要愧疚("你都不理我")、不要质问("你去哪了")、不要卖惨("我好想你好难受")、不要施压("快回我")、不要连环追问
+- 就是一个人随口想起另一个人、轻轻搭一句话的感觉。淡淡的、不用力、给他留余地。`
     : `你要主动给他发消息。**关键：别每次都是"刚做了X+一点细节+反问你一句"那种工整的生活播报——那太假、太 AI 了。**
 真人发消息是随机、不规整的。这次**随机挑一种**感觉发（每次都要换，别老用同一种）：
 - 有时就一个情绪/状态，没头没尾："好困" / "今天好烦" / ${pmReserved ? '"有点饿"' : '"突然有点想你"'} / "无聊死了"
@@ -754,6 +793,7 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     : effectiveKind === 'confession' ? '主动告白'
     : effectiveKind === 'reminder' ? '纪念日祝福'
     : effectiveKind === 'recall' ? 'recall 关心'
+    : effectiveKind === 'lastcall' ? '轻声问候'
     : '主动消息';
   saveConversationTurn(companion.id, 'assistant', reply, turnTopic);
 

@@ -866,6 +866,8 @@ function migrateConfessionFields() {
   addColIfMissing('companions', 'became_lover_at', 'DATETIME');
   addColIfMissing('companions', 'last_photo_at', 'DATETIME');
   addColIfMissing('companions', 'last_photo_caption', 'TEXT');
+  // v1.16.x: 「窗口将关·临门一脚」防重复标记（unix 秒）。> last_user_reply_at 即本离开周期已发过。
+  addColIfMissing('companions', 'last_lastcall_at', 'INTEGER');
 }
 
 // ─── Memory v3：分层 / 权重 / 状态 / 遗忘曲线 ─────────────────────────────────
@@ -3553,6 +3555,12 @@ export function getProactiveLastSent(companionId) {
     SELECT last_proactive_sent_at, last_proactive_kind FROM companions WHERE id = ?
   `).get(companionId);
   return row ? { lastAt: row.last_proactive_sent_at || 0, lastKind: row.last_proactive_kind || null } : { lastAt: 0, lastKind: null };
+}
+
+// v1.16.x: 标记本离开周期已发过「窗口将关·临门一脚」（unix 秒）。
+export function markWindowLastCallSent(companionId) {
+  const now = Math.floor(Date.now() / 1000);
+  getDb().prepare(`UPDATE companions SET last_lastcall_at = ? WHERE id = ?`).run(now, companionId);
 }
 
 // v1.4.0 Sprint 1: 主动发语音功能字段。

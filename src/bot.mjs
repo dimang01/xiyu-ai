@@ -677,7 +677,7 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
     const neglectStage = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
     // v1.14 P0: 久别重逢 → 走"修复弧"而非"失望变凉"（失望是她主动找时的状态；他主动回来=重逢修复）
-    const reunionHint = buildReunionHint(neglectStage, companion.attachment_style);
+    const reunionHint = buildReunionHint(neglectStage, companion.attachment_style, companion.last_user_reply_at);
     const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule });
     const preferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
     // M1 共建：检测"他在教你"→ 写入塑造痕迹 + 当场确认；并把"他教过你的"注入人设（她必守）
