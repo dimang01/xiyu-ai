@@ -77,21 +77,29 @@ check('long_gone 走"淡了"语气 + 久别淡然指令，覆盖热切想念',
 check('dormant 走"放下"语气 + 久别淡然指令',
   hDorm.includes('放下') && hDorm.includes('久别淡然') && !hDorm.includes('你怎么才来'));
 
-// ── 4. 久别重逢修复弧（P0）────────────────────────────────────────────────
+// ── 4. 久别重逢弧 —— 前 7 天按天细分 + 后段 long_gone/dormant 2 档 ──────────────
 check('none/missing 不触发重逢', buildReunionHint('none','secure')==='' && buildReunionHint('missing','anxious')==='');
-check('secure 重逢=坦诚大方',    buildReunionHint('disappointed','secure').includes('坦诚大方'));
-check('anxious 重逢=又惊又委屈',  buildReunionHint('disappointed','anxious').includes('又惊又委屈'));
-check('avoidant 重逢=端着晾他',   buildReunionHint('disappointed','avoidant').includes('端着'));
-check('重逢含修复标记+gap措辞',   buildReunionHint('withdrawn','secure').includes('修复时刻') && buildReunionHint('withdrawn','secure').includes('很久很久'));
-// 长尾重逢：不再是"修复时刻"的扑回去/失望，而是"时隔多日"的平静疏离
-check('long_gone 走"时隔多日" + gap=一个多礼拜，且非修复时刻',
-  buildReunionHint('long_gone','secure').includes('时隔多日') &&
-  buildReunionHint('long_gone','secure').includes('一个多礼拜') &&
-  !buildReunionHint('long_gone','secure').includes('修复时刻'));
-check('dormant gap=快两个礼拜 + 几乎要重新认识 + 三风格都有文案',
-  buildReunionHint('dormant','avoidant').includes('快两个礼拜') &&
-  buildReunionHint('dormant','secure').includes('几乎要重新认识') &&
-  buildReunionHint('dormant','anxious').length > 0);
+// 前 7 天：每天 gap 措辞不同（传精确 last_user_reply_at）
+check('day1 重逢 gap=一天没见',     buildReunionHint('uneasy','secure', hoursAgo(30)).includes('一天没见'));
+check('day3 重逢 gap=三天没理你了', buildReunionHint('disappointed','secure', hoursAgo(75)).includes('三天没理你了'));
+check('day5 重逢 gap=五天没动静了', buildReunionHint('withdrawn','secure', hoursAgo(125)).includes('五天没动静了'));
+check('day6 重逢 gap=快一个礼拜没见了', buildReunionHint('withdrawn','secure', hoursAgo(155)).includes('快一个礼拜没见了'));
+check('天数不同→措辞不同（3天≠5天）',
+  buildReunionHint('disappointed','secure', hoursAgo(75)) !== buildReunionHint('withdrawn','secure', hoursAgo(125)));
+// 前 7 天风格调制 + 修复时刻标记
+check('secure 重逢=坦诚大方',  buildReunionHint('disappointed','secure',  hoursAgo(75)).includes('坦诚大方'));
+check('anxious 重逢=又想又怕', buildReunionHint('disappointed','anxious', hoursAgo(75)).includes('又想又怕'));
+check('avoidant 重逢=端着晾他', buildReunionHint('disappointed','avoidant', hoursAgo(75)).includes('端着'));
+check('前 7 天含修复时刻标记',  buildReunionHint('disappointed','secure', hoursAgo(75)).includes('修复时刻'));
+// 7-14 天长尾：平静疏离（"时隔多日"而非"修复时刻"扑回去）
+check('long_gone(8天) 走时隔多日 + 一个多礼拜，非修复时刻',
+  buildReunionHint('long_gone','secure', hoursAgo(200)).includes('时隔多日') &&
+  buildReunionHint('long_gone','secure', hoursAgo(200)).includes('一个多礼拜') &&
+  !buildReunionHint('long_gone','secure', hoursAgo(200)).includes('修复时刻'));
+check('dormant(15天) gap=快两个礼拜 + 几乎要重新认识',
+  buildReunionHint('dormant','avoidant', hoursAgo(360)).includes('快两个礼拜') &&
+  buildReunionHint('dormant','secure', hoursAgo(360)).includes('几乎要重新认识'));
+check('兜底：不传时间按 stage 仍可用', buildReunionHint('long_gone','secure').includes('一个多礼拜'));
 
 console.log(`\nneglect_stage_smoke: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
