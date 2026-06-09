@@ -1,0 +1,38 @@
+name: 功能建议
+description: 想要新功能 / 改进现有体验
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提议前建议扫一眼 [CONTRIBUTING.md 的产品调性一节](https://github.com/dimang01/xiyu-ai/blob/main/CONTRIBUTING.md#产品调性重要)——
+        真人感 = 减法；与调性红线冲突的提议（NSFW / 病娇 / 多角色后宫等）不会被接受。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题
+      description: 描述场景和痛点，比直接描述方案更有用
+      placeholder: 例：长时间出差时差党，她的作息和我对不上 ...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 设想的方案（可选）
+      placeholder: 如果你已经有具体想法
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及哪块
+      options:
+        - 人设 / prompt / 真人感
+        - 记忆 / 情绪状态机
+        - 主动消息 / 作息
+        - 照片 / 视觉
+        - 语音
+        - Provider 接入
+        - 前端 / Dashboard
+        - 部署 / 运维
+        - 其它
+    validations:
+      required: true

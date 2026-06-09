@@ -1,0 +1,51 @@
+name: Bug 报告
+description: 功能不符合预期 / 报错 / 崩溃
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告。安全漏洞请**不要**在这里提，走 [SECURITY.md](https://github.com/dimang01/xiyu-ai/blob/main/SECURITY.md)。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 实际行为 vs 期望行为，贴报错日志更好（注意抹掉 API key）
+      placeholder: 例：用户说"发张自拍"，她回复"等下哦"之后再无下文，日志里有 ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 部署方式（Docker / 裸跑）
+        2. 进入 playground / 微信端
+        3. 发送 ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: GitHub Release tag 或 git commit
+      placeholder: v1.19.3
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: 相关 Provider 配置
+      description: 涉及哪些 provider（chat/image/asr/tts...）及型号
+      placeholder: 例：CHAT_PROVIDER=deepseek, IMAGE_PROVIDER=openrouter
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: 部署方式
+      options:
+        - Docker / Docker Compose
+        - 本地裸跑 (npm start)
+        - systemd + nginx 反代
+        - 其它
+    validations:
+      required: true

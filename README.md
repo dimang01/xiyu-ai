@@ -486,7 +486,8 @@ SINGLE_USER=true
 
 ## 贡献 & 路线图
 
-- 找到 bug → [新 Issue](https://github.com/dimang01/xiyu-ai/issues/new)
+- 开发环境 / PR 约定 / 产品调性 → [CONTRIBUTING.md](./CONTRIBUTING.md)（3 分钟读完）
+- 找到 bug → [新 Issue](https://github.com/dimang01/xiyu-ai/issues/new/choose)
 - 路线图 → [Issues](https://github.com/dimang01/xiyu-ai/issues) 带 `enhancement` / `help wanted` / `good first issue` 标签的最适合上手
 - 想贡献代码：fork → PR；保持改动小而聚焦，附带说明动机
 - 致谢见 [ACKNOWLEDGMENTS.md](./ACKNOWLEDGMENTS.md)
