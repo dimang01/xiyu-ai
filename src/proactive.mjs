@@ -18,7 +18,7 @@ import {
 import { computeRelationshipStage, canAcceptConfession } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
-import { sendTextMessage, sendMessageItem } from './ilink.mjs';
+import { sendTextMessage, sendMessageItem, recallContextToken } from './ilink.mjs';
 import { dedupSegments } from './text_similarity.mjs';
 // v1.4.0: 微信端 voice 路径已废弃（iLink 协议禁止 bot outbound voice，腾讯
 // 官方 SDK 没有 sendVoiceMessageWeixin，HTTP 200 但消息静默丢弃）。
@@ -491,6 +491,17 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     return;
   }
 
+  // ── context_token 窗口预检（生成前）──────────────────────────────────────
+  // 微信主动推送有「会话窗口」：用户最后一次互动起算约 24h 内，机器人才能主动 sendMessage；
+  // 超窗口后 iLink 返回 ret=-2 必失败（实测：互动后 +22h 仍成功、+29h 起全失败）。
+  // 与其超窗口还生成 LLM 再丢弃（白烧 token + 把没发出的消息污染进上下文），不如提前跳过。
+  // 复用 recallContextToken（24h TTL，与实测窗口吻合）：返回 null = 窗口已关，无可用 token。
+  // 注：用户一旦回来发消息，token 立即刷新、窗口重开，引擎会按正常间隔重新主动。
+  if (!recallContextToken(ctx.botId, companion.wechat_user_id)) {
+    log('info', `[Proactive] 跳过：companion=${companion.id} kind=${kind} context_token 窗口已关闭（用户 >24h 未互动，主动消息发不出，不生成内容）`);
+    return;
+  }
+
   // ── 单独分支：场景照片 ──
   if (kind === 'photo') {
     const t0 = Date.now();
@@ -688,11 +699,25 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     log('info', `[Proactive] 段内去重：剪掉 ${droppedSegs.length} 段重复 companion=${companion.id}; ${droppedSegs.map(d => `"${d.text.slice(0,20)}"~"${d.similar_to.slice(0,20)}"(sim=${d.sim.toFixed(2)})`).join('; ')}`);
   }
   let totalStickers = 0;
+  let sentAnySegment = false;
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     const { text: textOnly, stickers } = parseStickerMarkers(seg);
     if (textOnly) {
-      await sendTextMessage(ctx, companion.wechat_user_id, textOnly, null);
+      const ok = await sendTextMessage(ctx, companion.wechat_user_id, textOnly, null);
+      if (!ok) {
+        // 发送失败（context_token 窗口边界过期 → ret=-2，或缺 to_user）。第一段就失败 =
+        // 整条没送达：直接 return，不写对话历史 / 不耗 backoff 配额 / 不升恋人 / 不记「已发送」，
+        // 避免假报成功污染状态。用户回来刷新 token 后，引擎会按正常间隔重新主动。
+        if (!sentAnySegment) {
+          log('warn', `[Proactive] 发送失败，放弃本次主动 companion=${companion.id} kind=${kind}（context_token 窗口关闭/过期）`);
+          return;
+        }
+        // 前面已有段落送达，仅后续段失败：截断停发，保留已送达部分走正常收尾。
+        log('warn', `[Proactive] 后续段发送失败，截断 companion=${companion.id} 段=${i}/${segments.length}`);
+        break;
+      }
+      sentAnySegment = true;
       saveMessage({
         msgId: `proactive_${companion.id}_${Date.now()}_${i}`,
         fromUser: ctx.botId,
