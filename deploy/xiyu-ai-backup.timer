@@ -1,0 +1,13 @@
+# 溪语 AI · 每日 04:10 自动备份（错开 02:15-03:30 的日记/反思/清理 cron 高峰）
+# 安装见 xiyu-ai-backup.service 头部注释。
+
+[Unit]
+Description=Daily Xiyu AI SQLite backup
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+# 关机错过的窗口开机后补跑
+Persistent=true
+
+[Install]
+WantedBy=timers.target
