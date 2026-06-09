@@ -24,21 +24,31 @@ const BEAUTIFY_ENABLED = String(process.env.IMAGE_BEAUTIFY_ENABLED ?? 'true').to
  * @param {object} opts
  * @returns {Promise<Buffer>} 美颜后的字节
  */
+// v1.18.0: 参数全部 env 可调，默认整体下调一档（反磨皮塑料感）。
+// 用户给的参考图证明「好看 ≠ 磨皮」：真照片要保留肤质/颗粒，而旧默认 blur 0.65 全图高斯
+// 模糊会把真实肤质抹成网红假脸，是「难看 AI 图」的主因。新默认 blur 0.3 / 饱和 1.07 仍有
+// 轻美颜，想更自然设 IMAGE_BEAUTIFY_BLUR=0，想浓回去调大即可（无需改代码/重发版）。
+function envNum(name, fallback) {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) ? v : fallback;
+}
+
 export async function beautifyImage(buf, opts = {}) {
   if (!BEAUTIFY_ENABLED) return buf;
   if (!Buffer.isBuffer(buf) || buf.length < 512) return buf;
   const t0 = Date.now();
   try {
-    const out = await sharp(buf)
+    let pipe = sharp(buf)
       .modulate({
-        brightness: opts.brightness ?? 1.08,
-        saturation: opts.saturation ?? 1.13,
+        brightness: opts.brightness ?? envNum('IMAGE_BEAUTIFY_BRIGHTNESS', 1.05),
+        saturation: opts.saturation ?? envNum('IMAGE_BEAUTIFY_SATURATION', 1.07),
       })
-      .linear(opts.contrast ?? 1.03, opts.contrastOffset ?? -4)
-      .blur(opts.blur ?? 0.65)
-      .png({ quality: 92, compressionLevel: 6 })
-      .toBuffer();
-    log('debug', `[beautify] ok ${buf.length}→${out.length} ${Date.now() - t0}ms`);
+      .linear(opts.contrast ?? envNum('IMAGE_BEAUTIFY_CONTRAST', 1.03), opts.contrastOffset ?? envNum('IMAGE_BEAUTIFY_CONTRAST_OFFSET', -4));
+    // sharp 的 blur sigma 合法区间 0.3–1000；<0.3 视为「不模糊」，直接跳过（避免崩 + 保留肤质）。
+    const blur = opts.blur ?? envNum('IMAGE_BEAUTIFY_BLUR', 0.3);
+    if (blur >= 0.3) pipe = pipe.blur(blur);
+    const out = await pipe.png({ quality: 92, compressionLevel: 6 }).toBuffer();
+    log('debug', `[beautify] ok ${buf.length}→${out.length} blur=${blur} ${Date.now() - t0}ms`);
     return out;
   } catch (e) {
     log('warn', `[beautify] 失败，返回原图: ${e.message}`);
