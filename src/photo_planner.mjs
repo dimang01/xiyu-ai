@@ -404,12 +404,13 @@ function moodToFacialCue(mood) {
 // v1.10.34: clothing_style → 英文具体着装关键词
 function clothingStyleToEnglish(style) {
   const s = String(style || '').toLowerCase();
-  if (/甜美|sweet|cute|可爱/.test(s)) return 'cute casual outfit, light pastel hoodie or knit cardigan, fresh and youthful';
-  if (/清新|elegant|fresh/.test(s)) return 'fresh clean casual outfit, light blouse or simple tee, natural minimalist';
-  if (/酷|cool|street/.test(s)) return 'cool casual streetwear, oversized hoodie or graphic tee, effortless cool';
-  if (/性感|sexy|mature/.test(s)) return 'soft elegant casual outfit, simple tasteful, not revealing';
-  if (/学院|preppy|学生/.test(s)) return 'preppy youthful casual outfit, light cardigan or hoodie, fresh and clean';
-  return 'casual cute youthful outfit, light comfortable home or daily wear';
+  // v1.17.x: 整体偏可爱风（cute / sweet / pastel / girly），更贴"邻家小女友"的甜软感
+  if (/甜美|sweet|cute|可爱/.test(s)) return 'cute girly outfit, soft pastel colors, light hoodie or knit cardigan or a sweet tee, playful youthful vibe';
+  if (/清新|elegant|fresh/.test(s)) return 'fresh sweet casual outfit, light blouse or simple tee in soft pastel tone, clean and girly';
+  if (/酷|cool|street/.test(s)) return 'cute casual streetwear, oversized hoodie or graphic tee, youthful playful look';
+  if (/性感|sexy|mature/.test(s)) return 'soft sweet casual outfit, tasteful and youthful, gently cute, not revealing';
+  if (/学院|preppy|学生/.test(s)) return 'cute preppy outfit, light cardigan or hoodie, fresh sweet and clean';
+  return 'cute casual youthful outfit, soft pastel colors, light comfy daily wear, sweet girly vibe';
 }
 
 function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proactiveContext, gate, emotionContext, visualContext }) {
@@ -429,6 +430,8 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
   const clothingEn = clothingStyleToEnglish(companion?.clothing_style);
   // selfie vs candid：用户主动要照片 (request) 或主动 selfie 类 trigger → 自拍角度
   const isSelfie = trigger === 'user_request' || trigger === 'request' || trigger === 'selfie' || /自拍|看看你|看一下你|你的样子/.test(userText || '');
+  // v1.17.x: 风景 POV —— 提到晚霞/天空等景时，拍"她眼前的景本身"(像真人发"你看这个")，而不是站景前的人像/全身照
+  const isScenery = /晚霞|夕阳|日落|余晖|落日|晚霞|火烧云|天空|云|海边?|湖|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|窗外/.test(String(userText || '') + String(companion?.current_scene || ''));
 
   return `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
@@ -439,7 +442,7 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - plausible scenes for this hour: ${dp.scenes}
 
 - trigger: ${trigger}
-- shot mode: ${isSelfie ? 'SELFIE (smartphone front camera, arm partially visible, slight upward angle)' : 'CANDID (someone else might take it, or set on table)'}
+- shot mode: ${isScenery ? 'SCENERY-POV (主体是她眼前的景本身——晚霞/天空/海等，第一人称 POV 看出去，只拍那个景；她最多一只手/衣角/背影局部入镜，绝不是站在景前的人像或全身照，像真人随手拍"你看这个"发给对方)' : isSelfie ? 'SELFIE (smartphone front camera, arm partially visible, slight upward angle)' : 'CANDID (someone else might take it, or set on table)'}
 - companion name: ${safeText(companion?.name || '她', 40)}
 - companion appearance: ${appearance}
 - companion clothing in english: ${clothingEn}
@@ -462,7 +465,7 @@ ${recent || '(none)'}
 4. imagePrompt 必须是英文。**主角必须是 naturally pretty young woman, fresh and photogenic, gentle delicate facial features, soft warm smile, clear soft skin, well-groomed natural beauty**（不要 plain / haggard / exhausted / tired）。
 5. imagePrompt 必须显式包含上面 "companion current mood / facial cue" 给的英文表情描述（如 "bright warm smile, soft cheerful eyes"），不允许 expressionless 或 sad-looking。
 6. imagePrompt 必须显式包含上面 "companion clothing in english" 的英文着装关键词。**禁止 navy office sweater / formal collar shirt / professional attire**。
-7. **如果 shot mode 是 SELFIE**：imagePrompt 必须写 "smartphone selfie POV, front-facing camera, arm partially visible at edge of frame, slight upward angle, casual home setting"，不要中距离肖像。**如果是 CANDID**：写 "candid phone snapshot, slightly imperfect framing, natural everyday moment"。
+7. **shot mode = SCENERY-POV**：imagePrompt 主体写那个景（如 "warm orange sunset glow over the city skyline, soft drifting clouds, first-person POV looking out from a balcony"），人物几乎不入镜（最多 "a hand or sleeve at the edge of the frame" 或 "a small back silhouette in the corner"），**景是绝对主角，不要把人画成主体、更不要全身像**。**shot mode = SELFIE**：写 "smartphone selfie POV, front-facing camera, arm partially visible at edge of frame, slight upward angle, casual home setting"。**shot mode = CANDID**：写 "candid phone snapshot, slightly imperfect framing, natural everyday moment"。**人像照（SELFIE / CANDID）一律近景**：用 "framed from the chest or waist up, close intimate phone-photo distance, face clearly in focus" 这类写法 —— 真实恋爱里女友发的照片几乎都是近景半身（脸 / 上半身 / 生活细节），**不要 full-length head-to-toe standing portrait**（那像街拍或证件照，不像女友随手自拍）。
 8. imagePrompt 必须写当前 day part 对应的 lighting hint 并选 plausible scenes 范围内的场景。**深夜禁 cafe / 奶茶店 / outdoor daylight**；清晨禁 dark bedroom。
 9. imagePrompt 必须暗含主角核心外貌（hair/eyes/body/face/style 参考 companion appearance）+ 默认补 "soft round face, small delicate chin, slim petite youthful build" 如果人设没特别指定。**年龄措辞改用具象视觉特征**（v1.10.41）："very youthful first-year university freshman vibe, soft baby-faced look with round full cheeks, large warm doe eyes, fresh dewy clear skin, makeup-free natural fresh complexion, slim petite frame"。让模型按具象去画，避免被 over-correct 到 25+。**严禁具体年龄数字、严禁 minor / teen / underage / child / kid / schoolgirl / lolita / high school** 等触发安全过滤的词。
 10. imagePrompt **不要写 "no XXX" / "without XXX" 等 negative 排除句**（会被本系统的安全过滤误伤）。改用**正面同义词替代**：
