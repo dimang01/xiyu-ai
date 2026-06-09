@@ -196,7 +196,7 @@ function buildScenePrompt({ activity, timeSlot, mood }) {
 
 function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
   const referenceNote = referenceImagePath && providerCapabilities?.referenceImage
-    ? 'use the provided reference image only to keep the same adult person identity'
+    ? 'use the provided reference image ONLY for facial identity and likeness (keep the same face); do NOT copy its pose, body crop, framing or composition — strictly follow the text prompt for shot framing, distance and pose (a close waist-up phone shot unless the text says it is a scenery/POV shot)'
     : 'keep the same adult person identity using the stable description';
   const prompt = [
     identityPrompt,
