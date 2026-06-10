@@ -584,6 +584,8 @@ function companionSummary(companion) {
     first_love: (companion.first_love === 0 || companion.first_love === false) ? 0 : 1,
     // v1.20 安全模式（只读展示；改动只走 age-attestation 专用端点）
     safe_mode: Number(companion.safe_mode) ? 1 : 0,
+    // v1.21 冲突与和好弧（只读展示；状态由 relationship_arc 状态机独占写入）
+    arc_state: fallbackText(companion.arc_state, 'normal'),
   };
 }
 

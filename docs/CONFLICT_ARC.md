@@ -226,8 +226,9 @@ companions 新列：`arc_state TEXT DEFAULT 'normal'`、`arc_state_changed_at TE
   （它只检查 ALLOWED_FIELDS 里的字段）
 - `companionSummary` 返回 `arc_state`（dashboard / debug 面板要展示，
   防"切了刷新就恢复"老坑）
-- 人设导出**带** `arc_state`（关系状态属于这段关系，迁移实例应延续）；
-  事件表**不导出**（trigger_text 含对话原文，隐私面大），在导出文档注明
+- 人设导出**不带** `arc_state`（实现时修订：跟随仓库先例——affection_level /
+  current_mood / safe_mode 等运行时状态均不随人设迁移、导入后重新开始；
+  arc_state 同属运行时关系状态）；事件表同样不导出（trigger_text 含对话原文）
 - `trigger_text` 入库前过 `filterForStorage`（隐私过滤全口子的承诺不破例）
 
 **事件防刷**：同 type 已有 open 事件 → 升级/刷新而非新建；每日新建事件上限 3；

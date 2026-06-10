@@ -71,5 +71,8 @@ jobs:
       - name: 隐私过滤 privacy filter 护栏
         run: node scripts/privacy_filter_guard.mjs
 
+      - name: 冲突与和好弧 状态机转移表
+        run: node scripts/conflict_arc_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
