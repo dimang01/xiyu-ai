@@ -1,19 +1,25 @@
 /**
- * arc-digest.mjs —— 冲突弧观察周日报（v1.21.1 PR-B）。
+ * arc-digest.mjs —— 冲突弧观察周日报（v1.21.1 PR-B；v1.21.2 加错误签名段）。
  *
- * 用法：npm run arc:digest [-- --days N]（默认最近 24h）
- *       生产：DB_PATH=/opt/xiyu-ai-new/data/bot.db npm run arc:digest
+ * 用法：npm run arc:digest [-- --days N] [-- --log path/to/bot.log]
+ *       生产：DB_PATH=/opt/xiyu-ai-new/data/bot.db LOG_DIR=/opt/xiyu-ai-new/logs npm run arc:digest
  *
- * 红线：**纯只读报表**（readonly 连接强制）。不做任何自动调参、不接任何阈值
- * 回写——观察周的产出是运营者的人工判断，不是脚本的。
+ * 红线：**纯只读报表**（readonly 连接 + 只读日志文件）。不做任何自动调参、
+ * 不接任何阈值回写——观察周的产出是运营者的人工判断，不是脚本的。
  */
 import Database from 'better-sqlite3';
-import { existsSync } from 'node:fs';
+import { existsSync, createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
+import path from 'node:path';
 
 const DB_PATH = process.env.DB_PATH || 'data/bot.db';
 const daysIdx = process.argv.indexOf('--days');
 const DAYS = daysIdx > 0 ? Math.max(0.05, Number(process.argv[daysIdx + 1]) || 1) : 1;
 const sinceIso = new Date(Date.now() - DAYS * 86400e3).toISOString();
+const logIdx = process.argv.indexOf('--log');
+const LOG_FILE = logIdx > 0
+  ? process.argv[logIdx + 1]
+  : path.join(process.env.LOG_DIR || 'logs', 'bot.log');
 
 if (!existsSync(DB_PATH)) { console.error(`DB 不存在: ${DB_PATH}（用 DB_PATH=… 指定）`); process.exit(1); }
 const db = new Database(DB_PATH, { readonly: true });   // 只读硬约束
@@ -27,6 +33,62 @@ const cname = (() => {
 const hasTable = (t) => !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(t);
 
 console.log(`════ 冲突弧日报 · 最近 ${DAYS} 天（截至 ${new Date().toLocaleString('zh-CN', { hour12: false })}）════\n`);
+
+// ── 0. 错误签名（v1.21.2，#263 后续：那 665 条同签名错误要在第一行尖叫）────────
+// 归一化：去时间戳、companion=N→#、长数字/hex→#、引号内容→"…"，让同类错误聚成一个签名。
+// 环比 = 对比上一个同长窗口；新签名（上窗口没出现过）置顶高亮。纯读日志文件。
+function normalizeErrorSignature(line) {
+  return line
+    .replace(/^\[[^\]]+\]\s*/, '')                       // 去时间戳前缀
+    .replace(/companion[=\s]#?\d+/gi, 'companion=#')
+    .replace(/\b[0-9a-f]{8,}\b/gi, '#')                  // hex id / clientId
+    .replace(/\b\d{3,}\b/g, '#')                         // 长数字（端口/毫秒/计数）
+    .replace(/"[^"]{0,60}"/g, '"…"').replace(/「[^」]{0,60}」/g, '「…」')
+    .trim().slice(0, 140);
+}
+
+async function collectErrorSignatures(file, sinceMs, untilMs) {
+  const sigs = new Map();   // sig -> { count, firstAt, lastAt }
+  if (!existsSync(file)) return sigs;
+  const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const line of rl) {
+    if (!line.includes('[ERROR]')) continue;
+    const tm = line.match(/^\[([^\]]+)\]/);
+    const ts = tm ? new Date(tm[1]).getTime() : NaN;
+    if (!Number.isFinite(ts) || ts < sinceMs || ts >= untilMs) continue;
+    const sig = normalizeErrorSignature(line);
+    const e = sigs.get(sig) || { count: 0, firstAt: ts, lastAt: ts };
+    e.count++; e.lastAt = ts; if (ts < e.firstAt) e.firstAt = ts;
+    sigs.set(sig, e);
+  }
+  return sigs;
+}
+
+{
+  const now = Date.now();
+  const winMs = DAYS * 86400e3;
+  const cur = await collectErrorSignatures(LOG_FILE, now - winMs, now);
+  const prev = await collectErrorSignatures(LOG_FILE, now - 2 * winMs, now - winMs);
+  if (!existsSync(LOG_FILE)) {
+    console.log(`（日志文件不存在：${LOG_FILE}——用 --log 或 LOG_DIR 指定）\n`);
+  } else if (!cur.size) {
+    console.log(`✅ 错误签名：窗口内零 [ERROR]（${LOG_FILE}）\n`);
+  } else {
+    const rows = [...cur.entries()]
+      .map(([sig, e]) => ({ sig, ...e, prevCount: prev.get(sig)?.count || 0, isNew: !prev.has(sig) }))
+      .sort((a, b) => (b.isNew - a.isNew) || (b.count - a.count));
+    const total = rows.reduce((s, r) => s + r.count, 0);
+    console.log(`🔴 错误签名：${rows.length} 种 / 共 ${total} 条（新签名置顶——每一条都该有人认领）`);
+    for (const r of rows.slice(0, 15)) {
+      const delta = r.prevCount === 0 ? (r.isNew ? '🆕 新签名' : '环比 +∞')
+        : `环比 ${r.count >= r.prevCount ? '+' : ''}${(((r.count - r.prevCount) / r.prevCount) * 100).toFixed(0)}%`;
+      console.log(`  ${r.isNew ? '🆕' : '  '} ×${String(r.count).padStart(4)}  ${delta.padEnd(10)}  首现 ${fmtT(new Date(r.firstAt).toISOString())}`);
+      console.log(`       ${r.sig}`);
+    }
+    if (rows.length > 15) console.log(`  …还有 ${rows.length - 15} 种（低频）`);
+    console.log('');
+  }
+}
 
 if (!hasTable('companion_relationship_events')) {
   console.log('（companion_relationship_events 表不存在——该库还没跑过 v1.21+）');

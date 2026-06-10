@@ -35,7 +35,8 @@ export function buildReflectionPrompt(companion, recentTurns, existingMemories) 
     })
     .join('\n');
 
-  const existingSnippet = (existingMemories || [])
+  // 防御：传错形态（对象/null）也绝不抛——反思批一个 companion 炸不该连累整批
+  const existingSnippet = (Array.isArray(existingMemories) ? existingMemories : [])
     .slice(0, 20)
     .map(m => `[${m.memory_layer}] ${String(m.content).slice(0, 80)}`)
     .join('\n');
@@ -200,9 +201,12 @@ async function runReflectionForCompanion(companionId, userId, turnsRange, kind, 
       return;
     }
 
+    // getMemoriesV2 返回 { memories, total } 对象——曾被整个当数组用，
+    // (existingMemories || []).slice 静默炸掉每日/每周反思批 8 天（2026-06-02 起，
+    // 由 arc:digest 错误签名段抓出）。"返回对象当数组/布尔"是本仓第二次踩同款。
     const existingMemories = getMemoriesV2(companionId, {
       status: 'active', layer: null, limit: 30,
-    });
+    }).memories;
 
     const prompt = buildReflectionPrompt(companion, turns, existingMemories);
     const raw = await extractStructuredInfo(
