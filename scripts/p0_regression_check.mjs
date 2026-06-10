@@ -141,8 +141,14 @@ try {
   // v1.10.1 proactive 审计防回归
   // 1) morning kind 必须在 sleep enabled 守卫（useSleepBase）内判定，不能在 buildDailyItems 无条件抬第一条
   check('proactive.mjs morning kind 受 useSleepBase 守卫（不无条件抬第一条 normal）',
-    !/findIndex\(it => it\.kind === 'normal'\)/.test(proSrc) && /useSleepBase[\s\S]{0,400}firstNormal\.kind = 'morning'/.test(proSrc),
+    // v1.19.5: 窗口 400→900 — useSleepBase 块内加了 morningAlreadySent 防重判定（重启重算
+    // 不再重复早安），守卫语义不变但块变长
+    !/findIndex\(it => it\.kind === 'normal'\)/.test(proSrc) && /useSleepBase[\s\S]{0,900}firstNormal\.kind = 'morning'/.test(proSrc),
     '若失败：buildDailyItems 仍无条件抬 morning → 下午重启发"下午的早安" + 误清 missed');
+  // v1.19.5: morning 防重双闸——排程侧跳过抬升 + 发送侧降级 normal（重复"刚醒"早安根治）
+  check('proactive.mjs morning 防重：排程侧查 goodmorning_sent_for_date + 发送侧 shouldDemoteMorning',
+    /goodmorning_sent_for_date === dateKey/.test(proSrc) && /shouldDemoteMorning\(/.test(proSrc),
+    '若失败：服务重启丢内存排程重算 → 7 点发过"刚醒"，9 点半 morning 又来一条');
   // 2) guarded 返回投递状态，tick 据此 defer 而非消耗配额
   check('proactive.mjs guarded 返回投递状态（throttled/inflight/safety/sent）',
     /return 'throttled'/.test(proSrc) && /return 'inflight'/.test(proSrc)
