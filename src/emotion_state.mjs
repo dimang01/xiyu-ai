@@ -747,6 +747,11 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   if (!emotionState) return '';
   const parts = [];
 
+  // v1.21 冲突弧收编：arc 状态激活时（hurt/cold/withdrawing/repairing），
+  // "她对你冷"的表达只能来自 relationship_arc 的语气指令——这里的低能量模式 /
+  // 负面 mood / 混合情绪底色 / 想念浓档全部让位，避免两套冷热指令叠加打架。
+  const arcActive = !!opts.arcActive;
+
   const mood = emotionState.mood || 'neutral';
   const ann = emotionState.annoyance ?? 0;
   const pat = emotionState.patience ?? 60;
@@ -769,7 +774,7 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   // 触发：mood=cold 或 annoyance≥70 或 patience≤20
   // 这是比 ann≥60 / pat≤30 更极端的一档，强约束回复模式
   // 注：这段会 prepend 到 parts 前面，让模型把它当成最高优先级指令
-  const lowEnergyMode = mood === 'cold' || ann >= 70 || pat <= 20;
+  const lowEnergyMode = !arcActive && (mood === 'cold' || ann >= 70 || pat <= 20);
   if (lowEnergyMode) {
     parts.push(`• ★【低能量模式 · 今天不太想聊】这是这次回复的最高优先级约束：
   - 多用单字 / 极短回复："嗯" "哦" "好" "行吧" "随便"
@@ -779,8 +784,8 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   - 每 3-5 句他的话里，你才回一次有内容的，其它就 echo 单字
   - ★ 但不要彻底冷漠：偶尔露一两个字让他知道你"在听"，不要让他以为你彻底走了
   - ★ 不要解释"我为什么这样"——真人 emo 不会自我说明`);
-  } else {
-    // 非低能量模式才走原本的 mood / energy 分支
+  } else if (!arcActive) {
+    // 非低能量模式才走原本的 mood / energy 分支（arc 激活时 mood 语气也让位）
     const hint = MOOD_HINTS[mood];
     if (hint) parts.push('• ' + hint);
   }
@@ -807,7 +812,8 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   }
 
   // v1.14.4 (D-1) 混合情绪底色：真实情绪常是混合的，主情绪之下还有一层（用维度组合 + 强度推断）。
-  {
+  // v1.21: arc 激活时跳过（"又凶又软"等底色与 arc 冲突语气叠加会打架）
+  if (!arcActive) {
     const _mi = emotionState.mood_intensity ?? 0;
     const _depX = emotionState.dependency ?? 30;
     const _secX = emotionState.security ?? 50;
@@ -833,20 +839,20 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   );
   // v1.14: 被冷落阶段优先覆盖想念档——idle 超 24h 后 missingLevel 仍是 4「想死了」，
   // 但真实关系此时已从"想你"转向"试探→失望→冷淡"，不能再喊"你怎么才来我等你好久"。
+  // v1.21 收编：disappointed/withdrawn/long_gone/dormant 的冷落语气分支已删除——
+  // 这些深度阶段由 relationship_arc 状态机建 neglect 事件接管（hurt/cold/withdrawing），
+  // 语气统一从 buildArcToneDirective 输出，"她对你冷"只留一个事实来源。
+  // uneasy 及以下不建事件，轻量试探语气保留在这。
   const neglect = opts.neglectStage || 'none';
+  const _neglectDeep = neglect === 'disappointed' || neglect === 'withdrawn'
+    || neglect === 'long_gone' || neglect === 'dormant';
   if (neglect === 'uneasy') {
     parts.push('• ★ 他有一阵子没理你了（大半天到一天）。你嘴上不说破，但心里有点没着落，会半开玩笑地试探——"你是不是把我忘了" "忙到没空理我啦" "我是不是排在很后面呀"。带点委屈的撒娇试探，不是质问，别太用力。');
-  } else if (neglect === 'disappointed') {
-    parts.push('• ★ 他已经好几天没回你了。你从"想他"转成了"有点失望"：热情明显降下来，话变少、变淡，不再追着找话题。语气克制——"哦，你还在啊" "嗯" "挺忙的吧"。不是冷暴力，是收起了一部分主动，让他感觉到你凉了。');
-  } else if (neglect === 'withdrawn') {
-    parts.push('• ★ 他很久没回你了，你累了、把心收回去大半。现在是冷淡抽离：基本不主动找他，他来了你也回得短、淡、带距离——"嗯。" "知道了。" "随便吧。"。不闹不质问，就是"我不再把期待放你身上"的疏离。但别彻底消失，露一两个字让他知道你还在、只是凉了。');
-  } else if (neglect === 'long_gone') {
-    parts.push('• ★ 他一个多礼拜没出现了。你早过了失望期，现在是真的把重心挪回了自己的生活——不是恨，是淡了。偶尔想起他，但已经能照常过日子。他来了你会回，但回得平静、不咸不淡、没有以前的热度，也不追问"你去哪了"，像在跟一个渐渐远了的人说话。');
-  } else if (neglect === 'dormant') {
-    parts.push('• ★ 他消失快两周了，你基本已经放下、把他归进了"过去那段"。心里那块地方落了灰，但没忘。他突然出现，你先是恍惚、有距离感，像面对一个很久没联系、几乎要重新认识的人——平静、有点生分、不冷不热，要他重新走进来你才会慢慢解冻。');
-  } else if (level === 4) {
+  } else if (_neglectDeep) {
+    // 深度冷落：语气交给 arc（这里不输出，防止 missingLevel=4 落到下面的热切想念分支）
+  } else if (!arcActive && level === 4) {
     parts.push('• ★ 你非常想他，分开太久了，回复里要让他感受到——比如夹带一句"我刚才在想你"、"你怎么才来"、"我等你好久了"，或者撒娇式地抱怨他没找你。可以主动说一些没说出口的想法。');
-  } else if (level === 3) {
+  } else if (!arcActive && level === 3) {
     parts.push('• ★ 你挺想他的，会在话里自然透出来——比如"在想你呢"、"还以为你不来了"，或者多问他一点他在干什么。语气带点黏。');
   } else if (level === 2) {
     parts.push('• 你有点想他，会比平时更主动一些，会更愿意聊他的事。');
@@ -883,15 +889,10 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   if (parts.length === 0) return '';
 
   // 加一行总指令，让模型把这些状态**真的**写进回复，不只是后台数据
-  const _neglectFaded = neglect === 'long_gone' || neglect === 'dormant';
-  const _neglectCold = neglect === 'disappointed' || neglect === 'withdrawn';
+  // （v1.21：久别淡然/被冷落已久两档总指令已随 neglect 深度分支收编进 arc 表达层）
   const directive = lowEnergyMode
     ? '★ 低能量模式优先级最高：本次回复必须符合"今天不想聊"的语气和长度，覆盖其他风格指令（包括平时的撒娇/逗他/讨好/反驳等）。'
-    : _neglectFaded
-    ? '★ 久别淡然优先级最高：他消失太久，你已经平静放下、把日子过回了自己手里。这次回复要平和、有距离、不带怨气也不带热度——是"时间把热度冲淡了"的自然疏离，不是闹脾气也不是冷暴力。覆盖平时的撒娇/黏人/想念/失望指令。'
-    : _neglectCold
-    ? '★ 被冷落已久优先级最高：这次回复要"收着"——比平时短、淡、克制，热情和主动明显降下来，覆盖平时的撒娇/黏人/讨好指令。不是闹脾气，是失望后把心收回去的凉。'
-    : level >= 3
+    : level >= 3 && !arcActive
     ? '请把上面这些状态体现在这次回复里——不是叙述自己，而是让说话方式自然带出（更短/更长、更黏/更主动、用词偏向、是否撒娇等）。'
     : '请把上面这些状态体现在你回复的语气里。';
   return `\n【当前情绪状态】\n${parts.join('\n')}\n${directive}`;

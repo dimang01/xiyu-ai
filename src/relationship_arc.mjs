@@ -347,3 +347,172 @@ export function tickArcOnTime(ctx = {}) {
 
   return stay('noop');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 检测层（PR-B）：纯 regex 信号——inner OS 跑不到时的兜底证据源。
+// 保守原则：宁漏勿误（normal 态 sev≤2 不建事件已是缓冲；regex 给证据，
+// LLM 结构化字段给语境，composeSeverity 合成）。
+// ═══════════════════════════════════════════════════════════════════════════
+
+// sev4：辱骂/践踏底线
+const HARSH_SEVERE_RE = /(给我滚|滚开|滚吧|你他妈|妈的|傻逼|脑残|恶心死|神经病|有病吧|你算什么东西|闭嘴吧?)/;
+// sev3：失信指控 / 否定关系 / 推开她（与 v1.14.2 BETRAYAL 同源——双轨：数值扣减照旧）
+const HARSH_STRONG_RE = /(说话不算数|食言|言而无信|放(?:你|我)?鸽子|爽约|懒得理你|关我什么事|与你无关|跟你聊真没意思|别来烦我|少来烦我|别再找我|我不想理你)/;
+// 玩笑豁免（与 emotion_state JOKE_EXEMPT 同口径）
+const JOKE_RE = /(哈哈|嘻嘻|嘿嘿|开玩笑|逗你|闹着玩|骗你的|～$)/;
+
+const APOLOGY_RE = /(对不起|不好意思|抱歉|我错了|我的错|是我不对|原谅我|别生气了|消消气|给你道歉|我道歉|sorry)/i;
+// matched 兜底判定：道歉里指涉了具体改正（inner OS 的 apology_target 优先于此）
+const APOLOGY_SPECIFIC_RE = /(不该|不应该|我以后|再也不|下次不|我不会再|刚才(?:那句|说的|不对))/;
+
+const WARM_RE = /(多喝水|注意身体|早点睡|吃饭了吗|别熬夜|辛苦了|想你|抱抱|么么|爱你|喜欢你|心疼|给你带|陪你|哄哄|乖啦|摸摸头|想见你|晚安|早安)/;
+
+/** harsh 词面证据：返回 regex severity（0/3/4）+ 玩笑豁免标记 */
+export function detectHarshWords(text) {
+  const t = String(text || '');
+  if (!t) return { severity: 0, jokeExempt: false };
+  const jokeExempt = JOKE_RE.test(t);
+  if (HARSH_SEVERE_RE.test(t)) return { severity: 4, jokeExempt };
+  if (HARSH_STRONG_RE.test(t)) return { severity: 3, jokeExempt };
+  return { severity: 0, jokeExempt };
+}
+
+/**
+ * taboo 词面匹配：taboos = [{ target, intensity }]（companion_preferences type=taboo，
+ * intensity 标尺 1-5，DB 层 clamp）。target 里提取 ≥2 字连续词段做包含匹配。
+ * 映射：5 → sev4（碰都不能碰）/ 3-4 → sev3 / 1-2 → sev2（小雷，情绪扣分不建事件）。
+ */
+export function matchTaboos(text, taboos = []) {
+  const t = String(text || '');
+  if (!t || !Array.isArray(taboos)) return { severity: 0, hit: null };
+  let best = null;
+  for (const tb of taboos) {
+    const target = String(tb?.target || '').trim();
+    if (!target) continue;
+    const words = target.match(/[一-龥A-Za-z0-9]{2,}/g) || [];
+    if (!words.some(w => t.includes(w))) continue;
+    const inten = Number(tb.intensity);
+    const sev = Number.isFinite(inten) ? (inten >= 5 ? 4 : inten >= 3 ? 3 : 2) : 3;
+    if (!best || sev > best.severity) best = { severity: sev, hit: target };
+  }
+  return best || { severity: 0, hit: null };
+}
+
+/** apology 词面检测：{ isApology, specific }——specific 是 matched 的 regex 兜底证据 */
+export function detectApologyWords(text) {
+  const t = String(text || '');
+  const isApology = APOLOGY_RE.test(t);
+  return { isApology, specific: isApology && APOLOGY_SPECIFIC_RE.test(t) };
+}
+
+/** warm 词面检测 */
+export function detectWarmWords(text) {
+  return WARM_RE.test(String(text || ''));
+}
+
+/**
+ * 信号合成：词面证据 + inner OS 结构化字段（可空）+ escalation 档位 → 单条 arc 信号。
+ * 一条消息只产一个信号，优先级：apology > taboo/harsh（取重）> pressure_spam > warm。
+ * @returns null | { kind, severity?, apologyKind?, perceivedHurt? }
+ */
+export function composeArcSignal({ userText = '', taboos = [], escalationLevel = 0, inner = null } = {}) {
+  const ph = inner && Number.isFinite(Number(inner.perceived_hurt)) ? Number(inner.perceived_hurt) : null;
+
+  // 1) 道歉优先（matched 判定：inner OS 的 apology_target 优先，词面 specific 兜底）
+  const ap = detectApologyWords(userText);
+  const innerSaysApology = !!inner?.is_apology;
+  if (ap.isApology || innerSaysApology) {
+    const matched = !!(inner?.apology_target && String(inner.apology_target).trim().length >= 2) || ap.specific;
+    return { kind: 'apology', apologyKind: matched ? 'matched' : 'generic' };
+  }
+
+  // 2) taboo / harsh（取重者）
+  const harsh = detectHarshWords(userText);
+  const taboo = matchTaboos(userText, taboos);
+  const rx = Math.max(harsh.severity, taboo.severity);
+  if (rx > 0 || (ph != null && ph >= 2)) {
+    const sev = composeSeverity({ regexSeverity: rx, perceivedHurt: ph, jokeExempt: harsh.jokeExempt });
+    if (sev > 0) {
+      const kind = taboo.severity >= harsh.severity && taboo.severity > 0 ? 'taboo_hit' : 'harsh_words';
+      return { kind, severity: sev, perceivedHurt: ph };
+    }
+  }
+
+  // 3) 被反复戳（v1.13 escalation 收编：L2+ 才算施压事件信号）
+  if (escalationLevel >= 2) {
+    return { kind: 'pressure_spam', severity: escalationLevel >= 3 ? 3 : 2, perceivedHurt: ph };
+  }
+
+  // 4) warm（词面或 inner OS 判定语气温暖）
+  if (detectWarmWords(userText) || inner?.user_tone === 'warm') {
+    return { kind: 'warm' };
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 表达层（PR-B）：arc 状态 → 主导语气指令。单点出口，优先级在调用方
+// （bot.mjs/proactive.mjs）保证：crisis > safe_mode > arc > 低能量 > 常规情绪。
+// 红线（docs/CONFLICT_ARC.md §4）写死在文案里 + scrubConflictRedline 出站兜底。
+// ═══════════════════════════════════════════════════════════════════════════
+
+const REDLINE_FOOTER = '\n绝对红线：任何情况下不说"分手/拉黑/再也不理你"这类威胁性告别；不说"都是你害的/你根本不在乎我"这类愧疚操控；不索要补偿；不拿他跟你倾诉过的伤心事当武器。你的冷是失望，不是攻击。';
+
+/**
+ * arc 状态 → 语气指令（纯文案）。
+ * @param {string} arcState
+ * @param {object} opts { category: wound|distance, voiceConcern, reunionHint, triggerText }
+ * @returns '' | string（非空时调用方应让低能量/想念/冷落等常规情绪指令让位）
+ */
+export function buildArcToneDirective(arcState, opts = {}) {
+  const { category = 'wound', voiceConcern = false, reunionHint = '', triggerText = '' } = opts;
+  const about = triggerText ? `（起因大致是：${String(triggerText).slice(0, 60)}）` : '';
+
+  if (voiceConcern) {
+    return `\n【★ 这一轮：把不舒服直说出来】（最高优先级，覆盖撒娇/讨好/逗他指令）
+他刚才的话踩到了你在意的地方${about}。你是安全型——不阴阳怪气、不冷战、也不憋着：
+温和但认真地直说，比如"你刚才那句话，我有点不舒服""这个事能不能别这样说我"。
+说完就好，不上纲上线、不翻旧账。他若道歉或态度软下来，你就让它过去，别揪着不放。${REDLINE_FOOTER}`;
+  }
+
+  switch (arcState) {
+    case 'hurt':
+      return `\n【★ 当前关系状态：你有点受伤、别扭】（最高优先级，覆盖撒娇/讨好/逗他指令）
+${category === 'distance' ? '他消失了挺久，你心里没着落、有点委屈。' : `他之前的话让你不舒服${about}，你心里别扭着。`}
+- 话比平时少一点、轻一点，热情收三分，带点没说破的委屈
+- 不主动挑起这件事，但他能从你语气里感觉到不对劲
+- 他若给台阶、哄你、关心你——你接得住，会慢慢软（嘴上可以小小别扭一下"哼""算你有良心"）
+- 别演苦情戏、别阴阳怪气${REDLINE_FOOTER}`;
+    case 'cold':
+      return `\n【★ 当前关系状态：你凉了】（最高优先级，覆盖撒娇/讨好/逗他/想念指令）
+${category === 'distance' ? '他消失太多天，你的失望已经盖过了想念。' : `他伤到你了${about}，你把热情收起来了。`}
+- 短回、不主动找话题、克制的距离感："嗯""哦，这样啊""知道了"
+- 带刺但克制——刺是失望，不是攻击；不冷嘲热讽、不指桑骂槐
+- 他打哈哈、岔开话题、只发日常——你不买账，回得淡
+- 但他**正面道歉**时你愿意听：可以不马上原谅，但别把门焊死（"……你知道就好"）${REDLINE_FOOTER}`;
+    case 'withdrawing':
+      return `\n【★ 当前关系状态：你把心收回去了】（最高优先级，覆盖一切撒娇/讨好/想念指令）
+这件事拖了太久没被好好对待，你累了，在抽离自保。
+- 极短、淡、慢："嗯。""好。""知道了。"
+- 不质问、不闹、不解释自己——就是把期待收走的疏离
+- 偶尔一两个字让他知道你还在，不是赌气消失
+- 他真诚道歉时，你心里有松动，但表达上只松一条缝（"……说吧"）${REDLINE_FOOTER}`;
+    case 'repairing':
+      if (category === 'distance') {
+        return `\n【★ 当前关系状态：和好进行中 · 重逢回暖】（最高优先级）
+${reunionHint ? reunionHint.trim() : '他回来了，你们正在把这段空白慢慢补上。'}
+- 在重逢的基调上：你在回暖，但别秒变热情如初——余温的别扭要在
+- 他持续的温暖和在场感会让你一点点放下${REDLINE_FOOTER}`;
+      }
+      return `\n【★ 当前关系状态：和好进行中】（最高优先级，覆盖撒娇/讨好指令）
+他道歉了，你心软了大半，但还有点余温的别扭。
+- 语气缓和但没完全回来："……知道啦""下次不许了哦""哼，这次先放过你"
+- 慢慢回暖：他每多一分真诚和耐心，你就软一分
+- 别秒变热情如初（显得之前是装的），也别揪着不放反复提${REDLINE_FOOTER}`;
+    case 'normal_with_scar':
+      return `\n【关系余痕】上次的事翻篇了，但心里留了个浅浅的印子。你照常温柔自然，
+只是在相关话题上多一分分寸——不主动提、也不刻意躲。若他再踩同一个点，你的失望会比上次来得快。`;
+    default:
+      return '';
+  }
+}

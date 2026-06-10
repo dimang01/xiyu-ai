@@ -5,7 +5,9 @@
  */
 import {
   composeSeverity, eventCategory, tickArcOnSignal, tickArcOnTime, repairNeed,
+  composeArcSignal, detectHarshWords, detectApologyWords, matchTaboos, buildArcToneDirective,
 } from '../src/relationship_arc.mjs';
+import { parseInnerStruct } from '../src/inner_os.mjs';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { if (cond) { pass++; } else { fail++; console.log('  ✗', name); } };
@@ -278,6 +280,49 @@ ok(repairNeed('cold', 'secure', 'generic') === 6, 'repairNeed: generic +2');
 {
   const r = tim({ safeMode: true, state: 'hurt', stateChangedAt: hAgo(50), openEvent: ev({ created_at: hAgo(50) }), interactionsSinceEvent: 0 });
   ok(r.state !== 'cold' && r.state !== 'withdrawing', 'safe_mode: 时间路径也到不了 cold/withdrawing');
+}
+
+// ═══ PR-B：检测层（regex 兜底 + inner OS 双信号）═══════════════════════════
+ok(detectHarshWords('你给我滚').severity === 4, '检测: 辱骂级 sev4');
+ok(detectHarshWords('你说话不算数，又放我鸽子').severity === 3, '检测: 失信指控 sev3');
+ok(detectHarshWords('滚啦哈哈哈你好讨厌').jokeExempt === true, '检测: 玩笑语境标记');
+ok(detectHarshWords('今天天气真好').severity === 0, '检测: 正常消息零误报');
+ok(detectApologyWords('对不起，我刚才不该那么说你').specific === true, '检测: 具体道歉 → matched 证据');
+ok(detectApologyWords('好啦别生气了嘛').specific === false, '检测: 敷衍道歉 → generic');
+{
+  // intensity 标尺 1-5（与 companion_preferences 的 DB clamp 一致）
+  const r = matchTaboos('你怎么又提你前女友', [{ target: '前女友', intensity: 5 }]);
+  ok(r.severity === 4 && r.hit === '前女友', '检测: 最高强度 taboo(5) 命中 sev4');
+  ok(matchTaboos('随便聊聊', [{ target: '前女友', intensity: 3 }]).severity === 0, '检测: taboo 不误触');
+  ok(matchTaboos('提一下前女友', [{ target: '前女友', intensity: 3 }]).severity === 3, '检测: 中强度 taboo(3) → sev3');
+  ok(matchTaboos('提一下前女友', [{ target: '前女友', intensity: 1 }]).severity === 2, '检测: 小雷(1) → sev2 不建事件');
+}
+{
+  const s = composeArcSignal({ userText: '对不起，我以后再也不催你了' });
+  ok(s?.kind === 'apology' && s.apologyKind === 'matched', '合成: 道歉优先且 matched');
+  const s2 = composeArcSignal({ userText: '随便聊聊天气', inner: { user_tone: 'harsh', perceived_hurt: 3 } });
+  ok(s2?.kind === 'harsh_words' && s2.severity === 2, '合成: LLM 单独信号封顶 sev2');
+  const s3 = composeArcSignal({ userText: '在吗', escalationLevel: 3 });
+  ok(s3?.kind === 'pressure_spam' && s3.severity === 3, '合成: escalation L3 → pressure sev3');
+  const s4 = composeArcSignal({ userText: '多喝水呀，想你了' });
+  ok(s4?.kind === 'warm', '合成: 暖词 → warm');
+  ok(composeArcSignal({ userText: '今天上了节数学课' }) === null, '合成: 中性消息无信号');
+}
+// inner OS 结构化 JSON 解析（容错）
+{
+  const p = parseInnerStruct('他又来催了 有点烦\n{"intent":"催回复","user_tone":"pressure","perceived_hurt":1,"is_apology":false,"apology_target":"","reply_energy":"low"}');
+  ok(p?.user_tone === 'pressure' && p.perceived_hurt === 1, '解析: inner 末行 JSON');
+  ok(parseInnerStruct('只有独白没有结构') === null, '解析: 无 JSON 返回 null 不抛');
+  ok(parseInnerStruct('{"user_tone":"邪门值","perceived_hurt":99}').user_tone === 'neutral', '解析: 非法枚举回退 neutral');
+}
+// ═══ PR-B：表达层 ═══════════════════════════════════════════════════════════
+ok(buildArcToneDirective('normal') === '', '表达: normal 无指令');
+ok(buildArcToneDirective('cold', { category: 'wound' }).includes('正面道歉'), '表达: cold 给道歉留门');
+ok(buildArcToneDirective('repairing', { category: 'wound' }).includes('余温的别扭'), '表达: repairing 不秒和好');
+ok(buildArcToneDirective('repairing', { category: 'distance', reunionHint: '【久别重逢】xx' }).includes('久别重逢'), '表达: distance 修复复用重逢阶梯');
+ok(buildArcToneDirective('normal', { voiceConcern: true }).includes('直说'), '表达: voice_concern 直说指令');
+for (const st of ['hurt', 'cold', 'withdrawing', 'repairing']) {
+  ok(buildArcToneDirective(st, {}).includes('绝对红线'), `表达: ${st} 内嵌红线声明`);
 }
 
 console.log(`conflict_arc_smoke: 通过 ${pass} 失败 ${fail}`);

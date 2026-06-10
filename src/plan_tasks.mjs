@@ -34,6 +34,7 @@ import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 import { openMaturedCapsulesBatch } from './time_capsule.mjs';
 import { runRelationalDiariesBatch } from './relational_diary.mjs';
 import { runEmotionRecalcBatch } from './emotion_state.mjs';
+import { runArcTimeTickBatch } from './relationship_arc_runtime.mjs';
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -102,6 +103,12 @@ async function tick(now = new Date()) {
   await runOnce(parts, `emotion-tick-${parts.hour}-${parts.minute}`,
     parts.minute === 0 || parts.minute === 30,
     () => runEmotionRecalcBatch());
+
+  // v1.21: 冲突弧时间结算搭同一节奏的便车（neglect 升级 / cold 超时 / withdrawing
+  // 硬上限 / scar 淡出都在这结算；消息到来时 bot.mjs 还会即时结算一次，无空窗）
+  await runOnce(parts, `arc-tick-${parts.hour}-${parts.minute}`,
+    parts.minute === 0 || parts.minute === 30,
+    () => runArcTimeTickBatch());
 
   // v1.10.0 sleep tick：每分钟跑（轻量，no LLM）
   try {
