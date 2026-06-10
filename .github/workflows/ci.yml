@@ -26,6 +26,10 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      # photo_aspect_smoke 的转码卡口走真实 ImageMagick convert（与生产同链路）
+      - name: 安装 ImageMagick
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+
       - name: 语法检查 (node --check 全 src + scripts)
         run: find src scripts -name '*.mjs' -exec node --check {} \;
 
