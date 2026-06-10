@@ -424,6 +424,15 @@ function clothingStyleToEnglish(style) {
 //   这句没有"作业"字样 → 退回默认自拍，1 小时前的话题全丢。
 //   修：当前消息有明确方向（自拍/景/活动）时永远优先；当前消息只是泛请求时，查最近几轮
 //   上下文有没有"她正在做的事"（作业/代码/画…），有 → ACTIVITY_POV。
+// v1.21.2 PR-D：按机位路由照片比例（手机前摄默认竖屏——'谁家好人自拍 1:1'修复）。
+// SELFIE/ENV_SELFIE/ACTIVITY_POV/CANDID → 3:4 竖；SCENERY 默认 4:3 横，
+// 窄竖景（塔/巷/瀑布/树）→ 3:4。provider 不支持原生比例时由 sender 文本兜底+落地裁切。
+const TALL_SCENERY_RE = /(塔|高楼|大厦|巷|瀑布|树|竹|寺|楼梯|tower|alley|waterfall|tree|temple)/i;
+export function aspectForShot(shotMode, sceneText = '') {
+  if (shotMode === 'SCENERY') return TALL_SCENERY_RE.test(String(sceneText)) ? '3:4' : '4:3';
+  return '3:4';
+}
+
 export function decideShotMode({ userText, recentText = '', currentScene = '', trigger = '' } = {}) {
   const _ptxt = String(userText || '');
   const _pscene = String(currentScene || '');
@@ -477,7 +486,7 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
     shotMode = 'SCENERY';
   }
 
-  return `请判断是否适合发送一张生活感照片，并只返回 JSON。
+  const prompt = `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
 上下文：
 - current shanghai time: ${String(h).padStart(2, '0')}:${mm}
@@ -557,6 +566,7 @@ caption：
 
 如果不适合发图，返回：
 {"shouldSendPhoto":false,"mode":"text_only","trigger":"${trigger}","photoType":"other","realism":"realistic_daily","imagePrompt":"","caption":"","delayImageMs":0,"delayCaptionMs":0,"reason":"原因"}`;
+  return { prompt, shotMode };
 }
 
 export async function planPhotoMessage({

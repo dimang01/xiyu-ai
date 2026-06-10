@@ -177,4 +177,22 @@ if (inConflict.length) {
   for (const c of inConflict) console.log(`    ${cname(c.id)}  ${c.arc_state}  自 ${fmtT(c.arc_state_changed_at)}`);
 }
 
+// ── 7. 照片比例分布（v1.21.2 PR-D：1:1 错了半月才被肉眼发现，下次自己跳出来）──
+if (hasTable('companion_photo_log')) {
+  const photos = db.prepare(`
+    SELECT shot_mode, aspect, width, height, COUNT(*) AS n FROM companion_photo_log
+    WHERE datetime(created_at) >= datetime(?) GROUP BY shot_mode, width, height ORDER BY n DESC`).all(sinceIso);
+  console.log('\n── 照片比例分布（机位 × 实际尺寸）──');
+  let bad = 0;
+  for (const p of photos) {
+    const ratio = p.width && p.height ? (p.width / p.height).toFixed(3) : '?';
+    const wantPortrait = p.shot_mode !== 'SCENERY';
+    const okMark = !p.width ? '?' : (wantPortrait ? (p.height > p.width ? '✓' : '⚠非竖屏') : '✓');
+    if (okMark.startsWith('⚠')) bad++;
+    console.log(`  ${String(p.shot_mode || '?').padEnd(13)} ${p.width}x${p.height} (${ratio})  ×${p.n}  ${okMark}`);
+  }
+  if (!photos.length) console.log('  （窗口内无照片）');
+  if (bad) console.log(`  ⚠ ${bad} 种尺寸与机位预期不符——查 provider/转码链`);
+}
+
 console.log('\n════ 报表完（纯只读，无任何回写）════');

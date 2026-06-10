@@ -15,6 +15,7 @@ import {
   saveConversationTurn,
   saveMessage,
   shanghaiDateKey,
+  insertPhotoLog,
 } from './db.mjs';
 import { sendMessageItem } from './ilink.mjs';
 import { log } from './logger.mjs';
@@ -136,14 +137,30 @@ async function generateNaturalCaption(companion, { activity, source }) {
   }
 }
 
+// v1.21.2 PR-D：照片比例修复（'谁家好人自拍 1:1'）。复现实测（gemini via 302 chat 模态）：
+// 文本比例声明完全无效（t2i/i2i 都仍出 1:1）；唯一原生有效手段是 i2i 参考图本身的比例
+// （3:4 画布 ref → 输出 864x1184）。故三管齐下：原生 size 参数（zhipu/qwen/doubao/openai
+// 支持）+ i2i 参考贴 3:4 画布（锁脸不锁方）+ 落地转码按目标比例裁切兜底（t2i 唯一可靠手段）。
+const ASPECT_SIZE = { '3:4': '768x1024', '4:3': '1024x768', '1:1': '1024x1024' };
+function normalizeAspect(a) { return ASPECT_SIZE[a] ? a : '3:4'; }
+function aspectPromptHint(aspect) {
+  return aspect === '4:3'
+    ? 'landscape orientation photo, 4:3 aspect ratio, wider than tall'
+    : 'vertical portrait orientation photo, 3:4 aspect ratio, taller than wide, shot on a phone held upright';
+}
+
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
-async function writeConvertedPhoto(url, companionId) {
+async function writeConvertedPhoto(url, companionId, aspect = '3:4') {
   if (!existsSync(PHOTO_DIR)) mkdirSync(PHOTO_DIR, { recursive: true });
   const ts = Date.now();
   const outName = `scene_${companionId}_${ts}.webp`;
   const outPath = path.join(PHOTO_DIR, outName);
   const tmpPath = outPath + '.tmp';
+  // 目标尺寸按机位比例（曾无条件 1157^→crop 1024x1024：provider 出什么比例落地都成 1:1，
+  // photo 功能上线(v1.10.0)起全量方图——本函数是所有照片必经，这里是 1:1 的总根因）
+  const [tw, th] = (ASPECT_SIZE[aspect] || ASPECT_SIZE['3:4']).split('x').map(Number);
+  const cover = Math.ceil(Math.max(tw, th) * 1.13);
 
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -156,9 +173,9 @@ async function writeConvertedPhoto(url, companionId) {
     await new Promise((resolve, reject) => {
       const proc = spawn('convert', [
         tmpPath, '-auto-orient',
-        '-resize', '1157x1157^',
-        '-gravity', 'north',
-        '-crop', '1024x1024+0+0', '+repage',
+        '-resize', `${cover}x${cover}^`,
+        '-gravity', 'north',                       // north：竖裁保住头部
+        '-crop', `${tw}x${th}+0+0`, '+repage',
         '-strip', '-quality', '85', outPath,
       ]);
       proc.on('close', code => code === 0 ? resolve() : reject(new Error('convert code=' + code)));
@@ -168,6 +185,11 @@ async function writeConvertedPhoto(url, companionId) {
   } finally {
     try { unlinkSync(tmpPath); } catch {}
   }
+}
+
+// 测试钩子（photo_aspect_smoke 专用）：转码卡口是比例防回归的核心断言点
+export async function __testWriteConvertedPhoto(url, companionId, aspect) {
+  return writeConvertedPhoto(url, companionId, aspect);
 }
 
 function cooldownState(companion) {
@@ -240,7 +262,7 @@ export function realismTailFor(scene) {
 // 背景甚至全身构图，文字压不住；裁成只剩脸后，i2i 没有背景/身体可抄，场景与构图只能
 // 按文字重建（脸仍锁得住）。参考图是系统生成的近景人像，脸在上-中部，故取居中偏上方形。
 // 可 PHOTO_I2I_FACE_CROP=0 关闭；比例/位置可调。
-export async function cropReferenceToFace(buf) {
+export async function cropReferenceToFace(buf, aspect = '3:4') {
   if (String(process.env.PHOTO_I2I_FACE_CROP ?? '1').toLowerCase() === '0') return buf;
   try {
     const ratio = Number(process.env.PHOTO_I2I_FACE_CROP_RATIO) || 0.62;
@@ -251,8 +273,19 @@ export async function cropReferenceToFace(buf) {
     const side = Math.max(64, Math.round(Math.min(W, H) * Math.min(0.95, Math.max(0.3, ratio))));
     const left = Math.max(0, Math.round((W - side) / 2));
     const top = Math.max(0, Math.round(H * Math.min(0.4, Math.max(0, topOff))));
-    const cropH = Math.min(side, H - top);
-    return await sharp(buf).extract({ left, top, width: Math.min(side, W - left), height: cropH }).png().toBuffer();
+    // v1.21.2: 参考图裁成目标比例窗而非正方形——gemini i2i 输出跟随参考图比例
+    // （实测：方形 ref→1024x1024，3:4 ref→864x1184，文本声明无效）。锁脸不锁方：
+    // 竖窗 = 脸的方形区往下延伸带肩颈（高 = side*4/3），引导竖构图且脸仍在上部锁住。
+    const [aw, ah] = (normalizeAspect(aspect)).split(':').map(Number);
+    const winW = Math.min(side, W - left);
+    const winH = Math.min(Math.round(winW * ah / aw), H - top);
+    const cut = await sharp(buf).extract({ left, top, width: winW, height: winH }).png().toBuffer();
+    // 原图高度不够竖窗时补底边画布（米白，gemini 会按场景重绘，比例信号保留）
+    const wantH = Math.round(winW * ah / aw);
+    if (winH < wantH) {
+      return await sharp(cut).extend({ bottom: wantH - winH, background: { r: 242, g: 238, b: 232 } }).png().toBuffer();
+    }
+    return cut;
   } catch {
     return buf; // 裁剪失败就用原图，不阻断发图
   }
@@ -327,7 +360,10 @@ export async function sendCompanionPhoto({
   force = false,
   generateCaption = false,
   recordTurn = false,
+  aspect = '3:4',           // v1.21.2: planner 按机位路由（aspectForShot）
+  shotMode = '',            // 落库/digest 比例分布用
 } = {}) {
+  aspect = normalizeAspect(aspect);
   if (!envFlag('PHOTO_SEND_ENABLED', true)) {
     return { ok: false, code: 'disabled', error: '照片发送未启用' };
   }
@@ -391,7 +427,7 @@ export async function sendCompanionPhoto({
     if (!isSceneryScene(scenePrompt) && visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
       try {
         const rawRef = await readFile(visual.referenceImagePath);
-        const refBuf = await cropReferenceToFace(rawRef); // 裁脸：去掉背景/身体，逼场景按文字
+        const refBuf = await cropReferenceToFace(rawRef, aspect); // 裁成目标比例窗：锁脸不锁方（输出跟随 ref 比例）
         const mime = refBuf === rawRef ? refMimeFromPath(visual.referenceImagePath) : 'image/png';
         referenceImage = `data:${mime};base64,${refBuf.toString('base64')}`;
         log('debug', `[Photo] i2i 参考图已载入 companion=${companion.id} raw=${rawRef.length} cropped=${refBuf.length}`);
@@ -399,7 +435,8 @@ export async function sendCompanionPhoto({
         log('warn', `[Photo] 读取参考图失败 companion=${companion.id}: ${e.message}`);
       }
     }
-    generated = { url: await generateImage(finalPrompt, { size: '1024x1024', referenceImage }), prompt: finalPrompt };
+    const sizedPrompt = `${finalPrompt}, ${aspectPromptHint(aspect)}`;
+    generated = { url: await generateImage(sizedPrompt, { size: ASPECT_SIZE[aspect], referenceImage }), prompt: sizedPrompt };
   } catch (e) {
     log('warn', `[Photo] 生成照片失败 companion=${companion.id}: ${e.message}`);
     return { ok: false, code: 'generate_failed', error: e.message, caption: finalCaption, activity: finalActivity };
@@ -407,7 +444,12 @@ export async function sendCompanionPhoto({
 
   let converted;
   try {
-    converted = await writeConvertedPhoto(generated.url, companion.id);
+    converted = await writeConvertedPhoto(generated.url, companion.id, aspect);
+    // v1.21.2: 尺寸落库（比例防回归数据源；arc-digest 出分布）
+    try {
+      const meta = await sharp(converted.outPath).metadata();
+      insertPhotoLog(companion.id, { file: converted.outName, shotMode, aspect, width: meta.width, height: meta.height });
+    } catch { /* 流水失败不阻塞发图 */ }
     try { saveGeneratedPhoto(companion.id, converted.outPath); } catch (e) {
       log('warn', `[Photo] save generated photo skipped companion=${companion.id}: ${e.message}`);
     }
