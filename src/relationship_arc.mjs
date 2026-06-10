@@ -14,6 +14,8 @@
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
+import { arcLog } from './arc_log_sink.mjs';
+
 export const ARC_STATES = ['normal', 'hurt', 'cold', 'withdrawing', 'repairing', 'normal_with_scar'];
 export const ARC_EVENT_TYPES = ['taboo_hit', 'harsh_words', 'neglect', 'pressure_spam'];
 export const ARC_REPAIR_STATUS = ['open', 'repairing', 'resolved', 'stale'];
@@ -528,13 +530,21 @@ const REDLINE_FOOTER = '\n绝对红线：任何情况下不说"分手/拉黑/再
 const CRISIS_OVERRIDE_DIRECTIVE = `\n【★ 最高优先级：先放下别扭】他现在状态很不好（出现了情绪危机信号）。你们之间的别扭这一刻全部放下——你只是担心他、想接住他的人。语气温柔、在场、专注他本身，绝不冷淡、绝不提任何矛盾。`;
 
 /**
- * 危机覆盖（纯函数，可单测）：crisis ≥ medium 且 arc 表达激活 → 冷淡指令整体替换。
+ * 危机覆盖（决策卡口）：crisis ≥ medium 且 arc 表达激活 → 冷淡指令整体替换。
  * crisis=high 时上游会直接走 buildCrisisReply 完全接管（这里管的是 medium 及
  * high 的 regen 兜底路径），状态机状态不动（危机过后别扭可以回来）。
+ *
+ * v1.21.1 观察埋点在此（单一卡口，微信/playground 调用方零改动）：经 arc_log_sink
+ * 注入间接写库——本模块"零 IO"约束不破（未注册 sink 时仍是纯函数），fail-open。
+ * companionId 由 runtime 放进 arcCtx 透传（调用方不感知）。
  */
 export function applyCrisisOverride(arcCtx, crisisLevel) {
   if (!arcCtx || !arcCtx.active) return arcCtx;
   if (crisisLevel !== 'medium' && crisisLevel !== 'high') return arcCtx;
+  arcLog(arcCtx.companionId, {
+    signalKind: 'crisis_takeover', stateBefore: arcCtx.arcState, stateAfter: arcCtx.arcState,
+    reason: crisisLevel === 'high' ? 'crisis_full_takeover' : 'crisis_expression_override',
+  });
   return { ...arcCtx, directive: CRISIS_OVERRIDE_DIRECTIVE, crisisOverride: true };
 }
 

@@ -20,7 +20,12 @@ import {
   listPreferences, saveMemory, upsertEmotionState, insertArcSignalLog,
 } from './db.mjs';
 import { getNeglectStage, buildReunionHint, getEmotionStateWithDefaults } from './emotion_state.mjs';
+import { setArcLogSink } from './arc_log_sink.mjs';
 import { log } from './logger.mjs';
+
+// 观察埋点 sink 注册（v1.21.1）：moderation/relationship_arc 源头卡口经此间接写库。
+// runtime 是所有生产链路（bot/playground/plan_tasks）的必经依赖，加载即生效。
+setArcLogSink((companionId, row) => insertArcSignalLog(companionId, row));
 
 const _hoursSince = (s, now = new Date()) => {
   const t = new Date(String(s || '').replace(' ', 'T')).getTime();
@@ -164,8 +169,12 @@ export function runArcSignalTick(companion, { userText = '', escalationLevel = 0
       });
       // debug 面板信号流水：有信号 / 有转移 / 有事件操作才记
       if (result.changed || result.eventOp) {
+        // 道歉信号细分 matched/generic（arc-digest 的道歉判定流水靠它）
+        const kindLogged = signal.kind === 'apology'
+          ? `apology_${signal.apologyKind === 'generic' ? 'generic' : 'matched'}`
+          : signal.kind;
         insertArcSignalLog(companion.id, {
-          signalKind: signal.kind, severity: signal.severity ?? null,
+          signalKind: kindLogged, severity: signal.severity ?? null,
           stateBefore: arc_state, stateAfter: result.state, reason: result.reason,
           innerTone: inner?.user_tone || null, perceivedHurt: inner?.perceived_hurt ?? null,
           userTextBrief: userText,
@@ -189,7 +198,8 @@ export function runArcSignalTick(companion, { userText = '', escalationLevel = 0
       category, voiceConcern, reunionHint,
       triggerText: openEvent?.trigger_text || '',
     });
-    return { arcState: finalState, active: !!directive, directive, voiceConcern, category };
+    // companionId 随 ctx 透传：applyCrisisOverride 的埋点卡口靠它定位，调用方零感知
+    return { arcState: finalState, active: !!directive, directive, voiceConcern, category, companionId: companion.id };
   } catch (e) {
     log('warn', `[Arc] signal tick 失败 companion=${companion?.id}: ${e.message}`);
     return fallback;

@@ -890,8 +890,9 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // ── 出站审核：AI 回复过黑名单 + 确定性防人设泄露 + 冲突红线 ─────────────
     reply = safeOutboundReply(reply);
     reply = scrubPersonaLeak(reply, companion.name);
-    // v1.21 红线 #1/#2：冲突态绝不说威胁性告别/愧疚操控/索要补偿（确定性出站扫描）
-    reply = scrubConflictRedline(reply, arcCtx.arcState);
+    // v1.21 红线 #1/#2：冲突态绝不说威胁性告别/愧疚操控/索要补偿（确定性出站扫描；
+    // 命中埋点在函数内部单一卡口，fail-open）
+    reply = scrubConflictRedline(reply, arcCtx.arcState, companion.id);
 
     // ── Persona Guard ─────────────────────────────────────────────────────────
     try {

@@ -11,6 +11,7 @@
  */
 
 import { log } from './logger.mjs';
+import { arcLog } from './arc_log_sink.mjs';
 
 // 极简黑名单（按场景增删）。可以从 .moderation-blocklist.txt 外挂。
 const HARD_BLOCK = [
@@ -107,7 +108,7 @@ const REDLINE_FALLBACK = {
   repairing: '……这个先不说了吧。',
 };
 
-export function scrubConflictRedline(reply, arcState = 'normal') {
+export function scrubConflictRedline(reply, arcState = 'normal', companionId = null) {
   if (typeof reply !== 'string' || !reply) return reply;
   const inConflict = arcState === 'hurt' || arcState === 'cold'
     || arcState === 'withdrawing' || arcState === 'repairing';
@@ -122,6 +123,11 @@ export function scrubConflictRedline(reply, arcState = 'normal') {
   }
   if (!scrubbed) return reply;
   log('warn', `[Moderation] conflict redline scrubbed ${scrubbed} seg(s) state=${arcState}`);
+  // 观察埋点（单一卡口：微信/playground 任何调用方都被覆盖；fail-open，绝不阻断回复）
+  arcLog(companionId, {
+    signalKind: 'redline_scrub', stateBefore: arcState, stateAfter: arcState,
+    reason: 'outbound_redline_hit', severity: scrubbed,
+  });
   if (!kept.length) return REDLINE_FALLBACK[arcState] || REDLINE_FALLBACK.hurt;
   return kept.join('||');
 }
