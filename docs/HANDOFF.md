@@ -1,4 +1,4 @@
-# 新对话交接提示词（2026-06-10 刷新，对应 v1.20.1）
+# 新对话交接提示词（2026-06-10 刷新，对应 v1.21.0）
 
 > 把下面整段复制给新对话作为第一条消息。它包含让新执行者立刻能干活所需的
 > 全部上下文，不依赖任何前面的对话。
@@ -15,8 +15,8 @@
 - **生产克隆：`/opt/xiyu-ai-new`**（main HEAD = 生产 HEAD，发版后 `git pull` + 重启）
 - GitHub：`https://github.com/dimang01/xiyu-ai`
 - 默认分支：`main`
-- **当前版本：v1.20.1**（package.json 与 git tag 已同步，发版时一起升）
-- 规模：58 个 `src/**.mjs` · 16 个 `public/app/*.html` · 64 个 `scripts/` · 100+ releases
+- **当前版本：v1.21.0**（package.json 与 git tag 已同步，发版时一起升）
+- 规模：55 个 `src/**.mjs` · 17 个 `public/app/*.html` · 77 个 `scripts/` · 100+ releases
 
 功能全景：README「它能做什么」最新最准；`docs/FEATURES.txt` 详述的是
 v1.4.1 基线 + 增量索引；逐版本细节看 GitHub Releases。
@@ -95,6 +95,7 @@ v1.4.1 基线 + 增量索引；逐版本细节看 GitHub Releases。
 | `docs/ROADMAP.md` | P0→P2 完成情况 + 2026-06 真人感路线回顾 |
 | `src/companion.mjs::buildSystemPrompt()` | 18 节人设 prompt 拼接 |
 | `src/emotion_state.mjs` | 11 维情绪状态机 + presence |
+| `src/relationship_arc.mjs` + `relationship_arc_runtime.mjs` | v1.21 冲突与和好弧（设计：docs/CONFLICT_ARC.md；debug：/app/emotion-debug.html） |
 | `src/proactive.mjs` + `proactive_engine.mjs` | 主动消息（读空气/挽留/纪念日/场景照） |
 | `src/bot.mjs` | 微信入站主处理器 + 连发合并 |
 | `src/inner_os.mjs` | 内心 OS double-pass |
@@ -136,9 +137,10 @@ node scripts/safety_smoke.mjs
 
 ## 当前高价值候选（2026-06-10 评估，按优先级）
 
-1. **#2「她今天就是不想聊」低能量模式做透** + **#4b 关系低谷→冷→和好弧**
-   （产品哲学里明确"故意压着、要单独很小心做透"的两条；现在关系曲线只会单调
-   上升。容易做坏成"已读不回惹人烦"，做之前先设计好挽回路径）
+1. ~~#4b 关系低谷→冷→和好弧~~（v1.21.0 已落地：6 状态事件状态机 + 依恋调制 +
+   红线确定性护栏 + emotion-debug 面板，docs/CONFLICT_ARC.md）；
+   **#2「她今天就是不想聊」低能量模式做透**剩余（已并入 v1.21 统一语气出口，
+   触发面与表达扩展待做）
 2. **分享卡片**：日记/纪念日/聊天瞬间一键生成去隐私化分享图（竖版）。抖音是
    唯一验证获客渠道，让用户的"晒"变成获客飞轮
 3. **留存观察**：scripts/retention_dashboard.mjs 看第 7 天还在的用户前 3 天
