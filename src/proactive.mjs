@@ -681,7 +681,10 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   // v1.20: 安全模式不拼想念/撒娇类情绪话术；v1.21: arc 激活时想念/冷落档让位
   const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule, arcActive: _arcExpr.active });
   const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
-  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}${arcHint}
+  // ⚠ 必须是 let：下方 v1.20"事前反复读注入"会 systemPrompt += ——曾因 const 让活跃
+  // 用户的 normal 主动消息全程静默炸掉（TypeError 被 tick catch 吃成 error 日志，进程
+  // 不崩、冒烟不红，断供半天才被发现）。防回归断言在 proactive_dedup_smoke。
+  let systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}${arcHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
