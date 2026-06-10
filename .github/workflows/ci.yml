@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-tags: true   # check:release 的 tag↔package.json 对账需要 tags
 
       - uses: actions/setup-node@v4
         with:
@@ -32,6 +34,9 @@ jobs:
 
       - name: 字段漂移检查
         run: npm run check:field-drift
+
+      - name: 发布一致性（版本号↔tag↔README↔ROADMAP↔双语行数）
+        run: npm run check:release
 
       - name: neglect / 依恋 / reunion smoke
         run: node scripts/neglect_stage_smoke.mjs
