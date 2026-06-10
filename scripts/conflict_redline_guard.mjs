@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { scrubConflictRedline, detectCrisisLevel, buildCrisisReply, detectSafetyRisk } from '../src/moderation.mjs';
 import { applyCrisisOverride, composeArcSignal, buildArcToneDirective, userRaisedMemoryTopic } from '../src/relationship_arc.mjs';
+import { setArcLogSink } from '../src/arc_log_sink.mjs';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { if (cond) { pass++; } else { fail++; console.log('  ✗', name); } };
@@ -78,6 +79,32 @@ ok(userRaisedMemoryTopic('公司又在裁员了', '用户上个月被裁员了�
 // 哀伤话题 ≠ 危机信号（"想死你了"教训的反向版：丧亲表达不该误触危机干预）
 ok(detectSafetyRisk('我又梦到我爸了').level === 'none', '#3 哀伤: "梦到我爸"不触发危机');
 ok(detectSafetyRisk('我爸去世一年了，还是很难过').level === 'none', '#3 哀伤: 丧亲倾诉不触发危机（难过≠危机阈值）');
+
+// ── ②.6 观察埋点（v1.21.1 PR-B）：单一卡口 + fail-open 铁律 ──────────────
+{
+  // 正向：命中时 sink 收到记录（redline_scrub / crisis_takeover 枚举区分）
+  const seen = [];
+  setArcLogSink((cid, row) => seen.push({ cid, ...row }));
+  scrubConflictRedline('我们分手吧', 'cold', 42);
+  ok(seen.some(r => r.cid === 42 && r.signalKind === 'redline_scrub'), '埋点: scrub 命中入流水（含 companionId）');
+  applyCrisisOverride({ arcState: 'cold', active: true, directive: 'x', companionId: 42 }, 'medium');
+  ok(seen.some(r => r.signalKind === 'crisis_takeover' && r.reason === 'crisis_expression_override'), '埋点: 危机接管入流水（medium 标注表达替换）');
+  applyCrisisOverride({ arcState: 'cold', active: true, directive: 'x', companionId: 42 }, 'high');
+  ok(seen.some(r => r.reason === 'crisis_full_takeover'), '埋点: high 标注完全接管');
+  const before = seen.length;
+  scrubConflictRedline('正常的一句话', 'cold', 42);
+  applyCrisisOverride({ arcState: 'cold', active: true, directive: 'x', companionId: 42 }, 'none');
+  ok(seen.length === before, '埋点: 未命中/无危机不记流水');
+
+  // fail-open 铁律：日志函数抛错，回复链路必须照常工作
+  setArcLogSink(() => { throw new Error('boom'); });
+  const r1 = scrubConflictRedline('我们分手吧||哼', 'cold', 42);
+  ok(!r1.includes('分手') && r1.includes('哼'), 'fail-open: sink 抛错，scrub 照常清洗返回');
+  const r2 = applyCrisisOverride({ arcState: 'cold', active: true, directive: '冷', companionId: 42 }, 'medium');
+  ok(r2.crisisOverride === true && r2.directive.includes('放下别扭'), 'fail-open: sink 抛错，危机覆盖照常生效');
+
+  setArcLogSink(null);   // 恢复，后续断言不受影响
+}
 
 // ── ③ 源码级防回归（管线顺序是红线的一部分）─────────────────────────────
 const _dir = dirname(fileURLToPath(import.meta.url));
