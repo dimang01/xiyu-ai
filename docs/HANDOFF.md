@@ -1,4 +1,4 @@
-# 新对话交接提示词（2026-06-10 刷新，对应 v1.21.0）
+# 新对话交接提示词（2026-06-10 刷新，对应 v1.21.1）
 
 > 把下面整段复制给新对话作为第一条消息。它包含让新执行者立刻能干活所需的
 > 全部上下文，不依赖任何前面的对话。
@@ -15,7 +15,7 @@
 - **生产克隆：`/opt/xiyu-ai-new`**（main HEAD = 生产 HEAD，发版后 `git pull` + 重启）
 - GitHub：`https://github.com/dimang01/xiyu-ai`
 - 默认分支：`main`
-- **当前版本：v1.21.0**（package.json 与 git tag 已同步，发版时一起升）
+- **当前版本：v1.21.1**（package.json 与 git tag 已同步，发版时一起升）
 - 规模：55 个 `src/**.mjs` · 17 个 `public/app/*.html` · 77 个 `scripts/` · 100+ releases
 
 功能全景：README「它能做什么」最新最准；`docs/FEATURES.txt` 详述的是
@@ -124,6 +124,7 @@ kill %1; rm -f /tmp/x.db*
 node scripts/p0_regression_check.mjs   # HTTP 部分失败=本地没起服务，可忽略
 node scripts/emotion_stress_test.mjs
 node scripts/safety_smoke.mjs
+npm run arc:digest        # 冲突弧观察周日报（只读；生产加 DB_PATH=/opt/xiyu-ai-new/data/bot.db）
 ```
 
 ## 已知不能做（不要尝试）
