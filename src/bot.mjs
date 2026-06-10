@@ -42,7 +42,7 @@ import { detectPhotoIntent, detectPhotoIntentSmart, detectPhotoPromise, hasUnsaf
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
-import { extractOpenLoops, detectAndResolveOpenLoops } from './open_loops.mjs';
+import { extractOpenLoops, detectAndResolveOpenLoops, extractCompanionPromises } from './open_loops.mjs';
 import { generateInnerMonologue, buildInnerOsHint } from './inner_os.mjs';
 import { maybeSleepBlock } from './sleep.mjs';
 
@@ -1105,6 +1105,12 @@ async function postProcess(companion, userMsg, botReply) {
   if (companion.memory_enabled) {
     extractOpenLoops(companion.id, userMsg, botReply).catch(err =>
       log('warn', `[Bot] extract loop: ${err.message}`)
+    );
+    // v1.20: 她的承诺也入账（"明天提醒你带伞"→ 到期 proactive 兑现）。
+    // photo promise (v1.19.5) 是同步出口确定性入队；这条链路慢一拍没关系——
+    // 兑现本来就在未来，gate 正则在函数内部，多数回复 0 LLM 调用。
+    extractCompanionPromises(companion.id, userMsg, botReply).catch(err =>
+      log('warn', `[Bot] extract promise: ${err.message}`)
     );
   }
 }

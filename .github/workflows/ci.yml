@@ -48,6 +48,9 @@ jobs:
       - name: 照片链路 issue#237 三连修复回归
         run: node scripts/photo_fix237_smoke.mjs
 
+      - name: 她的承诺闭环 smoke（gate + 防滥用兜底）
+        run: node scripts/companion_promise_smoke.mjs
+
       - name: morning 重复早安修复回归
         run: node scripts/morning_dedup_smoke.mjs
 

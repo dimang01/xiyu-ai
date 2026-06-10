@@ -60,6 +60,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 | **真人发微信** | ≤15 字一条、多条 \|\| 连发、剥离 AI 味；Persona Guard 回复后一致性校验 |
 | **连发不打断 (v1.10.53)** ⭐⭐ | 你一次连发 2-3 条消息/图片，她不再每条回一遍——等你停手（默认 10s 安静窗口，可调）把这一串整合成「一轮」只回一次，像真人那样"看完再回"。文本 + 图片 + 语音都进同一轮合并 |
 | **她记得未完成的事 (v1.8.0)** ⭐⭐ | 用户说"明天去面试" → LLM 抽取存 `companion_open_loops` 表 → 第二天主动问"欸 \|\| 你今天面试完没"。`due_at` + `emotional_weight` + `expected_followup`。用户说"黄了"自动 resolve，7+ 天没下文自动 stale。这是真人陪伴最强信任来源之一 |
+| **她说到做到** ⭐⭐ | 反向闭环：**她自己**说的"明天提醒你带伞""周末给你讲那个故事"以前是顺着人设的空话——现在出口抽取她的明确承诺（`owner='companion'`）入同一张表，到期主动消息升格 `promise_keep` 兑现：提醒类到点送达（过窗 36h 自动放弃，马后炮提醒比不提更糟），陪伴类主动提起把事做了。只认"我答应/提醒你/说好了"这类明确承诺，"改天聊"不算；兑现占用本来要发的主动名额 + 日上限 2 条，不新增消息量 |
 | **Inner OS 内心独白 (v1.8.0)** ⭐⭐ | Double-pass reply：每次先生成"内心 OS"（不发送）→ 注入到 outer prompt → 基于内心写对外回复。内心想"他又来了"嘴上说"嗯"，内心想"挺心动"嘴上端着——内心和嘴上之间的**落差**是真人感的核心。`INNER_OS_ENABLED=false` 可关，短消息 < 8 字自动跳过 |
 | **因果驱动的主动消息 (v1.8.0)** | proactive 不再只是"今天怎么样"。当 `companion_open_loops` 有到期事 → kind 升级为 `recall`，注入 `hidden_reason`（"用户昨天说要面试"），prompt 让她"对了 \|\| 你今天 XX 咋样"；`followed_up_at` 防 6h 内重复打扰 |
 | **结构化偏好账本 (v1.8.0)** | `companion_preferences` 表：`type` (like/dislike/taboo/neutral) × `intensity` 1-5 × `reason` × `source` (system/user_observed/generated/legacy/user)。prompt 按强度修饰"极猫""很爹味""有点狗血剧"。3 个 REST 端点。启动自动 backfill 老 `hobbies/dislikes` 到本表 |

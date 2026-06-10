@@ -12,6 +12,7 @@ import {
   recordProactiveSentTimestamp, getProactiveLastSent, markWindowLastCallSent, bumpProactiveUnanswered,
   getCompanionPreferencesForPrompt,
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
+  listDueCompanionPromises, countTodayKeptPromises, resolveOpenLoop,  // v1.20 她的承诺兑现
   getRecentSafetyRisk,                        // v1.9.0 #1
   listShaping,                                // 共建留痕（教过她的注入主动消息）
 } from './db.mjs';
@@ -106,6 +107,11 @@ const _proactiveInFlight = new Set();
 // v1.5.2 B1 修：全局发送间隔（秒）。重启后会读 companions.last_proactive_sent_at 兜底。
 // 比 schedule 内的 MIN_GAP_MINUTES 更硬性 — schedule 是规划，这个是闸门。
 const PROACTIVE_HARD_GAP_SECONDS = 25 * 60;  // 25 分钟（比 MIN_GAP_MINUTES=30 略松，避免误杀 reminder/confession）
+
+// v1.20: 每日"兑现承诺"升格上限。兑现走 normal 时段消息升格（同 recall），
+// 不新增发送总量——真人感是减法，说到做到 ≠ 多发消息。这只是防她某天攒了
+// 一堆承诺连环兑现刷屏的保险丝。
+const PROMISE_KEEP_DAILY_MAX = Math.max(1, Number(process.env.PROACTIVE_PROMISE_DAILY_MAX || 2));
 
 // v1.16.x:「窗口将关·临门一脚」—— 微信主动推送 ~24h 会话窗口将关前（idle 21-23.5h）发一次
 // 轻量搭话，这是她还能主动发消息的最后机会（用户回应→token 刷新→窗口续命）。每个离开周期一次。
@@ -664,6 +670,23 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     log('info', `[Proactive] ★ 触发 AI 主动告白(深夜) companion=${companion.id} affection=${aff} min=${_nowMin}`);
   }
 
+  // v1.20: 她的承诺到期 → 升格 'promise_keep' 主动兑现，优先于 user recall——
+  // 没追问他的事是错过，答应了他的事没做是失信，后者更伤（且 remind 有硬时效）。
+  // 升格制 = 占用本来就要发的 normal 名额，天然受硬间隔/读空气/夜间静默管控。
+  let promiseLoop = null;
+  if (effectiveKind === 'normal') {
+    try {
+      const duePromises = listDueCompanionPromises(companion.id);
+      if (duePromises.length > 0 && countTodayKeptPromises(companion.id) < PROMISE_KEEP_DAILY_MAX) {
+        promiseLoop = duePromises[0];
+        effectiveKind = 'promise_keep';
+        log('info', `[Proactive] ★ 触发兑现承诺 companion=${companion.id} kind=${promiseLoop.promise_kind || 'do'} due=${promiseLoop.due_at} "${String(promiseLoop.title).slice(0, 30)}"`);
+      }
+    } catch (e) {
+      log('warn', `[Proactive] promise 检查失败: ${e.message}`);
+    }
+  }
+
   // v1.8.0 #5: proactive hidden_reason — 把 due open loops 升级为 'recall' kind
   // 真人陪伴最强信任来源：她记得你说过的事，到期主动来问
   let recallLoop = null;
@@ -718,6 +741,20 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     ? '你要主动给他发今天最后一条晚安消息。自然、温柔，适合临睡前的语气，不要报时。结合你们最近聊过的事，体现你的人设和心情。说完晚安你就要去睡了。'
     : effectiveKind === 'morning'
     ? `你要主动给他发今天第一条早安消息。自然、带刚醒的迷糊感，1-2 段短消息（用 || 分隔），不要报时也不要像在播报。${missedHint}`
+    : effectiveKind === 'promise_keep'
+    ? `【★ 兑现承诺 — 你之前答应过他的事，到时候了】
+你之前答应过他：「${String(promiseLoop.title).replace(/^她答应/, '')}」${promiseLoop.due_at ? `（约的是 ${promiseLoop.due_at}）` : ''}。
+${promiseLoop.expected_followup ? `现在该做的：${promiseLoop.expected_followup}。\n` : ''}${promiseLoop.promise_kind === 'remind'
+  ? `你现在主动发消息，把这个提醒送到：
+- 像随手想起来一样自然："欸对了""差点忘了跟你说"——**不要说"我答应过你所以来提醒你"**（把心里的记账说出口很怪）
+- 提醒内容要具体（他要带的/要做的/要交的），一两句就够
+- 短、轻、像顺口的关心，不邀功`
+  : `你现在主动提起这件事，把它兑现：
+- 自然地把话题带起来："还记得我说要给你讲的那个吗""来，现在跟你说"
+- 要有实际内容——答应讲故事就真的开讲，答应陪他就真的来找他，别只说"我来啦"这种空话
+- 如果你们最近已经聊过这件事 / 你已经做过了，就自然接着聊，别装作第一次提起`}
+- 用 || 分段，1-3 段，每段短
+- 说到做到是你们之间的信任，但"我守信用/我说话算话"这种话别挂嘴上，做就是了`
     : effectiveKind === 'recall'
     ? `【★ 主动 recall — 她记得他说过的事】
 他之前提过一件事：「${recallLoop.title}」${recallLoop.due_at ? `（${recallLoop.due_at}）` : ''}。
@@ -877,6 +914,7 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     : effectiveKind === 'confession' ? '主动告白'
     : effectiveKind === 'reminder' ? '纪念日祝福'
     : effectiveKind === 'recall' ? 'recall 关心'
+    : effectiveKind === 'promise_keep' ? '兑现承诺'
     : effectiveKind === 'lastcall' ? '轻声问候'
     : '主动消息';
   saveConversationTurn(companion.id, 'assistant', reply, turnTopic);
@@ -884,6 +922,12 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
   // v1.8.0 #5: recall 发送成功 → mark followed_up_at（防 6h 内重复打扰）
   if (effectiveKind === 'recall' && recallLoop?.id) {
     try { markOpenLoopFollowedUp(recallLoop.id); } catch (e) { log('warn', `[Proactive] mark followed_up failed: ${e.message}`); }
+  }
+
+  // v1.20: 承诺兑现送达 → 直接 resolve（一锤子，防同一承诺反复提）。
+  // 发送失败走不到这（上面 sentAnySegment=false 已 return），下个 tick 自然重试。
+  if (effectiveKind === 'promise_keep' && promiseLoop?.id) {
+    try { resolveOpenLoop(promiseLoop.id, '已主动兑现'); } catch (e) { log('warn', `[Proactive] promise resolve failed: ${e.message}`); }
   }
 
   // ── 主动告白后处理：标记 + 升恋人。节奏闸门已在触发处校验(好感≥55+≥14天)，
