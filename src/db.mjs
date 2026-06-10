@@ -64,6 +64,7 @@ export function getDb() {
     migrateCompanionShaping();  // 共建留痕（教她说话/称呼/雷区/约定/专属梗）
     migrateOpenLoops();    // v1.8.0 #4
     migrateSafetyEvents(); // v1.9.0 #1 安全事件记录（高危后暂停普通主动消息）
+    migrateRelationshipArc(); // v1.21.0 冲突与和好弧（关系事件状态机）
   }
   return db;
 }
@@ -152,6 +153,149 @@ export function getRecentSafetyRisk(companionId, { highWindowMs = 86_400_000, me
   } catch {
     return { level: 'none', recentAt: null, signals: [] };
   }
+}
+
+// ─── v1.21.0: 冲突与和好弧（关系事件状态机）────────────────────────────────
+// 设计：docs/CONFLICT_ARC.md。转移逻辑在 src/relationship_arc.mjs（纯函数），
+// 这里只有数据层。companions.arc_state 是"她对你冷"的唯一事实来源：
+// **故意不进 ALLOWED_FIELDS**（通用 PATCH 一拨就"和好"= 绕过状态机伪造修复，
+// 学 safe_mode 先例），只能经 setArcState 由状态机写入。
+function migrateRelationshipArc() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_relationship_events (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id  INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      type          TEXT    NOT NULL CHECK(type IN ('taboo_hit','harsh_words','neglect','pressure_spam')),
+      severity      INTEGER NOT NULL DEFAULT 1,
+      trigger_text  TEXT,                 -- 过 privacy_filter 后截断 200 字
+      state_before  TEXT    NOT NULL,
+      state_after   TEXT    NOT NULL,
+      repair_status TEXT    NOT NULL DEFAULT 'open' CHECK(repair_status IN ('open','repairing','resolved','stale')),
+      repair_warm   INTEGER NOT NULL DEFAULT 0,    -- 修复进度（warm 计数）
+      repair_from   TEXT,                 -- 进入 repairing 时的来源状态（决定所需 warm 数）
+      apology_kind  TEXT,                 -- matched | generic
+      reopened      INTEGER NOT NULL DEFAULT 0,    -- 余怒标记：修复期再犯过
+      severity_updated_at TEXT,           -- 单事件 severity 升级每日 1 次的闸
+      created_at    TEXT    NOT NULL,
+      resolved_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_rel_events_companion
+      ON companion_relationship_events(companion_id, repair_status, created_at DESC);
+  `);
+  addColIfMissing('companions', 'arc_state',            "TEXT DEFAULT 'normal'");
+  addColIfMissing('companions', 'arc_state_changed_at', 'TEXT');
+}
+
+/** 读当前弧状态（兜底 normal） */
+export function getArcState(companionId) {
+  const row = getDb().prepare('SELECT arc_state, arc_state_changed_at FROM companions WHERE id = ?').get(companionId);
+  return {
+    arc_state: row?.arc_state || 'normal',
+    arc_state_changed_at: row?.arc_state_changed_at || null,
+  };
+}
+
+/** 弧状态唯一写入口（状态机独占；不要从 PATCH/导入路径调） */
+export function setArcState(companionId, state, nowIso = new Date().toISOString()) {
+  getDb().prepare('UPDATE companions SET arc_state = ?, arc_state_changed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(String(state), nowIso, companionId);
+}
+
+/** 当前活跃事件（open / repairing），全局最多一个（防刷靠它去重） */
+export function getOpenRelationshipEvent(companionId) {
+  return getDb().prepare(`
+    SELECT * FROM companion_relationship_events
+    WHERE companion_id = ? AND repair_status IN ('open','repairing')
+    ORDER BY created_at DESC LIMIT 1
+  `).get(companionId) || null;
+}
+
+/** 今日新建事件数（防刷：每日上限） */
+export function countTodayRelationshipEvents(companionId, now = new Date()) {
+  const dayStart = now.toISOString().slice(0, 10);
+  const r = getDb().prepare(`
+    SELECT COUNT(*) AS n FROM companion_relationship_events
+    WHERE companion_id = ? AND substr(created_at, 1, 10) = ?
+  `).get(companionId, dayStart);
+  return r?.n || 0;
+}
+
+/** 最近一条归档事件的 type（scar 同类再犯加重："我说过的吧"） */
+export function getLastArchivedEventType(companionId) {
+  const r = getDb().prepare(`
+    SELECT type FROM companion_relationship_events
+    WHERE companion_id = ? AND repair_status IN ('resolved','stale')
+    ORDER BY COALESCE(resolved_at, created_at) DESC LIMIT 1
+  `).get(companionId);
+  return r?.type || null;
+}
+
+/** debug 面板 / 沙箱验收用：事件流水 */
+export function listRelationshipEvents(companionId, limit = 50) {
+  return getDb().prepare(`
+    SELECT * FROM companion_relationship_events
+    WHERE companion_id = ? ORDER BY created_at DESC LIMIT ?
+  `).all(companionId, Math.max(1, Math.min(200, limit | 0)));
+}
+
+const ARC_EVENT_UPDATABLE = new Set([
+  'severity', 'severity_updated_at', 'repair_status', 'repair_warm',
+  'repair_from', 'apology_kind', 'reopened', 'resolved_at', 'state_after',
+]);
+
+/** 事件 partial update（白名单字段） */
+export function updateRelationshipEvent(eventId, fields = {}) {
+  const cols = [], vals = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (!ARC_EVENT_UPDATABLE.has(k)) continue;
+    cols.push(`${k} = ?`); vals.push(v);
+  }
+  if (!cols.length) return;
+  vals.push(eventId);
+  getDb().prepare(`UPDATE companion_relationship_events SET ${cols.join(', ')} WHERE id = ?`).run(...vals);
+}
+
+/**
+ * 把状态机纯函数（tickArcOnSignal/tickArcOnTime）返回的 eventOp 落库。
+ * create 的 trigger_text 过 privacy_filter（隐私过滤全口子的承诺不破例）。
+ * 返回受影响的事件 id（create 返回新 id）。
+ */
+export function applyArcEventOp(companionId, openEvent, eventOp, { stateBefore, stateAfter, triggerText = '', now = new Date() } = {}) {
+  if (!eventOp) return null;
+  const nowIso = now.toISOString();
+  if (eventOp.op === 'create') {
+    let text = String(triggerText || '').slice(0, 200);
+    if (text) {
+      const pf = filterForStorage(text);
+      text = pf.store ? pf.text : '';   // 含密钥/证件等 → 不存原文，事件本身照建
+    }
+    const r = getDb().prepare(`
+      INSERT INTO companion_relationship_events
+        (companion_id, type, severity, trigger_text, state_before, state_after, repair_status, created_at, resolved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      companionId, eventOp.type, eventOp.severity, text || null,
+      stateBefore, stateAfter,
+      eventOp.stale ? 'stale' : 'open',
+      nowIso, eventOp.stale ? nowIso : null,
+    );
+    return r.lastInsertRowid;
+  }
+  if (!openEvent?.id) return null;
+  if (eventOp.op === 'update') {
+    updateRelationshipEvent(openEvent.id, { ...eventOp.fields, state_after: stateAfter });
+  } else if (eventOp.op === 'resolve') {
+    updateRelationshipEvent(openEvent.id, { repair_status: 'resolved', resolved_at: nowIso, state_after: stateAfter });
+  } else if (eventOp.op === 'stale') {
+    updateRelationshipEvent(openEvent.id, { repair_status: 'stale', resolved_at: nowIso, state_after: stateAfter });
+  } else if (eventOp.op === 'reopen') {
+    updateRelationshipEvent(openEvent.id, {
+      repair_status: 'open', severity: eventOp.severity, reopened: 1,
+      repair_warm: 0, apology_kind: null, repair_from: null,
+      severity_updated_at: nowIso, state_after: stateAfter,
+    });
+  }
+  return openEvent.id;
 }
 
 // ─── v1.8.0 #4: companion_open_loops "未完成的事" ────────────────────────
