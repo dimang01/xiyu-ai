@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { scrubConflictRedline, detectCrisisLevel, buildCrisisReply } from '../src/moderation.mjs';
-import { applyCrisisOverride, composeArcSignal, buildArcToneDirective } from '../src/relationship_arc.mjs';
+import { scrubConflictRedline, detectCrisisLevel, buildCrisisReply, detectSafetyRisk } from '../src/moderation.mjs';
+import { applyCrisisOverride, composeArcSignal, buildArcToneDirective, userRaisedMemoryTopic } from '../src/relationship_arc.mjs';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { if (cond) { pass++; } else { fail++; console.log('  ✗', name); } };
@@ -67,6 +67,18 @@ for (const st of ['hurt', 'cold', 'withdrawing', 'repairing']) {
   ok(!/分手|拉黑/.test(d.replace(/绝对红线.*$/s, '')), `表达层: ${st} 模板正文自身不含红线词`);
 }
 
+// ── ②.5 红线 #3 放行条款（v1.21.1 A1）：用户先提起伤心话题 → 必须放行召回 ──
+// 她不能因"冲突态断粮"装失忆；但她仍不得主动引用（用户没提的轮次照滤）
+const MEM_FATHER = '用户的父亲今年春天去世了，他到现在还会梦到，很难过';
+ok(userRaisedMemoryTopic('我又梦到我爸了', MEM_FATHER) === true, '#3 放行: "我爸" 桥接记忆里的"父亲"（同义组）');
+ok(userRaisedMemoryTopic('昨晚又没睡好，一直在想我爸的事', MEM_FATHER) === true, '#3 放行: 间接提起也放行');
+ok(userRaisedMemoryTopic('今天午饭吃了麻辣烫', MEM_FATHER) === false, '#3 不放行: 无关闲聊照滤（她不得主动引用）');
+ok(userRaisedMemoryTopic('你今天怎么样呀', MEM_FATHER) === false, '#3 不放行: 寒暄不触发');
+ok(userRaisedMemoryTopic('公司又在裁员了', '用户上个月被裁员了，当时很受打击') === true, '#3 放行: 失业话题词面重叠');
+// 哀伤话题 ≠ 危机信号（"想死你了"教训的反向版：丧亲表达不该误触危机干预）
+ok(detectSafetyRisk('我又梦到我爸了').level === 'none', '#3 哀伤: "梦到我爸"不触发危机');
+ok(detectSafetyRisk('我爸去世一年了，还是很难过').level === 'none', '#3 哀伤: 丧亲倾诉不触发危机（难过≠危机阈值）');
+
 // ── ③ 源码级防回归（管线顺序是红线的一部分）─────────────────────────────
 const _dir = dirname(fileURLToPath(import.meta.url));
 const botSrc = readFileSync(join(_dir, '../src/bot.mjs'), 'utf8');
@@ -80,6 +92,8 @@ const botSrc = readFileSync(join(_dir, '../src/bot.mjs'), 'utf8');
   ok(iGen > 0 && iScrub > iGen, '源码: 红线 scrub 挂在生成回复之后的出站链');
   ok(botSrc.includes("buildCrisisReply()"), '源码: crisis high 完全接管路径在位');
   ok(/sensitive_flag[\s\S]{0,80}memory_layer/.test(botSrc), '源码: 冲突态记忆源头过滤在位（红线 #3）');
+  ok(/userRaisedMemoryTopic\(userText/.test(botSrc), '源码: 用户先提起的放行条款在位（红线 #3 v1.21.1）');
+  ok(/_crisisLevel === 'none'[\s\S]{0,120}arcCtx\.arcState === 'hurt'/.test(botSrc), '源码: 危机 ≥medium 时记忆过滤整体不启用');
 }
 const proSrc = readFileSync(join(_dir, '../src/proactive.mjs'), 'utf8');
 ok(proSrc.includes('getArcProactivePolicy'), '源码: proactive arc 门在位');

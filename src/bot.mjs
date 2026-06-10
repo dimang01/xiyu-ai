@@ -35,7 +35,7 @@ import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from 
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubConflictRedline } from './moderation.mjs';
 import { runArcSignalTick } from './relationship_arc_runtime.mjs';
-import { applyCrisisOverride } from './relationship_arc.mjs';
+import { applyCrisisOverride, userRaisedMemoryTopic } from './relationship_arc.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -734,9 +734,15 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     } catch (e) { log('warn', `[Arc] tick 异常（按 normal 继续）: ${e.message}`); }
     // 红线 #5：危机最高优先——冲突表达确定性替换为关怀指令（纯函数，conflict_redline_guard 盯防）
     arcCtx = applyCrisisOverride(arcCtx, _crisisLevel);
-    // 红线 #3：冲突态绝不武器化他的脆弱记忆——从召回源头不给料（出站无法确定性判定）
-    if (arcCtx.arcState === 'hurt' || arcCtx.arcState === 'cold' || arcCtx.arcState === 'withdrawing') {
-      memories = memories.filter(m => !m?.sensitive_flag && m?.memory_layer !== 'emotion');
+    // 红线 #3：冲突态绝不【主动】武器化他的脆弱记忆——从召回源头不给料（出站无法确定性判定）。
+    // v1.21.1 放行条款：① 用户自己先提起该伤心话题 → 放行那条记忆（她不能因断粮装失忆，
+    // "我又梦到我爸了"必须接得住）② 危机 ≥medium → 整个过滤不启用（关怀需要记忆）。
+    // 她仍不得主动引用：用户没提起的轮次，sensitive/emotion 层照滤。
+    if (_crisisLevel === 'none'
+        && (arcCtx.arcState === 'hurt' || arcCtx.arcState === 'cold' || arcCtx.arcState === 'withdrawing')) {
+      memories = memories.filter(m =>
+        (!m?.sensitive_flag && m?.memory_layer !== 'emotion')
+        || userRaisedMemoryTopic(userText, m?.content));
     }
 
     const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();

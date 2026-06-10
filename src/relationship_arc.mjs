@@ -421,6 +421,48 @@ export function matchTaboos(text, taboos = []) {
   return best || { severity: 0, hit: null };
 }
 
+// ─── 红线 #3 放行条款（v1.21.1）：用户自己先提起伤心话题时，召回过滤必须放行 ────
+// 她不能因"冲突态断粮"装失忆——用户说"我又梦到我爸了"，她必须接得住。
+// 零 LLM 约束下词面没法做同义（用户说"我爸"、记忆写"父亲"），用确定性同义组桥接：
+// 某组内 userText 命中任一词 && 记忆 content 命中任一词 → 视为同一话题。
+// 设计权衡：这是"放行"不是"拦截"，宁可稍宽——放宽的代价只是用户先提起时她多看到
+// 一条 sensitive 记忆，完全符合语义；她仍不得主动引用（普通轮照滤）。
+const TOPIC_SYNONYM_GROUPS = [
+  ['爸', '父亲', '爹'],
+  ['妈', '母亲', '娘'],
+  ['爷爷', '奶奶', '外公', '外婆', '姥姥', '姥爷'],
+  ['去世', '走了', '没了', '离世', '过世', '病逝', '不在了'],
+  ['前任', '前女友', '前男友', '分手'],
+  ['生病', '住院', '化疗', '手术', '确诊', '病危'],
+  ['裁员', '失业', '被开除', '被辞', '丢了工作'],
+  ['抑郁', '焦虑', '心理医生', '崩溃'],
+  ['离婚', '吵架', '家暴'],
+  ['高考', '考研', '落榜', '挂科', '复读'],
+];
+
+/** 用户当前消息是否提起了某条记忆的话题（确定性词面 + 同义组，零 LLM） */
+export function userRaisedMemoryTopic(userText, memoryContent) {
+  const t = String(userText || '');
+  const m = String(memoryContent || '');
+  if (t.length < 2 || !m) return false;
+  // 路 1：≥2 字、无停字的词面子串直接重叠
+  const segs = t.match(/[一-龥A-Za-z0-9]{2,}/g) || [];
+  for (const seg of segs) {
+    for (let len = Math.min(4, seg.length); len >= 2; len--) {
+      for (let i = 0; i + len <= seg.length; i++) {
+        const sub = seg.slice(i, i + len);
+        if ([...sub].some(ch => TABOO_STOP_CHARS.has(ch))) continue;
+        if (m.includes(sub)) return true;
+      }
+    }
+  }
+  // 路 2：同义组桥接（"我爸" vs 记忆里的"父亲"）
+  for (const group of TOPIC_SYNONYM_GROUPS) {
+    if (group.some(w => t.includes(w)) && group.some(w => m.includes(w))) return true;
+  }
+  return false;
+}
+
 /** apology 词面检测：{ isApology, specific }——specific 是 matched 的 regex 兜底证据 */
 export function detectApologyWords(text) {
   const t = String(text || '');

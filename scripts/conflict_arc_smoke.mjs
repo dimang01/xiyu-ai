@@ -226,7 +226,16 @@ ok(repairNeed('cold', 'secure', 'generic') === 6, 'repairNeed: generic +2');
 }
 {
   const r = tim({ state: 'hurt', stateChangedAt: hAgo(80), openEvent: ev({ created_at: hAgo(80) }), interactionsSinceEvent: 6 });
-  ok(r.state === 'normal' && r.eventOp?.op === 'resolve', 'time: hurt 72h+正常互动≥5轮 → 自然消化');
+  ok(r.state === 'normal' && r.eventOp?.op === 'resolve', 'time: hurt 72h+正常互动≥5轮 → 自然消化（A2 门控正向）');
+}
+// A2 复验（v1.21.1）：消化必须互动门控——伤了她又消失绝不是自动原谅
+{
+  const r = tim({ state: 'hurt', stateChangedAt: hAgo(80), openEvent: ev({ created_at: hAgo(80) }), interactionsSinceEvent: 0 });
+  ok(r.state !== 'normal' && r.eventOp?.op !== 'resolve', 'A2: hurt 72h 零互动绝不消化（走加重路径，wound+distance 复合）');
+}
+{
+  const r = tim({ state: 'hurt', stateChangedAt: hAgo(80), openEvent: ev({ created_at: hAgo(80) }), interactionsSinceEvent: 3 });
+  ok(r.state === 'hurt' && !r.eventOp, 'A2: 互动不足 5 轮也不消化（hurt 保持，等修复或继续累积）');
 }
 {
   const r = tim({ state: 'hurt', stateChangedAt: hAgo(50), openEvent: ev({ created_at: hAgo(50) }), interactionsSinceEvent: 0 });
