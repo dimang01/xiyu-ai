@@ -46,50 +46,10 @@ export function normalizeMemoryWeight(weight) {
 }
 
 // ─── Sensitive content filter ─────────────────────────────────────────────────
-
-// Patterns that should not be persisted verbatim in memory
-const SENSITIVE_PATTERNS = [
-  // ID numbers / bank cards
-  /\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[012])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/, // 身份证
-  /\b[3-9]\d{15}\b/,           // 银行卡 (16位+)
-  // credentials
-  /(?:密码|password|pwd)\s*[:：=\s][^\s]{4,}/i,
-  /(?:验证码|captcha|otp|code)\s*[:：=\s]\d{4,8}/i,
-  /sk-[a-zA-Z0-9]{20,}/,       // OpenAI-style API key
-  /\bAIza[0-9A-Za-z_-]{35}\b/, // Google API key
-  /ghp_[a-zA-Z0-9]{36}/,       // GitHub PAT
-  /(?:token|secret|key)\s*[:：=\s][a-zA-Z0-9_\-]{16,}/i,
-  // addresses - precise
-  /(?:详细地址|住在|家住|门牌|楼号|室号)\s*[:：]?\s*.{6,30}(?:路|街|巷|弄|号|栋|单元|室)/,
-  // self-harm methods
-  /(?:想自杀|去死|了结生命|结束生命).*(?:方法|怎么|如何|用什么)/,
-  // explicit minors
-  /(?:未成年|小学生|初中生|高中生|\d{1,2}岁).*(?:性|裸|色情)/,
-];
-
-export function isSensitiveMemoryContent(text) {
-  if (!text || typeof text !== 'string') return false;
-  return SENSITIVE_PATTERNS.some(re => re.test(text));
-}
-
-/**
- * Returns cleaned content or null if fully blocked.
- * Replaces specific sensitive tokens with generic placeholders.
- */
-export function sanitizeMemoryContent(text) {
-  if (!text) return text;
-  // Block outright if multiple patterns match (high confidence sensitive)
-  const hits = SENSITIVE_PATTERNS.filter(re => re.test(text)).length;
-  if (hits >= 2) return null;
-  // Mask individual patterns
-  let out = text;
-  out = out.replace(/sk-[a-zA-Z0-9]{20,}/, '[API密钥已屏蔽]');
-  out = out.replace(/ghp_[a-zA-Z0-9]{36}/, '[Token已屏蔽]');
-  out = out.replace(/(?:密码|password|pwd)\s*[:：=\s][^\s]{4,}/gi, '[密码信息已屏蔽]');
-  out = out.replace(/(?:验证码|captcha|otp)\s*[:：=\s]\d{4,8}/gi, '[验证码已屏蔽]');
-  if (isSensitiveMemoryContent(out)) return null;
-  return out;
-}
+// v1.20 (PR2): 单一真源迁移到 src/privacy_filter.mjs（身份证 GB 校验 / 银行卡
+// Luhn / 手机号·住址·学校班级脱敏），这里 re-export 保持既有调用方
+// （diary / relational_diary / thoughts / reflection）零改动。
+export { isSensitiveMemoryContent, sanitizeMemoryContent } from './privacy_filter.mjs';
 
 // ─── Decay score ──────────────────────────────────────────────────────────────
 
