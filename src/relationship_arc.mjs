@@ -77,9 +77,24 @@ export function repairNeed(repairFrom, style, apologyKind) {
   return Math.max(1, base + adj);
 }
 
-// safe_mode 封顶（红线 #6）：未成年保护下 cold/withdrawing 不可达，一律短路 hurt
-const _capSafe = (target, safeMode) =>
-  (safeMode && (target === 'cold' || target === 'withdrawing')) ? 'hurt' : target;
+// safe_mode 封顶（红线 #6）：未成年保护下 cold/withdrawing 不可达，一律短路 hurt。
+// v1.21.1 PR-C 另加 ARC_MAX_STATE 运维钳位（生产误伤时的保险丝，免回滚）：
+// 状态机 tick 后钳到上限；事件照常建档落库——数据不丢，只钳状态与表达。
+// ⚠ 与未成年保护性质相反：safe_mode 是安全底线、无关闭开关、不可配置；
+// ARC_MAX_STATE 是风险功能的可调上限，默认空=不钳。钳位期间 withdrawing
+// 的超时归档不会触发（到不了该状态），事件保持 open，解除钳位后照常推进。
+const ARC_STATE_RANK = { normal: 0, normal_with_scar: 0, repairing: 0, hurt: 1, cold: 2, withdrawing: 3 };
+
+function _maxStateFromEnv() {
+  const v = String(process.env.ARC_MAX_STATE || '').trim().toLowerCase();
+  return (v === 'hurt' || v === 'cold' || v === 'withdrawing') ? v : null;
+}
+
+const _capState = (target, safeMode, maxState) => {
+  let t = (safeMode && (target === 'cold' || target === 'withdrawing')) ? 'hurt' : target;
+  if (maxState && (ARC_STATE_RANK[t] ?? 0) > (ARC_STATE_RANK[maxState] ?? 9)) t = maxState;
+  return t;
+};
 
 const _mkRes = (state) => ({ state, changed: false, eventOp: null, trustDelta: 0, voiceConcern: false, reason: '' });
 
@@ -122,8 +137,10 @@ export function tickArcOnSignal(ctx = {}) {
   const sev = Math.max(0, Math.min(4, Math.round(Number(signal.severity) || 0)));
   const apologyKind = signal.apologyKind === 'generic' ? 'generic' : 'matched';
 
+  // 运维钳位解析：ctx.maxState 显式注入（测试用，null=不钳）；缺省读 env ARC_MAX_STATE
+  const maxState = 'maxState' in ctx ? ctx.maxState : _maxStateFromEnv();
   const go = (next, reason) => {
-    res.state = _capSafe(next, safeMode);
+    res.state = _capState(next, safeMode, maxState);
     res.reason = reason;
     res.changed = res.state !== state || !!res.eventOp;
     return res;
@@ -279,13 +296,21 @@ export function tickArcOnTime(ctx = {}) {
   const neg = NEGLECT_IDX[neglectStage] ?? 0;
   const hoursIn = _hoursSince(stateChangedAt, now);
 
+  // 运维钳位解析：ctx.maxState 显式注入（测试用，null=不钳）；缺省读 env ARC_MAX_STATE
+  const maxState = 'maxState' in ctx ? ctx.maxState : _maxStateFromEnv();
   const go = (next, reason) => {
-    res.state = _capSafe(next, safeMode);
+    res.state = _capState(next, safeMode, maxState);
     res.reason = reason;
     res.changed = res.state !== state || !!res.eventOp;
     return res;
   };
   const stay = (reason) => { res.reason = reason; res.changed = !!res.eventOp; return res; };
+
+  // 钳位对存量状态生效：运维中途设上限时，已超限的 companion 在下一个时间批
+  // 被压回上限（保险丝要立刻起作用，不能只管新转移）。事件不动，修复路径照走。
+  if (maxState && (ARC_STATE_RANK[state] ?? 0) > (ARC_STATE_RANK[maxState] ?? 9)) {
+    return go(maxState, 'ops_clamp');
+  }
 
   // ── normal / normal_with_scar：scar 淡出 + neglect 阶梯入口 ─────────────
   if (state === 'normal' || state === 'normal_with_scar') {

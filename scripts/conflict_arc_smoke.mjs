@@ -284,6 +284,37 @@ ok(repairNeed('cold', 'secure', 'generic') === 6, 'repairNeed: generic +2');
   ok(!r.changed, 'time: 幂等——已 cold 再报 withdrawn 不动');
 }
 
+// ── ARC_MAX_STATE 运维钳位（v1.21.1 PR-C：保险丝，与 safe_mode 性质相反）──
+{
+  const r = sig({ signal: { kind: 'harsh_words', severity: 4 }, maxState: 'hurt' });
+  ok(r.state === 'hurt' && r.eventOp?.op === 'create' && r.eventOp.severity === 4,
+    '钳位: max=hurt 时 sev4 封 hurt，事件照常建档 sev4（数据不丢）');
+}
+{
+  const r = tim({ state: 'hurt', stateChangedAt: hAgo(50), openEvent: ev({ created_at: hAgo(50) }), interactionsSinceEvent: 0, maxState: 'hurt' });
+  ok(r.state !== 'cold' && r.state !== 'withdrawing', '钳位: 时间路径（伤了又晾）也封 hurt');
+}
+{
+  const r = tim({ state: 'cold', stateChangedAt: hAgo(49), openEvent: ev(), maxState: 'cold' });
+  ok(r.state === 'cold', '钳位: max=cold 时 withdrawing 入边被钳');
+}
+{
+  const r = sig({ signal: { kind: 'harsh_words', severity: 4 }, maxState: null });
+  ok(r.state === 'cold', '钳位: maxState=null 显式不钳（默认行为）');
+}
+{
+  const r = sig({ safeMode: true, signal: { kind: 'harsh_words', severity: 4 }, maxState: 'cold' });
+  ok(r.state === 'hurt', '钳位: safe_mode 优先且更严（钳 cold 也封到 hurt）');
+}
+{
+  const r = sig({ state: 'cold', openEvent: ev(), signal: { kind: 'apology', apologyKind: 'matched' }, maxState: 'hurt' });
+  ok(r.state === 'repairing', '钳位: repairing 是恢复方向，不受钳（仍可走修复）');
+}
+{
+  const r = tim({ state: 'withdrawing', stateChangedAt: hAgo(2), openEvent: ev(), maxState: 'hurt' });
+  ok(r.state === 'hurt' && r.reason === 'ops_clamp', '钳位: 中途设上限，存量超限状态在时间批被压回（保险丝立刻生效）');
+}
+
 // ── safe_mode 封顶 hurt（未成年保护，红线 #6）──────────────────────────
 {
   const r = sig({ safeMode: true, signal: { kind: 'harsh_words', severity: 4 } });
