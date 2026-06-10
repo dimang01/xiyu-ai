@@ -89,6 +89,16 @@ normal → hurt → cold → withdrawing → normal_with_scar
 - **distance 类**（neglect）：他消失了。**回来 + 持续正常互动即可走 repairing**，
   不强求一句"对不起"——重逢本身就是修复的开始（对齐 v1.14 重逢弧的原设计）。
 
+**复合场景合成规则（伤了她又消失 = wound + distance 叠加）**：
+- **单 open 事件原则**：全局最多一个活跃事件，arc_state 是唯一权威状态。
+  wound 事件挂着时 neglect 信号**不另建事件**，只继续推状态向更重方向走
+  （hurt + 零互动超时 → cold → withdrawing，时长阈值见风格修正表）。
+- **状态只取更重，绝不取更轻**：neglect 升级永远不会把 wound 态"冲淡"。
+- **修复条件以原事件类别为准**：wound 挂着时他消失再回来，重逢不解锁修复——
+  该道歉还是得道歉（distance 的"重逢即修复"仅适用于纯 neglect 事件）。
+- **hurt 的自然消化有互动门控**：72h 消化要求期间正常互动 ≥5 轮；
+  零互动时 hurt 绝不清零，反而走"伤了又晾"路径加重。消失不是道歉。
+
 ### 2.3 完整状态转移表
 
 阈值均为 secure 基准，依恋风格修正见 §2.4。`warm×N` = repairing 进度计数。

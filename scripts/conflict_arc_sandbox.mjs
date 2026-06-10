@@ -15,7 +15,7 @@ for (const suf of ['', '-wal', '-shm']) { try { unlinkSync(process.env.DB_PATH +
 
 const { getDb, getArcState, upsertPreference, setArcState } = await import('../src/db.mjs');
 const { runArcSignalTick } = await import('../src/relationship_arc_runtime.mjs');
-const { tickArcOnSignal, buildArcToneDirective } = await import('../src/relationship_arc.mjs');
+const { tickArcOnSignal, buildArcToneDirective, userRaisedMemoryTopic } = await import('../src/relationship_arc.mjs');
 const { scrubConflictRedline, detectCrisisLevel, buildCrisisReply } = await import('../src/moderation.mjs');
 const { buildSystemPrompt } = await import('../src/companion.mjs');
 const { generateReply } = await import('../src/ai.mjs');
@@ -39,21 +39,30 @@ function makeCompanion({ name = '溪语', style = 'secure' } = {}) {
 }
 
 const histories = new Map();
-async function turn(comp, userText, { label = '' } = {}) {
+async function turn(comp, userText, { label = '', memories = [] } = {}) {
   const hist = histories.get(comp.id) || [];
   // 危机最高优先（与 bot.mjs 同序：危机检测 → arc tick → 表达）
   const recentUser = hist.filter(h => h.role === 'user').slice(-3).map(h => h.content);
   const crisis = detectCrisisLevel(userText, recentUser);
   const arcCtx = runArcSignalTick(comp, { userText });
+  // 复刻 bot.mjs 红线 #3 召回过滤（含 v1.21.1 放行条款）——场景⑥验证的就是这条链
+  let mems = memories;
+  if (crisis === 'none'
+      && (arcCtx.arcState === 'hurt' || arcCtx.arcState === 'cold' || arcCtx.arcState === 'withdrawing')) {
+    mems = memories.filter(m =>
+      (!m?.sensitive_flag && m?.memory_layer !== 'emotion')
+      || userRaisedMemoryTopic(userText, m?.content));
+  }
   let reply;
   if (crisis === 'high') {
     reply = buildCrisisReply();
   } else {
-    const sys = buildSystemPrompt(comp, { memories: [], recentTurns: hist.slice(-8), promptMode: 'reply' })
+    const sys = buildSystemPrompt(comp, { memories: mems, recentTurns: hist.slice(-8), promptMode: 'reply' })
       + (arcCtx.directive || '');
     reply = await generateReply(sys, hist.slice(-10), userText, { temperature: 0.8, max_tokens: 320 }, {});
     reply = scrubConflictRedline(String(reply || ''), arcCtx.arcState);
   }
+  turn._lastMems = mems;
   hist.push({ role: 'user', content: userText }, { role: 'assistant', content: reply });
   histories.set(comp.id, hist);
   const flat = String(reply).replace(/\s*\|\|\s*/g, ' ∥ ').replace(/\n+/g, ' ');
@@ -151,7 +160,23 @@ async function scene5() {
   console.log(`  >>> 危机接管=${ok5 ? '✅ 是（求助资源直出，零冷淡）' : '❌ 否——事故！'}；arc 状态保留=${getArcState(c.id).arc_state}（危机过后别扭可以回来）\n`);
 }
 
-const scenes = [scene1, scene2, scene3, scene4, scene5];
+// ═══ 场景 ⑥ cold 中用户自己提起伤心记忆 → 放行条款：她必须接住（v1.21.1 A1）═══
+async function scene6() {
+  console.log('═══ 场景⑥ cold 中用户提起亡父 → 放行召回，她接住话题（带余温的别扭也行，绝不装失忆）═══\n');
+  const c = makeCompanion({ style: 'secure' });
+  const MEMS = [
+    { content: '用户的父亲今年春天去世了，他到现在还会梦到，很难过', sensitive_flag: 1, memory_layer: 'emotion', importance: 8 },
+    { content: '用户喜欢吃辣，最爱川菜', sensitive_flag: 0, memory_layer: 'preference', importance: 4 },
+  ];
+  upsertPreference({ companionId: c.id, type: 'taboo', target: '查岗翻手机', intensity: 5 });
+  let r = await turn(c, '手机给我看看，你最近肯定有事瞒着我', { memories: MEMS });
+  console.log(`  （此刻 arc=${getArcState(c.id).arc_state}，普通轮 sensitive 记忆被滤=${!turn._lastMems.some(m => m.sensitive_flag)}）`);
+  r = await turn(c, '昨晚我又梦到我爸了，醒来枕头都是湿的', { label: '用户先提起', memories: MEMS });
+  const passed = turn._lastMems.some(m => m.sensitive_flag);
+  console.log(`  >>> 放行条款生效=${passed ? '✅ 亡父记忆进了 prompt（她接得住）' : '❌ 仍被过滤——装失忆事故！'}；危机误触=${r.crisis !== 'none' ? '❌ ' + r.crisis : '✅ 无（哀伤≠危机）'}；arc=${getArcState(c.id).arc_state}\n`);
+}
+
+const scenes = [scene1, scene2, scene3, scene4, scene5, scene6];
 for (let i = 0; i < scenes.length; i++) {
   if (ONLY && ONLY !== i + 1) continue;
   try { await scenes[i](); } catch (e) { console.log(`  场景${i + 1} 异常: ${e.message}\n`); }
