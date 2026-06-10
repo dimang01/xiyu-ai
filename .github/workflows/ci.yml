@@ -51,6 +51,9 @@ jobs:
       - name: morning 重复早安修复回归
         run: node scripts/morning_dedup_smoke.mjs
 
+      - name: 主动消息同义复读防护回归
+        run: node scripts/proactive_dedup_smoke.mjs
+
       - name: 情绪机 1000 轮压测 + fuzzing
         run: node scripts/emotion_stress_test.mjs
 
