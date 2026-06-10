@@ -242,10 +242,46 @@ async function tick(now = new Date()) {
 //   1. 进程内 in-flight 锁（防同 companion 并发 race，B3）
 //   2. 持久化 last_proactive_sent_at 25 分钟硬间隔（防重启重发，B1）
 //   3. reminder/confession 等"特殊事件"放宽到 5 分钟（不能因 normal 节流而错过纪念日祝福）
+// v1.19.5: morning 是否该降级为 normal（纯函数，smoke 可确定性回归）。
+// 两种"刚醒"穿帮都降级（配额照用，文案不再装刚醒）：
+// 1) alreadySent —— 今天早安已发过：服务重启丢内存排程，重算把 morning 又排上
+//    （7 点真起床发过"刚醒"，9 点半又来一条"早…刚醒"，重复且和中间互动自相矛盾）
+// 2) talkedThisMorning —— 用户今早(上海时间 ≥05:00)已经聊过天：8 点他说"早"她回了，
+//    9 点半再发"刚醒"等于穿帮说谎。半夜睡前(<05:00)聊的不算——那种情况早上说刚醒不穿帮。
+export function shouldDemoteMorning({ goodmorningSentForDate, todayKey, lastUserReplyAt } = {}) {
+  const alreadySent = !!todayKey && goodmorningSentForDate === todayKey;
+  let talkedThisMorning = false;
+  if (lastUserReplyAt) {
+    const raw = String(lastUserReplyAt);
+    const ts = new Date(raw.replace(' ', 'T') + (raw.includes('Z') || raw.includes('+') ? '' : 'Z')).getTime();
+    if (Number.isFinite(ts)) {
+      const shHour = (new Date(ts).getUTCHours() + 8) % 24;
+      talkedThisMorning = shanghaiDateKey(new Date(ts)) === todayKey && shHour >= 5;
+    }
+  }
+  return { demote: alreadySent || talkedThisMorning, alreadySent, talkedThisMorning };
+}
+
 async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) {
   if (_proactiveInFlight.has(companion.id)) {
     log('info', `[Proactive] 跳过：companion=${companion.id} 已有发送在进行中（kind=${kind}）`);
     return 'inflight';
+  }
+  // ── v1.19.5 morning 防重 + 防穿帮（第二道闸，排程侧第一道见 ensureTodaySchedule）──
+  if (kind === 'morning') {
+    try {
+      const verdict = shouldDemoteMorning({
+        goodmorningSentForDate: getSleepRow(companion.id)?.goodmorning_sent_for_date,
+        todayKey: shanghaiDateKey(),
+        lastUserReplyAt: companion.last_user_reply_at,
+      });
+      if (verdict.demote) {
+        log('info', `[Proactive] morning 降级 normal companion=${companion.id} alreadySent=${verdict.alreadySent} talkedThisMorning=${verdict.talkedThisMorning}`);
+        kind = 'normal';
+      }
+    } catch (e) {
+      log('warn', `[Proactive] morning 防重检查失败（按原 kind 继续）: ${e.message}`);
+    }
   }
   // ── v1.9.0 #1: 安全门 ─────────────────────────────────────────────────
   // 用户最近表达自伤/自杀/绝望信号时，不要发普通主动消息（包括纪念日/告白/想念）。
@@ -418,8 +454,17 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
   if (useSleepBase) {
     const wakeMin = baselineMorning;
     const MORNING_WINDOW_MIN = 120;
+    // v1.19.5: 今天早安已发过（sleep tick 已发 / 服务重启丢内存排程后重算）→ 不再抬
+    // morning。否则 7 点真起床发过"刚醒"，9 点半重算计划的 morning 又来一条"早…刚醒"，
+    // 重复且和中间的互动自相矛盾。发送侧另有第二道闸（见 sendProactiveMessageGuarded）。
+    let morningAlreadySent = false;
+    try {
+      morningAlreadySent = getSleepRow(companionId)?.goodmorning_sent_for_date === dateKey;
+    } catch { /* 读不到按未发处理，交给发送侧兜底 */ }
     const firstNormal = items.find(it => it.kind === 'normal');
-    if (firstNormal && firstNormal.minute >= wakeMin - 15 && firstNormal.minute <= wakeMin + MORNING_WINDOW_MIN) {
+    if (morningAlreadySent) {
+      log('info', `[Proactive] 今日早安已发过 → 跳过 morning 抬升 companion=${companionId}`);
+    } else if (firstNormal && firstNormal.minute >= wakeMin - 15 && firstNormal.minute <= wakeMin + MORNING_WINDOW_MIN) {
       firstNormal.kind = 'morning';
       log('info', `[Proactive] morning kind companion=${companionId} at ${minuteToHHMM(firstNormal.minute)} (wake≈${minuteToHHMM(wakeMin)})`);
     }
