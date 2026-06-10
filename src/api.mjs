@@ -77,6 +77,7 @@ import {
 import { getEmailMode } from './email.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { buildImageReactionText, computeRelationshipStage, extractImageMemories } from './memory.mjs';
+import { deactivateSafeMode } from './minor_guard.mjs';
 import { generatePersonaFacts, generateAvatarCandidates, embedText } from './ai.mjs';
 import { getActiveChatProvider, REGISTRY as CHAT_REGISTRY } from './providers/chat.mjs';
 import { getActiveImageProvider } from './providers/image.mjs';
@@ -581,6 +582,8 @@ function companionSummary(companion) {
     attachment_style: fallbackText(companion.attachment_style, 'secure'),
     // v1.19.3 初恋开关：同上模式第三次。默认开（null/undefined 视为 1，仅显式 0 算关）
     first_love: (companion.first_love === 0 || companion.first_love === false) ? 0 : 1,
+    // v1.20 安全模式（只读展示；改动只走 age-attestation 专用端点）
+    safe_mode: Number(companion.safe_mode) ? 1 : 0,
   };
 }
 
@@ -3003,6 +3006,37 @@ router.post('/companions/:id/reset-to-crush', requireAuth, (req, res) => {
   } catch (e) {
     log('error', `[API] reset-to-crush 失败 id=${id}: ${e.message}`);
     return err(res, e.message || '重置失败', 500);
+  }
+});
+
+// POST /api/companions/:id/age-attestation  (v1.20 安全收尾 Issue #3)
+// 解除未成年人安全模式的**唯一**通道：要求显式提交出生年份声明。
+// safe_mode 故意不在 ALLOWED_FIELDS（通用 PATCH 改不了），粘性由此保证。
+// 用户说"骗你的其实我成年了"不会自动解除——必须来这里正式声明一次。
+router.post('/companions/:id/age-attestation', requireAuth, (req, res) => {
+  const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
+  const c  = requireOwnedCompanion(req, res, id); if (!c) return;
+  const birthYear = parseInt(req.body?.birth_year, 10);
+  const confirmed = req.body?.confirm_adult === true;
+  const nowYear = new Date().getFullYear();
+  if (!Number.isFinite(birthYear) || birthYear < nowYear - 120 || birthYear > nowYear) {
+    return err(res, '请填写真实出生年份');
+  }
+  if (!confirmed) return err(res, '需勾选成年声明');
+  if (nowYear - birthYear < 18) {
+    // 声明了一个未成年年份 → 保持/进入安全模式
+    try {
+      patchCompanion(id, { safe_mode: 1 });
+      log('warn', `[MinorGuard] 年龄声明确认未成年 → 安全模式保持 companion=${id}`);
+    } catch (e) { log('warn', `[MinorGuard] attestation save failed: ${e.message}`); }
+    return ok(res, { safe_mode: 1, released: false });
+  }
+  try {
+    deactivateSafeMode(id);
+    return ok(res, { safe_mode: 0, released: true });
+  } catch (e) {
+    log('error', `[API] age-attestation 失败 id=${id}: ${e.message}`);
+    return err(res, e.message || '解除失败', 500);
   }
 });
 

@@ -145,6 +145,10 @@ export function syncUpdateCompanionState(companion, userMsg, botReply) {
     }
   }
   // 非升级（含掉好感的自然降级）按 rawStage，不因新闸门强制降级老用户（存量不动）
+  // v1.20 安全收尾：安全模式下关系阶段钳到「朋友」封顶（DB 层硬钳，不只 prompt 层）
+  if (Number(companion.safe_mode) && stageRank(newStage) > stageRank('朋友')) {
+    newStage = '朋友';
+  }
   fields.relationship_stage = newStage;
   if (newStage === '恋人' && oldStage !== '恋人' && !companion.became_lover_at) {
     fields.became_lover_at = new Date().toISOString();       // 升恋人时间戳 → 深爱时间门槛计时

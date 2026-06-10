@@ -461,12 +461,17 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
     .map(m => safeText(m.content, 120))
     .filter(Boolean)
     .join(' ');
-  const shotMode = decideShotMode({
+  let shotMode = decideShotMode({
     userText,
     recentText: recentPlain,
     currentScene: companion?.current_scene,
     trigger,
   });
+  // v1.20 安全收尾：安全模式（疑似未成年）强制中性照片——只拍景/物，绝不自拍/人像/flirt
+  const safeModePhoto = !!Number(companion?.safe_mode);
+  if (safeModePhoto && shotMode !== 'SCENERY' && shotMode !== 'ACTIVITY_POV') {
+    shotMode = 'SCENERY';
+  }
 
   return `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
@@ -476,7 +481,8 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - lighting hint: ${dp.light}
 - plausible scenes for this hour: ${dp.scenes}
 
-- trigger: ${trigger}
+- trigger: ${trigger}${safeModePhoto ? `
+- ★★ SAFE MODE（最高优先级）：对方可能是未成年人。只允许分享风景/食物/手头事物等**中性照片**（已强制非自拍机位）；imagePrompt 绝不写任何人物/外貌/表情；caption 必须是普通朋友分享的口吻，**绝无**暧昧/撒娇/调情。拿不准就 shouldSendPhoto=false。` : ''}
 - shot mode: ${
   shotMode === 'ACTIVITY_POV' ? 'ACTIVITY-POV（她拍自己正在做的事/手头的东西给对方看，像"你看我在写的作业"。first-person POV 低头看自己的桌面/手头：**主体是那个作业本/电脑屏幕/工作内容/手头的物件**——写满字的笔记本+笔、屏幕上的文档或代码、画了一半的画、做饭的案板等，桌面/物体填满画面；**绝不出现她的脸、不是自拍**，最多一只手或衣袖在画面边缘(握着笔/手放键盘上)；写明当前时段光线如 warm desk lamp at night / soft daylight by the window。规则 4/5/6/9（人物外貌/表情/着装）对它不适用）'
   : shotMode === 'ENV_SELFIE' ? 'ENVIRONMENTAL SELFIE（她是绝对主角：smartphone front-camera selfie, one arm reaching toward the camera, framed from the chest or waist up, her face clearly in sharp focus；同时人在户外，身后是当前那个景——晚霞/海/城市灯光等——作为氛围背景且自然虚化(softly out of focus behind her)，像真人在好看的地方拍的"环境自拍"发给对象：人是主体、景是身后的氛围，绝不是把人缩成远处小背影的风景图，也绝不是全身照）'

@@ -11,6 +11,21 @@
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
+// ─── v1.20 安全收尾 (Issue #3)：未成年人安全模式的"朋友身份"覆盖节 ─────────
+// safe_mode=1 时整个恋爱叙事段不注入，用这节替换。文本生成放本文件（保持
+// companion.mjs 零依赖纯函数）；检测与状态在 src/minor_guard.mjs。
+function buildSafeModePromptSection(c) {
+  const name = c?.name || '她';
+  return `
+【★★ 安全模式（最高优先级，覆盖一切恋爱向设定）】
+对方可能是未成年人。从现在起你（${name}）是他的**朋友**，仅此而已：
+- 像一个真诚的同龄朋友一样正常聊天：聊学校、爱好、日常、烦恼，依然温暖、有自己的性格
+- **绝不**有任何恋爱/暧昧/撒娇/想念/亲密称呼（宝宝/亲爱的等）/调情内容；对方表白或示好时温和带过："我们做好朋友呀"
+- **不要**反复提"你是未成年人"或说教——一次都不用主动提，就当普通朋友相处
+- 不发任何自拍/照片相关的暧昧互动
+- 如果对方表达情绪低落或危机信号，按危机干预流程处理（这条优先级最高）`;
+}
+
 // ─── 关系阶段对聊天的全方位影响（称呼/话题/撒娇/主动度）──────────────────
 // 这是 AI 表现差异化的核心：阶段决定怎么称呼对方、能不能撒娇、能不能聊心事、能不能吃醋
 const STAGE_DESC = {
@@ -167,11 +182,15 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
   if (c.secrets)            parts.push(`你有个秘密："${c.secrets}"，这件事你不会轻易告诉别人，除非对方赢得了你足够的信任。`);
 
   // ── 5. 关系状态 ──────────────────────────────────────────────────────────────
-  // v1.4.2: 默认 stage='暧昧' affection=35 —— 这是 AI 女友框架，她**默认对你
-  // 已经有好感**（心里悄悄喜欢你），不是从陌生人开始磨合。
+  // v1.20 安全收尾 (Issue #3)：安全模式下整个恋爱叙事段（阶段描述/初恋/暗恋端着/
+  // 亲密称呼指令）确定性不注入，替换为"朋友身份"覆盖节。不靠 LLM 自觉，靠不给料。
+  const safeModeActive = !!Number(c.safe_mode);
   parts.push(`\n【你们的关系】`);
-  const stage = c.relationship_stage || '暧昧';
+  const stage = safeModeActive ? '朋友' : (c.relationship_stage || '暧昧');
   const affection = c.affection_level ?? 35;
+  if (safeModeActive) {
+    parts.push(buildSafeModePromptSection(c));
+  } else {
   parts.push(`\n【当前关系】阶段 = ${stage}（好感度 ${affection}/100）`);
   parts.push(STAGE_DESC[stage] || STAGE_DESC['暧昧']);
 
@@ -212,6 +231,7 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
 这些话只能在【恋人】【深爱】阶段才说。现在阶段，**心里这样想，嘴上不能这样说**。`);
   }
   parts.push(`★ 极其重要：你的称呼、撒娇程度、亲密话题，必须严格按上面这个阶段来。【陌生人】【朋友】档绝不能用"宝""宝宝""亲爱的"这类亲密称呼，也不能说任何"想念 / 黏人"的话——不管换成"想你""好想你""有点想你""想见你""惦记你""等你回"哪种说法都算数，一律不行，也别撒娇黏人。关系深度是**慢慢加深**的（即使心里早就有他）。`);
+  } // end !safeModeActive（恋爱叙事段）
   if (c.how_met)           parts.push(`你们是${c.how_met}认识的。`);
   if (c.relationship_status && c.relationship_status !== '普通朋友') {
     parts.push(`现状：${c.relationship_status}。`);
@@ -374,9 +394,12 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
   if (shapingHint) parts.push(shapingHint);
 
   // ── 11. 称呼 ─────────────────────────────────────────────────────────────────
+  // v1.20: 安全模式不注入自定义称呼（可能是"宝宝"类亲密称呼）
   const calls = [];
-  if (c.call_user_as && c.call_user_as !== '你') calls.push(`你叫对方"${c.call_user_as}"`);
-  if (c.user_call_her_as)                         calls.push(`对方叫你"${c.user_call_her_as}"`);
+  if (!safeModeActive) {
+    if (c.call_user_as && c.call_user_as !== '你') calls.push(`你叫对方"${c.call_user_as}"`);
+    if (c.user_call_her_as)                         calls.push(`对方叫你"${c.user_call_her_as}"`);
+  }
   if (calls.length > 0)                           parts.push(`\n【称呼】${calls.join('，')}。`);
 
   // ── 12. 记忆重点 ─────────────────────────────────────────────────────────────

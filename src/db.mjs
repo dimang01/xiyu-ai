@@ -948,6 +948,11 @@ function migrateProactiveEngineV2() {
   addColIfMissing('companions', 'attachment_style',       "TEXT DEFAULT 'secure'");
   // v1.19.3 初恋特质：1=她从没谈过恋爱、你是她初恋（笨拙earnest、珍惜firsts、不会套路）；0=关闭。默认开。
   addColIfMissing('companions', 'first_love',             'INTEGER DEFAULT 1');
+  // v1.20 安全收尾 (Issue #3)：未成年人安全模式。粘性 flag——检测到自曝未成年置 1。
+  // **故意不进 ALLOWED_FIELDS**（通用 PATCH 一拨就关 = 没有粘性），解除只走专用端点
+  // POST /api/companions/:id/age-attestation（显式年龄声明 + attested_at 留痕）。
+  addColIfMissing('companions', 'safe_mode',              'INTEGER DEFAULT 0');
+  addColIfMissing('companions', 'safe_mode_attested_at',  'TEXT');
   // v1.13 双语：界面/AI 语言（'zh' | 'en'），默认中文
   addColIfMissing('companions', 'locale',                 "TEXT DEFAULT 'zh'");
   addColIfMissing('companions', 'last_user_reply_at',     'TEXT');

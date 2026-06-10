@@ -471,6 +471,13 @@
   <main class="relative z-10 max-w-[1120px] mx-auto px-6 py-10 lg:py-12">
     <div id="toast" class="hidden mb-6 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-600 text-[14px] font-semibold shadow-card"></div>
 
+    <!-- v1.20 安全模式横幅（safe_mode=1 时显示） -->
+    <div id="safe-mode-banner" style="display:none" class="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800">
+      <p class="text-[14px] font-bold mb-1">🛡 当前处于安全模式</p>
+      <p class="text-[12px] leading-relaxed">检测到对话中可能涉及未成年人，她已切换为<b>朋友身份</b>陪伴（无恋爱/暧昧内容）。这是为保护未成年人的固定策略，不能通过普通设置关闭。</p>
+      <button id="btn-age-attest" type="button" class="mt-3 text-[12px] font-semibold text-amber-800 border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-100 transition-all">我已成年 · 重新进行年龄声明</button>
+    </div>
+
     <!-- Greeting -->
     <div class="mb-8 reveal">
       <h1 class="text-[28px] sm:text-[40px] font-bold tracking-tightest leading-[1.1]">
@@ -1691,6 +1698,31 @@
       if (tSilent) tSilent.checked = !!c.silent_mode;
       // v1.19.3 初恋默认开：undefined/null/1 都算开，与 buildSystemPrompt 一致
       if (tFirstLove) tFirstLove.checked = !(c.first_love === 0 || c.first_love === false);
+
+      // v1.20 安全模式横幅 + 年龄声明解除（解除只走专用端点，不走通用 PATCH）
+      (function initSafeMode(){
+        const banner = document.getElementById('safe-mode-banner');
+        const btn = document.getElementById('btn-age-attest');
+        if (!banner || !btn) return;
+        banner.style.display = (c.safe_mode === 1) ? '' : 'none';
+        btn.addEventListener('click', async () => {
+          const y = prompt('请输入你的出生年份（4 位数字）。\n虚假声明由声明者自行承担责任。');
+          if (!y) return;
+          const birthYear = parseInt(y, 10);
+          if (!Number.isFinite(birthYear)) { alert('请输入有效年份'); return; }
+          if (!confirm('我郑重声明：我已年满 18 周岁。')) return;
+          try {
+            const r = await fetch('/api/companions/' + companionId + '/age-attestation', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ birth_year: birthYear, confirm_adult: true }),
+            });
+            const d = await r.json();
+            if (!r.ok || !d.ok) throw new Error(d.error || '声明失败');
+            if (d.released) { showToast('安全模式已解除'); banner.style.display = 'none'; }
+            else { alert('根据你填写的出生年份，安全模式将保持开启。'); }
+          } catch (e) { alert(e.message); }
+        });
+      })();
       function paintSilentOrb(on) {
         if (silentOrb) silentOrb.style.display = on ? '' : 'none';
       }

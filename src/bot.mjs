@@ -39,6 +39,7 @@ import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel, getNeglectStage, buildReunionHint } from './emotion_state.mjs';
 import { escalationLevel, escalationDirective } from './escalation.mjs';
 import { detectPhotoIntent, detectPhotoIntentSmart, detectPhotoPromise, hasUnsafePhotoContent } from './photo_intent.mjs';
+import { detectMinorSmart, activateSafeMode } from './minor_guard.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
@@ -621,6 +622,20 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       return;
     }
 
+    // ── v1.20 安全收尾 (Issue #3)：未成年人检测（未锁定时才检测；锁定是粘性的）──
+    // strong 即时锁定本轮生效；weak 走 LLM 带上下文（多轮累积），普通消息零额外开销。
+    if (!Number(companion.safe_mode)) {
+      try {
+        const minor = await detectMinorSmart(userText, getRecentHistory(msg.fromUser, botId, 8));
+        if (minor.level === 'strong') {
+          activateSafeMode(companion.id, minor.reason);
+          companion.safe_mode = 1;   // 本轮 prompt 即时生效，不等下一条
+        }
+      } catch (e) {
+        log('warn', `[MinorGuard] detect failed companion=${companion.id}: ${e.message}`);
+      }
+    }
+
     // ── v1.9.0 #1 + v1.9.1: 安全风险检测 + 温度收紧 ────────────────────────
     // 1. proactive 调度时会查 safety_events，24h 内有 high → 暂停普通主动消息
     // 2. v1.9.1: 检测到 high/medium 后，本次 generateReply 用更低温度（更稳更少发散）
@@ -693,7 +708,8 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const neglectStage = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
     // v1.14 P0: 久别重逢 → 走"修复弧"而非"失望变凉"（失望是她主动找时的状态；他主动回来=重逢修复）
     const reunionHint = buildReunionHint(neglectStage, companion.attachment_style, companion.last_user_reply_at);
-    const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule });
+    // v1.20: 安全模式不拼想念/撒娇类情绪话术（确定性不给料，不靠 LLM 自觉）
+    const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule });
     const preferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
     // M1 共建：检测"他在教你"→ 写入塑造痕迹 + 当场确认；并把"他教过你的"注入人设（她必守）
     const _taught = detectTeaching(userText);

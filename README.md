@@ -433,7 +433,7 @@ SINGLE_USER=true
 |---|---|
 | 隐私政策 / 用户协议 | `terms.html` / `privacy.html` 是空模板，**不能直接用** |
 | AI 生成内容标识 | 中国大陆《生成式人工智能服务管理暂行办法》、欧盟 AI Act 等都要求显著标识 |
-| 未成年人保护 | 当前版本不内置年龄验证 / 内容分级 |
+| 未成年人保护 | v1.20 起内置：检测用户自曝未成年（regex + LLM 兜底）→ 粘性安全模式（朋友身份、无恋爱内容、阶段封顶、照片中性化），解除仅限 dashboard 显式年龄声明。**但这不是年龄验证**——无法识别不自曝的未成年人，公开运营仍建议接入实名/年龄验证 |
 | 个人信息保护 | PIPL / GDPR / CCPA 等需自行明示收集目的、提供删除接口 |
 | 内容安全审核 | 仓库当前只有简单黑名单，对外开放前请接入云厂商审核 API |
 | 危机话术 | 当前不识别自伤、自杀等高风险输入，请加入危机检测 |
@@ -453,7 +453,7 @@ SINGLE_USER=true
 | 讯飞 / 腾讯云 ASR 仅占位 | WebSocket + HMAC 协议复杂，需 PR |
 | 消息去重是进程内 Set | 重启可能短暂重复，[#1](https://github.com/dimang01/xiyu-ai/issues/1) |
 | SQLite 备份 / 恢复脚本不完整 | [#2](https://github.com/dimang01/xiyu-ai/issues/2) |
-| 缺少危机 / 未成年人安全审核层 | [#3](https://github.com/dimang01/xiyu-ai/issues/3) |
+| 安全审核层 | 危机干预(v1.16) + 未成年人保护(v1.20)已内置；内容审核 API 仍需运营者自接 |
 | 生产部署指南未完善 | [#5](https://github.com/dimang01/xiyu-ai/issues/5) |
 | 微信对接依赖腾讯 iLink/ClawBot 准入 | 上游条件 |
 | 实时语音通话 | 协议层做不到 |
