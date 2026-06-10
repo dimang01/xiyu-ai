@@ -413,6 +413,32 @@ function clothingStyleToEnglish(style) {
   return 'cute casual youthful outfit, soft pastel colors, light comfy daily wear, sweet girly vibe';
 }
 
+// v1.18.0: shot mode 三态 + 优先级修正；v1.19.5 (issue #237) 提炼为纯函数 + 上下文兜底。
+// 旧 bug 1：用户明说"发张自拍"，但 current_scene 含晚霞/海时 isScenery 抢先命中 → 远景小背影。
+//   修：拆「想看她」「想看景」「场景有景」三信号按意图定优先级，ENV_SELFIE 兜环境自拍。
+// 旧 bug 2 (issue #237)：判定只看当前一条消息——聊了半天作业后用户说"你是不是发不了照片啊"，
+//   这句没有"作业"字样 → 退回默认自拍，1 小时前的话题全丢。
+//   修：当前消息有明确方向（自拍/景/活动）时永远优先；当前消息只是泛请求时，查最近几轮
+//   上下文有没有"她正在做的事"（作业/代码/画…），有 → ACTIVITY_POV。
+export function decideShotMode({ userText, recentText = '', currentScene = '', trigger = '' } = {}) {
+  const _ptxt = String(userText || '');
+  const _pscene = String(currentScene || '');
+  const sceneIsScenic = /晚霞|夕阳|日落|余晖|落日|火烧云|天空|云海?|海边?|湖泊?|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|窗外|江边?|河边?/.test(_ptxt + _pscene);
+  const wantsSelfie = /自拍|看看你|看一下你|看看你的|你的样子|你长(啥|什么)样|想看你|拍张你|你的脸|露(个|张)?脸/.test(_ptxt);
+  const wantsScenery = /(拍|看看|给我看|分享|来张|来一张|发张).{0,6}(晚霞|夕阳|日落|余晖|落日|火烧云|天空|云|海|湖|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|外面|窗外)|外面.{0,4}(什么样|怎么样|长啥样)/.test(_ptxt);
+  // v1.19.2: ACTIVITY-POV —— 用户想看"她手头正在做的事/作业/工作内容"(拍物不拍脸)。
+  const wantsActivity = /(拍|看看|给我看|发张?|晒).{0,6}(作业|功课|工作|手头|笔记|手账|代码|方案|文档|在写的|在做的|在看的|在画的|在弄的|在练的|画|稿|书)|你(在|手头)?(写|做|弄|画|忙|敲|看|读|练|弹|搞)(的|了|啥|什么|到哪了?|多少了?)|(作业|功课|工作|代码|方案|稿|笔记|手账|画).{0,6}(到哪了?|多少了?|拍张?|看看|给我看)/.test(_ptxt);
+  const selfieCapable = trigger === 'user_request' || trigger === 'request' || trigger === 'selfie';
+  // 上下文兜底：当前消息没有任何明确方向（泛索图如"发不了照片啊？/再发一张"）时，
+  // 最近对话里聊的是她手头的事 → 拍那个东西，别甩一张自拍装没聊过。
+  const ctxActivity = !wantsSelfie && !wantsScenery && !wantsActivity
+    && /(作业|功课|题|卷子|笔记|手账|代码|方案|文档|稿子?|论文|在写|在画|在做|字丑|公式)/.test(String(recentText || ''));
+  if (wantsActivity || ctxActivity) return 'ACTIVITY_POV';
+  if (wantsScenery && !wantsSelfie) return 'SCENERY';
+  if (wantsSelfie || selfieCapable) return sceneIsScenic ? 'ENV_SELFIE' : 'SELFIE';
+  return sceneIsScenic ? 'SCENERY' : 'CANDID';
+}
+
 function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proactiveContext, gate, emotionContext, visualContext }) {
   const recent = (recentMessages || [])
     .slice(-8)
@@ -430,24 +456,17 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
   const appearance = compactAppearance(companion);
   const facialCue = moodToFacialCue(companion?.current_mood);
   const clothingEn = clothingStyleToEnglish(companion?.clothing_style);
-  // v1.18.0: shot mode 三态 + 优先级修正。
-  // 旧 bug：用户明说"发张自拍"，但只要 current_scene 含晚霞/海，isScenery 就抢先命中，
-  // 把人画成远处一个小背影（纯风景），违背"想看你"的意图。
-  // 修：拆「想看她(自拍)」「想看景(POV)」「场景本身有没有景」三个信号，按意图定优先级，
-  // 并新增 ENV_SELFIE(环境自拍)——人是主体近景，背后是那个景做氛围（最贴真实情侣自拍）。
-  const _ptxt = String(userText || '');
-  const _pscene = String(companion?.current_scene || '');
-  const sceneIsScenic = /晚霞|夕阳|日落|余晖|落日|火烧云|天空|云海?|海边?|湖泊?|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|窗外|江边?|河边?/.test(_ptxt + _pscene);
-  const wantsSelfie = /自拍|看看你|看一下你|看看你的|你的样子|你长(啥|什么)样|想看你|拍张你|你的脸|露(个|张)?脸/.test(_ptxt);
-  const wantsScenery = /(拍|看看|给我看|分享|来张|来一张|发张).{0,6}(晚霞|夕阳|日落|余晖|落日|火烧云|天空|云|海|湖|雪|月亮|星空|夜景|彩虹|樱花|风景|景色|外面|窗外)|外面.{0,4}(什么样|怎么样|长啥样)/.test(_ptxt);
-  // v1.19.2: ACTIVITY-POV —— 用户想看"她手头正在做的事/作业/工作内容"(拍物不拍脸)。
-  const wantsActivity = /(拍|看看|给我看|发张?|晒).{0,6}(作业|功课|工作|手头|笔记|手账|代码|方案|文档|在写的|在做的|在看的|在画的|在弄的|在练的|画|稿|书)|你(在|手头)?(写|做|弄|画|忙|敲|看|读|练|弹|搞)(的|了|啥|什么|到哪了?|多少了?)|(作业|功课|工作|代码|方案|稿|笔记|手账|画).{0,6}(到哪了?|多少了?|拍张?|看看|给我看)/.test(_ptxt);
-  const selfieCapable = trigger === 'user_request' || trigger === 'request' || trigger === 'selfie';
-  const shotMode = wantsActivity ? 'ACTIVITY_POV'
-    : (wantsScenery && !wantsSelfie) ? 'SCENERY'
-    : (wantsSelfie || selfieCapable) ? (sceneIsScenic ? 'ENV_SELFIE' : 'SELFIE')
-    : sceneIsScenic ? 'SCENERY'
-    : 'CANDID';
+  const recentPlain = (recentMessages || [])
+    .slice(-8)
+    .map(m => safeText(m.content, 120))
+    .filter(Boolean)
+    .join(' ');
+  const shotMode = decideShotMode({
+    userText,
+    recentText: recentPlain,
+    currentScene: companion?.current_scene,
+    trigger,
+  });
 
   return `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
