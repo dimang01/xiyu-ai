@@ -44,11 +44,28 @@ ok(decideShotMode({ userText: '', recentText: '', currentScene: '在江边散步
 const final1 = buildFinalImagePrompt({ identityPrompt: 'a young woman with long black hair', scenePrompt: 'sitting at her desk writing math homework, warm desk lamp', providerCapabilities: {}, referenceImagePath: null });
 ok(final1.includes('no photo grid'), '#3 最终 prompt 含反拼图约束');
 ok(final1.includes('single photo'), '#3 最终 prompt 含 single photo');
-// 900 字截断后反拼图词仍存活（追加在 sanitize 之后）
+// 截断后反拼图词仍存活（追加在 sanitize 之后）
 const longScene = 'a cozy bedroom with fairy lights, '.repeat(40);
 const final2 = buildFinalImagePrompt({ identityPrompt: 'a young woman', scenePrompt: longScene, providerCapabilities: {}, referenceImagePath: null });
 ok(final2.includes('no photo grid'), '#3 超长 prompt 截断后反拼图词存活');
 ok(final2.endsWith(ANTI_COLLAGE_PROMPT), '#3 反拼图词在末尾完整保留');
+
+// ── v1.20.1 (用户反馈"照片太假")：i2i 全量拼装下 realism 质感词必须存活 ──
+// 历史 bug：sanitizePhotoPrompt 双重 900 字截断（入口+出口各一道）把尾部的
+// REALISM_PERSON 整个吃掉——i2i 的 referenceNote 占 ~400 字，质感词在生产
+// i2i 路径从没生效过，模型裸跑默认磨皮假脸。任何一道截断回退都在这红。
+{
+  const finalI2i = buildFinalImagePrompt({
+    identityPrompt: 'naturally pretty young East Asian woman, long black wavy hair, slim build, sweet casual style, fresh vibe, consistent same adult person across photos, realistic casual phone snapshot style',
+    scenePrompt: 'casual smartphone front-camera selfie on a busy city shopping street in early afternoon, chest-up framing, one arm reaching toward camera, face in focus, pedestrians softly blurred behind her, bright natural daylight',
+    providerCapabilities: { referenceImage: true },
+    referenceImagePath: '/tmp/fake-ref.png',
+  });
+  ok(finalI2i.includes('clearly visible pores'), 'realism: 毛孔质感词在 i2i 全量拼装下存活');
+  ok(finalI2i.includes('strictly keep the exact composition'), 'realism: 构图锚定句存活（防场景跑偏）');
+  ok(finalI2i.includes('not an idealized AI-generated face'), 'realism: 反 AI 理想脸句存活');
+  ok(finalI2i.includes('no photo grid'), 'realism: 反拼图与质感词共存');
+}
 
 console.log(`photo_fix237_smoke: 通过 ${pass} 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

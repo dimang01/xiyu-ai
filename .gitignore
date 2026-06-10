@@ -68,3 +68,4 @@ public/generated/
 # ─── provider pricing config (private) ──────────────────────────────────────
 config/provider_pricing.json
 __pycache__/
+scripts/_ab_out/

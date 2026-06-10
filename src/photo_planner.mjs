@@ -254,7 +254,11 @@ function stripPrivateDetails(text) {
 }
 
 export function sanitizePhotoPrompt(text) {
-  let prompt = stripPrivateDetails(safeText(text, 900));
+  // v1.20.1: 900→2200。i2i 的 referenceNote 就占 ~400 字，900 上限把尾部的
+  // REALISM_PERSON 反磨皮词全截掉了——生产 i2i 路径质感词从没真正生效，
+  // 这是"照片假"的隐藏根因（A/B 实验实测）。gemini/gpt-image 的真实 prompt
+  // 上限远大于此，2200 可容纳 identity+scene+refNote+完整 realism tail。
+  let prompt = stripPrivateDetails(safeText(text, 2200));
   prompt = prompt.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!prompt) return '';
 
@@ -280,7 +284,7 @@ export function sanitizePhotoPrompt(text) {
     .replace(/\bwithout\s+[a-z][a-z\s-]*?(?=[,.;]|$)/gi, '')
     .replace(/\bnot\s+[a-z][a-z\s-]*?(?=[,.;]|$)/gi, '');
   if (BLOCKED_PROMPT_RE.test(stripped2)) return '';
-  return prompt.slice(0, 900);
+  return prompt.slice(0, 2200);   // v1.20.1: 与入口上限一致（双重截断之前只改一处不生效）
 }
 
 function extractJson(text) {
