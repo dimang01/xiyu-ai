@@ -155,6 +155,9 @@ export function getRecentSafetyRisk(companionId, { highWindowMs = 86_400_000, me
 // ─── v1.8.0 #4: companion_open_loops "未完成的事" ────────────────────────
 // "他说明天去招聘会" → 第二天她主动问"面试怎么样"
 // 真人陪伴感最强的瞬间之一：她记得用户说过的事
+// v1.20: 加 owner 列，同一张表也记**她自己**的口头承诺（owner='companion'）：
+// "明天提醒你带伞""周末给你讲那个故事" → 到期由 proactive 主动兑现。
+// 说了不做比不说更伤信任，photo promise (v1.19.5) 只接住了发图，这里接住其余。
 function migrateOpenLoops() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS companion_open_loops (
@@ -176,6 +179,11 @@ function migrateOpenLoops() {
     CREATE INDEX IF NOT EXISTS idx_loops_companion_status_due
       ON companion_open_loops(companion_id, status, due_at);
   `);
+  // v1.20: owner 区分这是谁的未完成事项；promise_kind 只对 owner='companion' 有意义
+  //   remind = 提醒承诺（"明天提醒你带伞"，有硬时点，过窗 36h 不再提——马后炮提醒比不提更糟）
+  //   do     = 陪伴承诺（"周末给你讲那个故事"，软时点，72h 内有效）
+  addColIfMissing('companion_open_loops', 'owner', "TEXT NOT NULL DEFAULT 'user' CHECK(owner IN ('user','companion'))");
+  addColIfMissing('companion_open_loops', 'promise_kind', "TEXT CHECK(promise_kind IS NULL OR promise_kind IN ('remind','do'))");
 }
 
 // ─── v1.8.0 #3: companion_preferences 结构化偏好账本 ───────────────────────
@@ -2828,7 +2836,8 @@ export function deleteShaping(companionId, id) {
 }
 
 // ─── v1.8.0 #4: companion_open_loops CRUD ──────────────────────────────────
-export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight = 5, expectedFollowup = null, sourceMessageId = null }) {
+// v1.20: owner='companion' 时是她自己的口头承诺（promiseKind: remind/do）
+export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight = 5, expectedFollowup = null, sourceMessageId = null, owner = 'user', promiseKind = null }) {
   if (!companionId || !title) throw new Error('saveOpenLoop: missing required fields');
   const db = getDb();
   // 防重复：同 companion 最近 7 天内的相同 title 视为重复（轻量去重）
@@ -2840,10 +2849,12 @@ export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight
   `).get(companionId, title);
   if (existing) return existing.id;
   const info = db.prepare(`
-    INSERT INTO companion_open_loops (companion_id, title, due_at, emotional_weight, expected_followup, source_message_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO companion_open_loops (companion_id, title, due_at, emotional_weight, expected_followup, source_message_id, owner, promise_kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(companionId, String(title).slice(0, 200), dueAt, Math.max(0, Math.min(100, emotionalWeight)),
-         expectedFollowup ? String(expectedFollowup).slice(0, 200) : null, sourceMessageId);
+         expectedFollowup ? String(expectedFollowup).slice(0, 200) : null, sourceMessageId,
+         owner === 'companion' ? 'companion' : 'user',
+         promiseKind === 'remind' || promiseKind === 'do' ? promiseKind : null);
   return info.lastInsertRowid;
 }
 
@@ -2858,17 +2869,52 @@ export function listOpenLoops(companionId, { status = 'open', limit = 50 } = {})
 }
 
 // 临近到期 / 已到期未 resolve 的 loops（给 proactive 用）
-export function listDueOpenLoops(companionId, { withinHours = 24 } = {}) {
+// v1.20: 默认只取 owner='user'（她的承诺走 listDueCompanionPromises，到期语义不同）
+export function listDueOpenLoops(companionId, { withinHours = 24, owner = 'user' } = {}) {
   const db = getDb();
   // due_at 在 +withinHours 内或已过期；按权重排序
   return db.prepare(`
     SELECT * FROM companion_open_loops
-    WHERE companion_id = ? AND status = 'open'
+    WHERE companion_id = ? AND status = 'open' AND owner = ?
       AND due_at IS NOT NULL
       AND datetime(due_at) <= datetime('now', '+' || ? || ' hours')
     ORDER BY emotional_weight DESC, due_at ASC
     LIMIT 5
-  `).all(companionId, withinHours);
+  `).all(companionId, owner, withinHours);
+}
+
+// ─── v1.20: 她的承诺（owner='companion'）到期查询 ──────────────────────────
+// 时区语义：due_at 存的是 Asia/Shanghai 日期（YYYY-MM-DD，抽取时 LLM 按上海"今天"
+// 换算），所以一律和 datetime('now','+8 hours')（= 上海 naive 时间）比，绝不和 UTC 比。
+// 与 listDueOpenLoops 的关键差异：user loop 提前一晚问"准备得咋样"是关心，
+// 她的提醒承诺**绝不能提前**（"明天提醒你带伞"今晚就发是穿帮）→ due 当天 00:00 起才算到期。
+// 过窗即放弃：remind 36h（马后炮提醒比不提更糟），do 72h（讲故事晚两天还能讲）。
+// 过窗的悬案由 markStaleOpenLoops 现有 7 天规则统一收尸。
+export function listDueCompanionPromises(companionId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM companion_open_loops
+    WHERE companion_id = ? AND status = 'open' AND owner = 'companion'
+      AND due_at IS NOT NULL
+      AND datetime(due_at) <= datetime('now', '+8 hours')
+      AND (
+        (promise_kind = 'remind' AND datetime(due_at) >= datetime('now', '+8 hours', '-36 hours'))
+        OR (COALESCE(promise_kind, 'do') <> 'remind' AND datetime(due_at) >= datetime('now', '+8 hours', '-72 hours'))
+      )
+    ORDER BY CASE promise_kind WHEN 'remind' THEN 0 ELSE 1 END, due_at ASC, emotional_weight DESC
+    LIMIT 3
+  `).all(companionId);
+}
+
+// v1.20: 今天（上海时区）已兑现的承诺数——proactive 日配额闸门用
+export function countTodayKeptPromises(companionId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT COUNT(*) AS c FROM companion_open_loops
+    WHERE companion_id = ? AND owner = 'companion' AND status = 'resolved'
+      AND date(resolved_at, '+8 hours') = date('now', '+8 hours')
+  `).get(companionId);
+  return row?.c || 0;
 }
 
 export function resolveOpenLoop(loopId, resolvedText = null) {
