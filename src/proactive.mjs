@@ -242,6 +242,15 @@ async function tick(now = new Date()) {
 //   1. 进程内 in-flight 锁（防同 companion 并发 race，B3）
 //   2. 持久化 last_proactive_sent_at 25 分钟硬间隔（防重启重发，B1）
 //   3. reminder/confession 等"特殊事件"放宽到 5 分钟（不能因 normal 节流而错过纪念日祝福）
+// v1.19.6 hotfix: 晚安标记的归属日（纯函数，smoke 可回归）。
+// 凌晨 <05:00 发出的晚安属于"昨晚"——否则跨午夜发送会吃掉当晚的晚安。
+export function goodnightBelongDateKey(now = new Date()) {
+  const shHour = (now.getUTCHours() + 8) % 24;
+  return shHour < 5
+    ? shanghaiDateKey(new Date(now.getTime() - 24 * 3600_000))
+    : shanghaiDateKey(now);
+}
+
 // v1.19.5: morning 是否该降级为 normal（纯函数，smoke 可确定性回归）。
 // 两种"刚醒"穿帮都降级（配额照用，文案不再装刚醒）：
 // 1) alreadySent —— 今天早安已发过：服务重启丢内存排程，重算把 morning 又排上
@@ -332,7 +341,10 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
         // v1.10.6: goodnight 只发"我要睡了 晚安"，不立即 enterSleep。
         // 真正入睡交给 sleep tick 在 today_bed_at 触发，让睡前晚安与入睡之间留挽留窗口
         // （用户说"再陪陪我"可延后）。
-        upsertSleepSchedule(companion.id, { goodnight_sent_for_date: todayKey });
+        // v1.19.6 hotfix: 跨午夜归属——排 23:59 的晚安经发送延迟滑到凌晨 00:0x 才发出时，
+        // 标"今天"会让防重闸把**当晚 23 点的晚安**误判为已发（生产实测 companion=3/7 踩中）。
+        // 凌晨 <05:00 发出的晚安归属"昨晚"（与 morning 的 05:00 分界对称）。
+        upsertSleepSchedule(companion.id, { goodnight_sent_for_date: goodnightBelongDateKey() });
         log('info', `[Sleep] goodnight sent (enterSleep deferred to bed_at) companion=${companion.id}`);
       } else if (kind === 'morning') {
         exitSleep(companion.id);

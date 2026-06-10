@@ -5,7 +5,7 @@
  * 07:46 部署重启丢内存排程 → 重算把 morning 又排上 → 09:32 又发"早…刚醒"。
  * 验 shouldDemoteMorning 的两道判定：已发过早安 / 今早已互动。
  */
-import { shouldDemoteMorning } from '../src/proactive.mjs';
+import { shouldDemoteMorning, goodnightBelongDateKey } from '../src/proactive.mjs';
 import { shanghaiDateKey } from '../src/db.mjs';
 
 let pass = 0, fail = 0;
@@ -54,7 +54,26 @@ ok(!r.demote, '昨晚 20:00 聊过 → 今早早安正常发');
 r = shouldDemoteMorning({ goodmorningSentForDate: today, todayKey: today, lastUserReplyAt: shToday(8, 4) });
 ok(r.demote && r.alreadySent && r.talkedThisMorning, '双条件同时命中 → 降级');
 
-// ── 4) 健壮性：脏输入不抛错、不误降 ──
+// ── 4) goodnight 跨午夜归属（v1.19.6 hotfix，生产实测 companion=3/7 踩中） ──
+// 排 23:59 的晚安延迟到凌晨 00:10 发出 → 归属"昨晚"，否则当晚 23 点的晚安被误跳过
+const mkUtc = (shHour, shMin = 0) => {
+  const d = new Date();
+  d.setUTCHours((shHour - 8 + 24) % 24, shMin, 0, 0);
+  return d;
+};
+{
+  const at0010 = mkUtc(0, 10);
+  const expectYesterday = shanghaiDateKey(new Date(at0010.getTime() - 24 * 3600_000));
+  ok(goodnightBelongDateKey(at0010) === expectYesterday, '凌晨 00:10 发出的晚安归属昨晚');
+  const at2350 = mkUtc(23, 50);
+  ok(goodnightBelongDateKey(at2350) === shanghaiDateKey(at2350), '23:50 发出的晚安归属当天');
+  const at0459 = mkUtc(4, 59);
+  ok(goodnightBelongDateKey(at0459) === shanghaiDateKey(new Date(at0459.getTime() - 24 * 3600_000)), '04:59 仍归属昨晚（05:00 分界）');
+  const at0500 = mkUtc(5, 0);
+  ok(goodnightBelongDateKey(at0500) === shanghaiDateKey(at0500), '05:00 起归属当天');
+}
+
+// ── 5) 健壮性：脏输入不抛错、不误降 ──
 r = shouldDemoteMorning({ goodmorningSentForDate: null, todayKey: today, lastUserReplyAt: 'not-a-date' });
 ok(!r.demote, '脏时间串 → 不误降级');
 r = shouldDemoteMorning({});
