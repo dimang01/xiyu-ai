@@ -15,7 +15,7 @@
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#FFB6D9" />
   <title>溪语AI · 开源 AI 陪伴框架 (Xiyu AI · Open-source AI Companion Framework)</title>
-  <meta name="description" content="溪语 AI 是一个开源的 AI 陪伴框架（MIT 协议）— 把大模型当作有完整人生背景的虚拟个体来调度，支持 9 家 chat / 5 家 image provider 切换，自带浏览器 playground，可选微信网页扫码绑定。Xiyu AI: an open-source AI companion framework on GitHub (MIT)." />
+  <meta name="description" content="溪语 AI 是一个开源的 AI 陪伴框架（MIT 协议）— 把大模型当作有完整人生背景的虚拟个体来调度，支持多家 chat / image provider 切换，自带浏览器 playground，可选微信网页扫码绑定。Xiyu AI: an open-source AI companion framework on GitHub (MIT)." />
   <meta name="keywords" content="AI女友,虚拟伴侣,溪语AI,AI聊天,微信AI,open source AI companion,xiyu ai,GitHub,MIT,Node.js,DeepSeek,Claude,GPT,LLM" />
   <meta name="author" content="溪语 AI Contributors" />
   <meta name="theme-color" content="#FFFFFF" />
@@ -232,7 +232,7 @@
       "支持发图片和语音吗？": "Can I send images and voice?",
       "支持。你发的图片和语音她都能理解并自然回应。内测期间所有功能完全开放。": "Yes — she understands the images and voice you send and responds naturally. Everything is fully open during beta.",
       "数据安全吗？我的聊天会被泄露吗？": "Is my data safe? Could my chats leak?",
-      "所有对话端到端加密存储，仅你本人可见。我们承诺永不出售、永不用于训练。": "All chats are stored end-to-end encrypted, visible only to you. We promise never to sell them or use them for training.",
+      "对话经 HTTPS 加密传输，存储在运营者的服务器上；生成回复时，消息会发送给第三方大模型服务商（如 DeepSeek），受其服务条款约束。我们承诺：不出售你的数据，也不用于我们自有的模型训练；运营者仅在故障排查等必要场景接触数据。聊天原文保留 60 天后自动清理。": "Chats are encrypted in transit (HTTPS) and stored on the operator's server. To generate replies, messages are sent to third-party LLM providers (e.g. DeepSeek), subject to their terms. We promise: we never sell your data and never use it to train models of our own; the operator only accesses data when strictly necessary (e.g. troubleshooting). Raw chat logs are auto-purged after 60 days.",
       "溪语正在小范围内测，所有功能对每一位用户完全开放，无任何限制。": "Xiyu is in limited beta; every feature is fully open to every user, with no restrictions.",
       "内测中 · 免费": "In beta · Free",
       "内测期": "Beta",
@@ -769,7 +769,7 @@
         </details>
         <details class="reveal group bg-white border border-line rounded-2xl px-6 py-5 cursor-pointer" data-delay="1">
           <summary class="flex items-center justify-between text-[15px] font-semibold tracking-tight">数据安全吗？我的聊天会被泄露吗？<i data-lucide="plus" class="w-5 h-5 text-mute group-open:rotate-45 transition-transform"></i></summary>
-          <p class="mt-3 text-[14px] text-mute font-medium leading-relaxed">所有对话端到端加密存储，仅你本人可见。我们承诺永不出售、永不用于训练。</p>
+          <p class="mt-3 text-[14px] text-mute font-medium leading-relaxed">对话经 HTTPS 加密传输，存储在运营者的服务器上；生成回复时，消息会发送给第三方大模型服务商（如 DeepSeek），受其服务条款约束。我们承诺：不出售你的数据，也不用于我们自有的模型训练；运营者仅在故障排查等必要场景接触数据。聊天原文保留 60 天后自动清理。</p>
         </details>
         <details class="reveal group bg-white border border-line rounded-2xl px-6 py-5 cursor-pointer" data-delay="2">
           <summary class="flex items-center justify-between text-[15px] font-semibold tracking-tight">可以重新设定她的人设吗？<i data-lucide="plus" class="w-5 h-5 text-mute group-open:rotate-45 transition-transform"></i></summary>
