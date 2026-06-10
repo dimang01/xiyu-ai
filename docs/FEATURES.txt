@@ -27,6 +27,11 @@
             ACTIVITY-POV) / 用户名允许中文 / 初恋特质 Phase-1
   · v1.20   安全收尾：未成年人保护(minor_guard 检测+粘性安全模式+
             年龄声明解除) / 隐私过滤强化 / 发布一致性 CI
+  · v1.21   冲突与和好弧：关系事件状态机(hurt/cold/withdrawing/
+            repairing/scar) / wound vs distance 两类修复 / matched vs
+            generic 道歉 / 依恋风格调制 / 红线确定性护栏(危机最高
+            优先/无永久冷战/safe_mode 封顶) / 收编 v1.14 冷落+重逢+
+            低能量+escalation / emotion-debug 面板 / 冲突和好入记忆
 ════════════════════════════════════════════════════════════════════════
 
 
