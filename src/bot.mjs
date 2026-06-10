@@ -35,6 +35,7 @@ import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from 
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubConflictRedline } from './moderation.mjs';
 import { runArcSignalTick } from './relationship_arc_runtime.mjs';
+import { applyCrisisOverride } from './relationship_arc.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -731,13 +732,8 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     try {
       arcCtx = runArcSignalTick(companion, { userText, escalationLevel: esc.level, inner: innerRes?.struct || null });
     } catch (e) { log('warn', `[Arc] tick 异常（按 normal 继续）: ${e.message}`); }
-    // 红线 #5：危机最高优先——冲突表达确定性替换为关怀指令（不是删掉靠模型自觉）
-    if (_crisisLevel !== 'none' && arcCtx.active) {
-      arcCtx = {
-        ...arcCtx,
-        directive: `\n【★ 最高优先级：先放下别扭】他现在状态很不好（出现了情绪危机信号）。你们之间的别扭这一刻全部放下——你只是担心他、想接住他的人。语气温柔、在场、专注他本身，绝不冷淡、绝不提任何矛盾。`,
-      };
-    }
+    // 红线 #5：危机最高优先——冲突表达确定性替换为关怀指令（纯函数，conflict_redline_guard 盯防）
+    arcCtx = applyCrisisOverride(arcCtx, _crisisLevel);
     // 红线 #3：冲突态绝不武器化他的脆弱记忆——从召回源头不给料（出站无法确定性判定）
     if (arcCtx.arcState === 'hurt' || arcCtx.arcState === 'cold' || arcCtx.arcState === 'withdrawing') {
       memories = memories.filter(m => !m?.sensitive_flag && m?.memory_layer !== 'emotion');

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<!-- v1.21: 冲突与和好弧 · 情绪因果 debug 面板（admin 鉴权）
+     当前 arc 状态 / open 事件 / 事件流水 / 信号流水（最近 N 条消息的情绪增量及原因）。
+     没有这个面板这套状态机上线即玄学——docs/CONFLICT_ARC.md §5.6。
+-->
+<html lang="zh-CN">
+<head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>情绪因果 · Admin · 溪语AI</title>
+  <link rel="icon" href="/logo.png?v=2" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/glass.css" />
+  <script>
+    tailwind.config = { theme: { extend: { colors: {
+      sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+      ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA', danger:'#FF4D4F',
+    }}}};
+  </script>
+  <style>
+    body { background:
+      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255,182,217,.25), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 100% 100%, rgba(255,182,217,.15), transparent 60%),
+      #FAFAFA; }
+    .card { background: rgba(255,255,255,.7); backdrop-filter: blur(20px); border: 1px solid #F0F0F2; border-radius: 24px; }
+    .state-pill { display:inline-block; padding:4px 14px; border-radius:999px; font-weight:700; font-size:14px; }
+    .st-normal { background:#E8F8EE; color:#1F9D55; }
+    .st-normal_with_scar { background:#FFF7E6; color:#B7791F; }
+    .st-hurt { background:#FFF1F0; color:#E0596B; }
+    .st-cold { background:#EBF3FF; color:#3B6FD4; }
+    .st-withdrawing { background:#EFEAFB; color:#7C5CD6; }
+    .st-repairing { background:#FFE8F2; color:#FF6FA3; }
+    table { width:100%; border-collapse:collapse; font-size:12.5px; }
+    th { text-align:left; color:#86868B; font-weight:600; padding:6px 8px; border-bottom:1px solid #F0F0F2; white-space:nowrap; }
+    td { padding:6px 8px; border-bottom:1px solid #F7F7F9; vertical-align:top; }
+    .mono { font-family: ui-monospace, monospace; font-size:11.5px; }
+  </style>
+  <script src="/app/theme.js" defer></script>
+</head>
+
+<body class="min-h-screen font-sans text-ink antialiased">
+
+  <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
+    <div class="mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2" style="max-width:1280px;">
+      <a href="/app/admin.html" class="flex items-center gap-2 flex-shrink-0">
+        <img src="/logo-256.webp?v=2" alt="" class="w-7 h-7 rounded-lg" />
+        <span class="text-[15px] font-semibold whitespace-nowrap">溪语AI · 情绪因果</span>
+      </a>
+      <div class="flex items-center gap-2 sm:gap-4">
+        <a href="/app/admin.html" class="text-[13px] font-medium text-mute hover:text-ink">← 返回 Admin</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto p-4 sm:p-6 space-y-5" style="max-width:1280px;">
+
+    <div class="card p-5">
+      <div class="flex items-end gap-3 flex-wrap">
+        <div>
+          <label class="block text-[12px] font-semibold text-mute mb-1.5">Companion ID</label>
+          <input id="input-id" type="number" placeholder="1"
+                 class="px-3 py-2 text-[14px] bg-cloud border border-line rounded-xl font-medium w-32" />
+        </div>
+        <button id="btn-load" class="px-5 py-2 text-[14px] font-semibold bg-sakura-deep text-white rounded-xl hover:opacity-90">加载</button>
+        <button id="btn-refresh" class="px-4 py-2 text-[14px] font-medium text-mute border border-line rounded-xl hover:text-ink hidden">刷新</button>
+        <span id="hint" class="text-[12px] text-mute"></span>
+      </div>
+    </div>
+
+    <div id="panel" class="space-y-5 hidden">
+
+      <!-- 状态卡 -->
+      <div class="card p-5">
+        <div class="flex items-center gap-4 flex-wrap">
+          <div>
+            <div class="text-[12px] text-mute mb-1">当前关系弧状态</div>
+            <span id="arc-state" class="state-pill st-normal">normal</span>
+          </div>
+          <div class="text-[12.5px] text-mute space-y-0.5">
+            <div>进入于：<span id="arc-since" class="mono text-ink">—</span></div>
+            <div>伴侣：<span id="c-name" class="text-ink font-medium">—</span> · 依恋 <span id="c-style" class="text-ink">—</span> · safe_mode <span id="c-safe" class="text-ink">—</span></div>
+            <div>关系阶段：<span id="c-stage" class="text-ink">—</span> · 最近用户消息：<span id="c-last" class="mono text-ink">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- open 事件 -->
+      <div class="card p-5">
+        <div class="text-[13px] font-semibold mb-2">当前活跃事件（open / repairing）</div>
+        <div id="open-event" class="text-[12.5px] text-mute">无</div>
+      </div>
+
+      <!-- 信号流水 -->
+      <div class="card p-5 overflow-x-auto">
+        <div class="text-[13px] font-semibold mb-2">信号流水（最近消息的状态增量及原因）</div>
+        <table id="tbl-signals">
+          <thead><tr><th>时间</th><th>信号</th><th>sev</th><th>转移</th><th>原因</th><th>tone</th><th>hurt</th><th>消息摘要</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- 事件流水 -->
+      <div class="card p-5 overflow-x-auto">
+        <div class="text-[13px] font-semibold mb-2">关系事件流水</div>
+        <table id="tbl-events">
+          <thead><tr><th>#</th><th>类型</th><th>sev</th><th>状态</th><th>修复</th><th>warm</th><th>道歉</th><th>余怒</th><th>起因</th><th>建立</th><th>了结</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- 情绪趋势（近 48 tick 摘要） -->
+      <div class="card p-5 overflow-x-auto">
+        <div class="text-[13px] font-semibold mb-2">情绪趋势（trust / security / dependency，最近 48 点）</div>
+        <table id="tbl-trend">
+          <thead><tr><th>时间</th><th>trust</th><th>security</th><th>dependency</th><th>mood</th><th>来源</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmtT = (s) => { if (!s) return '—'; const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? esc(s) : d.toLocaleString('zh-CN', { hour12: false }); };
+
+    // ─── 鉴权（admin token 从 localStorage 拿，同 admin-user-profile 范式）───
+    const token = localStorage.getItem('xiyu_admin_token') || '';
+    if (!token) location.href = '/app/admin.html';
+
+    async function load(id) {
+      $('#hint').textContent = '加载中…';
+      try {
+        const r = await fetch(`/api/admin/companions/${id}/arc-debug`, { headers: { 'Authorization': 'Bearer ' + token } });
+        if (r.status === 401) { localStorage.removeItem('xiyu_admin_token'); location.href = '/app/admin.html'; return; }
+        const j = await r.json();
+        if (!j.ok) { $('#hint').textContent = j.message || '加载失败'; return; }
+        render(j.data || j);
+        $('#hint').textContent = '';
+        $('#panel').classList.remove('hidden');
+        $('#btn-refresh').classList.remove('hidden');
+        history.replaceState(null, '', `?id=${id}`);
+      } catch (e) {
+        $('#hint').textContent = '请求失败：' + e.message;
+      }
+    }
+
+    function render(d) {
+      const st = d.arc_state || 'normal';
+      const pill = $('#arc-state');
+      pill.textContent = st;
+      pill.className = 'state-pill st-' + st;
+      $('#arc-since').textContent = fmtT(d.arc_state_changed_at);
+      $('#c-name').textContent = d.companion?.name || '—';
+      $('#c-style').textContent = d.companion?.attachment_style || 'secure';
+      $('#c-safe').textContent = d.companion?.safe_mode ? '开' : '关';
+      $('#c-stage').textContent = d.companion?.relationship_stage || '—';
+      $('#c-last').textContent = fmtT(d.companion?.last_user_reply_at);
+
+      const oe = d.open_event;
+      $('#open-event').innerHTML = oe
+        ? `<span class="font-medium text-ink">${esc(oe.type)}</span> · sev ${oe.severity} · ${esc(oe.repair_status)}`
+          + ` · warm ${oe.repair_warm}${oe.repair_from ? ' · 来源 ' + esc(oe.repair_from) : ''}`
+          + `${oe.apology_kind ? ' · 道歉 ' + esc(oe.apology_kind) : ''}${oe.reopened ? ' · <span class="text-danger">余怒</span>' : ''}`
+          + `${oe.trigger_text ? `<div class="mt-1">起因：${esc(oe.trigger_text)}</div>` : ''}`
+          + `<div class="mt-1 mono">建立 ${fmtT(oe.created_at)}</div>`
+        : '无（关系正常）';
+
+      $('#tbl-signals tbody').innerHTML = (d.signal_log || []).map(s => `<tr>
+        <td class="mono">${fmtT(s.created_at)}</td><td>${esc(s.signal_kind || '—')}</td><td>${s.severity ?? '—'}</td>
+        <td class="mono">${esc(s.state_before || '?')} → <b>${esc(s.state_after || '?')}</b></td>
+        <td>${esc(s.reason || '')}</td><td>${esc(s.inner_tone || '—')}</td><td>${s.perceived_hurt ?? '—'}</td>
+        <td class="text-mute">${esc(s.user_text_brief || '')}</td></tr>`).join('') || '<tr><td colspan="8" class="text-mute">还没有信号记录</td></tr>';
+
+      $('#tbl-events tbody').innerHTML = (d.events || []).map(e => `<tr>
+        <td>${e.id}</td><td>${esc(e.type)}</td><td>${e.severity}</td>
+        <td class="mono">${esc(e.state_before)} → ${esc(e.state_after)}</td>
+        <td>${esc(e.repair_status)}</td><td>${e.repair_warm}</td><td>${esc(e.apology_kind || '—')}</td>
+        <td>${e.reopened ? '是' : ''}</td><td class="text-mute">${esc(e.trigger_text || '')}</td>
+        <td class="mono">${fmtT(e.created_at)}</td><td class="mono">${fmtT(e.resolved_at)}</td></tr>`).join('') || '<tr><td colspan="11" class="text-mute">还没有关系事件</td></tr>';
+
+      $('#tbl-trend tbody').innerHTML = (d.emotion_trend || []).slice().reverse().map(t => `<tr>
+        <td class="mono">${fmtT(t.created_at || t.recorded_at)}</td><td>${t.trust ?? '—'}</td>
+        <td>${t.security ?? '—'}</td><td>${t.dependency ?? '—'}</td>
+        <td>${esc(t.mood || '—')}</td><td>${esc(t.trigger || t.source || '—')}</td></tr>`).join('') || '<tr><td colspan="6" class="text-mute">无趋势数据</td></tr>';
+    }
+
+    $('#btn-load').addEventListener('click', () => { const id = Number($('#input-id').value); if (id > 0) load(id); });
+    $('#btn-refresh').addEventListener('click', () => { const id = Number($('#input-id').value); if (id > 0) load(id); });
+    $('#input-id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-load').click(); });
+
+    const qid = Number(new URLSearchParams(location.search).get('id'));
+    if (qid > 0) { $('#input-id').value = qid; load(qid); }
+  </script>
+</body>
+</html>

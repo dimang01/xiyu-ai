@@ -173,6 +173,7 @@ import {
   getDiaryEntries, countDiaryEntries,
   getDailyThought, getRecentDailyThoughts,
   getAppSetting, setAppSetting, deleteAppSetting,
+  getArcState, getOpenRelationshipEvent, listRelationshipEvents, listArcSignalLog,  // v1.21 冲突弧 debug
 } from './db.mjs';
 import { MEMORY_LAYERS, MEMORY_STATUSES, MEMORY_SOURCES, normalizeMemoryLayer, normalizeMemoryWeight } from './memory_v2.mjs';
 import { getEmotionTrend, getEmotionStateWithDefaults, getMissingLevel, getMissingLabel } from './emotion_state.mjs';
@@ -1718,6 +1719,33 @@ router.get('/admin/ilink-status', requireAdmin, (_req, res) => {
     accounts,
     account_count: Object.keys(accounts).length,
     legacyCredentials: Boolean(snapshot.legacyCredentials),
+  });
+});
+
+// GET /api/admin/companions/:id/arc-debug — v1.21 冲突弧情绪因果面板
+// 当前状态 / open 事件 / 事件流水 / 信号流水（最近 N 条消息的增量及原因）/ 情绪趋势
+router.get('/admin/companions/:id/arc-debug', requireAdmin, (req, res) => {
+  const id = intId(req.params.id);
+  if (!id) return err(res, 'id 无效');
+  const companion = getCompanionById(id);
+  if (!companion) return err(res, 'companion 不存在', 404);
+  const arc = getArcState(id);
+  let trend = [];
+  try { trend = getEmotionHistoryTrend(id, 7) || []; } catch {}
+  return ok(res, {
+    companion: {
+      id, name: companion.name,
+      attachment_style: companion.attachment_style || 'secure',
+      safe_mode: Number(companion.safe_mode) ? 1 : 0,
+      relationship_stage: companion.relationship_stage || null,
+      last_user_reply_at: companion.last_user_reply_at || null,
+    },
+    arc_state: arc.arc_state,
+    arc_state_changed_at: arc.arc_state_changed_at,
+    open_event: getOpenRelationshipEvent(id),
+    events: listRelationshipEvents(id, 50),
+    signal_log: listArcSignalLog(id, 50),
+    emotion_trend: trend.slice(-48),
   });
 });
 

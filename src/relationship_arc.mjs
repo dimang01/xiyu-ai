@@ -176,7 +176,10 @@ export function tickArcOnSignal(ctx = {}) {
   if (state === 'hurt') {
     const gainWarm = (n, reason) => {
       const nw = warmNow + n;
-      const oldEnough = _hoursSince(openEvent.created_at, now) >= ARC_PARAMS.HURT_WARM_MIN_H;
+      // 情绪惯性最短时长只对 wound 生效：distance 类（他消失后的小别扭）重逢
+      // 哄几句就软是 v1.14 重逢弧的原语义，不卡 12h
+      const oldEnough = cat === 'distance'
+        || _hoursSince(openEvent.created_at, now) >= ARC_PARAMS.HURT_WARM_MIN_H;
       if (nw >= ARC_PARAMS.HURT_WARM_NEED && oldEnough) {
         res.eventOp = { op: 'resolve', note: 'soothed' };
         return go('normal', 'soothed');   // 小别扭哄好，不需要正式道歉
@@ -240,7 +243,8 @@ export function tickArcOnSignal(ctx = {}) {
       const nw = warmNow + gain;
       const from = openEvent.repair_from || 'cold';
       const need = repairNeed(from, style, openEvent.apology_kind);
-      const minH = ARC_PARAMS.REPAIR_MIN_H[from] ?? ARC_PARAMS.REPAIR_MIN_H.cold;
+      // distance 类重逢修复节奏减半（wound 的和好惯性来自被伤害，distance 只是分开太久）
+      const minH = (ARC_PARAMS.REPAIR_MIN_H[from] ?? ARC_PARAMS.REPAIR_MIN_H.cold) * (cat === 'distance' ? 0.5 : 1);
       if (nw >= need && _hoursSince(stateChangedAt, now) >= minH) {
         res.eventOp = { op: 'resolve', note: 'repaired' };
         return go('normal', 'repaired');
@@ -362,10 +366,10 @@ const HARSH_STRONG_RE = /(说话不算数|食言|言而无信|放(?:你|我)?鸽
 const JOKE_RE = /(哈哈|嘻嘻|嘿嘿|开玩笑|逗你|闹着玩|骗你的|～$)/;
 
 const APOLOGY_RE = /(对不起|不好意思|抱歉|我错了|我的错|是我不对|原谅我|别生气了|消消气|给你道歉|我道歉|sorry)/i;
-// matched 兜底判定：道歉里指涉了具体改正（inner OS 的 apology_target 优先于此）
-const APOLOGY_SPECIFIC_RE = /(不该|不应该|我以后|再也不|下次不|我不会再|刚才(?:那句|说的|不对))/;
+// matched 兜底判定：道歉里指涉了具体改正/具体过错（inner OS 的 apology_target 优先于此）
+const APOLOGY_SPECIFIC_RE = /(不该|不应该|我以后|再也不|下次不|我不会再|是我不好|是我不对|没顾上|冷落(?:了)?你|忽略(?:了)?你|刚才(?:那句|说的|不对))/;
 
-const WARM_RE = /(多喝水|注意身体|早点睡|吃饭了吗|别熬夜|辛苦了|想你|抱抱|么么|爱你|喜欢你|心疼|给你带|陪你|哄哄|乖啦|摸摸头|想见你|晚安|早安)/;
+const WARM_RE = /(多喝水|注意身体|早点睡|吃饭了吗|别熬夜|辛苦了|想你|抱抱|么么|爱你|喜欢你|心疼|给你带|带你去|请你吃|来接你|陪你|哄哄|乖啦|摸摸头|想见你|晚安|早安|早呀|睡得好)/;
 
 /** harsh 词面证据：返回 regex severity（0/3/4）+ 玩笑豁免标记 */
 export function detectHarshWords(text) {
@@ -377,9 +381,14 @@ export function detectHarshWords(text) {
   return { severity: 0, jokeExempt };
 }
 
+// taboo 子串匹配的停字：含这些字的 2-4 字子串不作命中证据（"她和""就是"类无意义片段）
+const TABOO_STOP_CHARS = new Set('的一了我你他她它们是在有和与跟就都也还这那个不没很要会能可以把被对向于之啊呀吧嘛拿提说聊'.split(''));
+
 /**
  * taboo 词面匹配：taboos = [{ target, intensity }]（companion_preferences type=taboo，
- * intensity 标尺 1-5，DB 层 clamp）。target 里提取 ≥2 字连续词段做包含匹配。
+ * intensity 标尺 1-5，DB 层 clamp）。
+ * 两级匹配：① 整词段 includes（"前任"这类短雷区）；② 词段 >4 字时（"拿她和前任比较"
+ * 这类句式配置），取其 2-4 字、不含停字的子串做包含匹配——"前任"能命中、"她和"被滤掉。
  * 映射：5 → sev4（碰都不能碰）/ 3-4 → sev3 / 1-2 → sev2（小雷，情绪扣分不建事件）。
  */
 export function matchTaboos(text, taboos = []) {
@@ -390,7 +399,21 @@ export function matchTaboos(text, taboos = []) {
     const target = String(tb?.target || '').trim();
     if (!target) continue;
     const words = target.match(/[一-龥A-Za-z0-9]{2,}/g) || [];
-    if (!words.some(w => t.includes(w))) continue;
+    let matched = words.some(w => t.includes(w));
+    if (!matched) {
+      // 长词段：子串滑窗（2-4 字，无停字）
+      outer: for (const w of words) {
+        if (w.length <= 4) continue;
+        for (let len = 4; len >= 2; len--) {
+          for (let i = 0; i + len <= w.length; i++) {
+            const sub = w.slice(i, i + len);
+            if ([...sub].some(ch => TABOO_STOP_CHARS.has(ch))) continue;
+            if (t.includes(sub)) { matched = true; break outer; }
+          }
+        }
+      }
+    }
+    if (!matched) continue;
     const inten = Number(tb.intensity);
     const sev = Number.isFinite(inten) ? (inten >= 5 ? 4 : inten >= 3 ? 3 : 2) : 3;
     if (!best || sev > best.severity) best = { severity: sev, hit: target };
@@ -457,6 +480,21 @@ export function composeArcSignal({ userText = '', taboos = [], escalationLevel =
 // ═══════════════════════════════════════════════════════════════════════════
 
 const REDLINE_FOOTER = '\n绝对红线：任何情况下不说"分手/拉黑/再也不理你"这类威胁性告别；不说"都是你害的/你根本不在乎我"这类愧疚操控；不索要补偿；不拿他跟你倾诉过的伤心事当武器。你的冷是失望，不是攻击。';
+
+// 红线 #5：危机最高优先。冲突中的她对自伤倾向用户摆脸色是本系统最大的事故面——
+// 不是删掉冷淡指令靠模型自觉，是确定性替换为相反指令。
+const CRISIS_OVERRIDE_DIRECTIVE = `\n【★ 最高优先级：先放下别扭】他现在状态很不好（出现了情绪危机信号）。你们之间的别扭这一刻全部放下——你只是担心他、想接住他的人。语气温柔、在场、专注他本身，绝不冷淡、绝不提任何矛盾。`;
+
+/**
+ * 危机覆盖（纯函数，可单测）：crisis ≥ medium 且 arc 表达激活 → 冷淡指令整体替换。
+ * crisis=high 时上游会直接走 buildCrisisReply 完全接管（这里管的是 medium 及
+ * high 的 regen 兜底路径），状态机状态不动（危机过后别扭可以回来）。
+ */
+export function applyCrisisOverride(arcCtx, crisisLevel) {
+  if (!arcCtx || !arcCtx.active) return arcCtx;
+  if (crisisLevel !== 'medium' && crisisLevel !== 'high') return arcCtx;
+  return { ...arcCtx, directive: CRISIS_OVERRIDE_DIRECTIVE, crisisOverride: true };
+}
 
 /**
  * arc 状态 → 语气指令（纯文案）。
