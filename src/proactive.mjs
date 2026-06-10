@@ -267,6 +267,19 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
     log('info', `[Proactive] 跳过：companion=${companion.id} 已有发送在进行中（kind=${kind}）`);
     return 'inflight';
   }
+  // ── v1.19.6 goodnight 防重（第二道闸，排程侧第一道见 ensureTodaySchedule）──
+  // 与 morning 不同：晚安重复时直接**跳过**而非降级——她都说过"我要睡了"，
+  // 再发条普通消息反而像诈尸。返回非节流状态，tick 会标 item.sent 作废本条配额。
+  if (kind === 'goodnight') {
+    try {
+      if (getSleepRow(companion.id)?.goodnight_sent_for_date === shanghaiDateKey()) {
+        log('info', `[Proactive] 今晚晚安已发过 → 跳过重复 goodnight companion=${companion.id}`);
+        return 'dup';
+      }
+    } catch (e) {
+      log('warn', `[Proactive] goodnight 防重检查失败（按原 kind 继续）: ${e.message}`);
+    }
+  }
   // ── v1.19.5 morning 防重 + 防穿帮（第二道闸，排程侧第一道见 ensureTodaySchedule）──
   if (kind === 'morning') {
     try {
@@ -446,7 +459,17 @@ function ensureTodaySchedule(companionId, dateKey, minuteNow, startMinute, endMi
     : fullCount;
 
   const effectiveStart = Math.max(jitteredStart, minuteNow + 1);   // +1 避免 tick 同分钟立即触发
-  const items = buildDailyItems(remainCount, effectiveStart, jitteredEnd, jitteredGoodnight);
+  let items = buildDailyItems(remainCount, effectiveStart, jitteredEnd, jitteredGoodnight);
+
+  // v1.19.6: goodnight 防重（与 morning 同款 bug 的对称修复）——今晚晚安已发过
+  // （深夜重启丢内存排程后重算又把 goodnight 排上）→ 直接移除，不再"刚说过晚安又来一条"。
+  try {
+    if (getSleepRow(companionId)?.goodnight_sent_for_date === dateKey) {
+      const before = items.length;
+      items = items.filter(it => it.kind !== 'goodnight');
+      if (items.length < before) log('info', `[Proactive] 今晚晚安已发过 → 移除重算的 goodnight item companion=${companionId}`);
+    }
+  } catch { /* 读不到按未发处理，发送侧还有第二道闸 */ }
 
   // v1.10.1 fix: morning kind 只在 sleep enabled 且第一条 normal 落在起床窗口 [wake-15, wake+120] 内时赋予。
   // 旧实现在 buildDailyItems 里无条件抬第一条 normal → 下午重启发"下午的早安"、sleep 关闭也发"刚醒"、

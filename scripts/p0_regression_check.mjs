@@ -149,6 +149,11 @@ try {
   check('proactive.mjs morning 防重：排程侧查 goodmorning_sent_for_date + 发送侧 shouldDemoteMorning',
     /goodmorning_sent_for_date === dateKey/.test(proSrc) && /shouldDemoteMorning\(/.test(proSrc),
     '若失败：服务重启丢内存排程重算 → 7 点发过"刚醒"，9 点半 morning 又来一条');
+  // v1.19.6: goodnight 防重双闸（morning 同款 bug 的对称修复）——排程侧移除 + 发送侧 dup 跳过
+  check('proactive.mjs goodnight 防重：排程侧 filter + 发送侧 goodnight_sent_for_date dup 跳过',
+    /goodnight_sent_for_date === dateKey/.test(proSrc) && /it\.kind !== 'goodnight'/.test(proSrc)
+      && /goodnight_sent_for_date === shanghaiDateKey\(\)/.test(proSrc) && /return 'dup'/.test(proSrc),
+    '若失败：深夜重启丢内存排程重算 → 刚说过晚安又来一条');
   // 2) guarded 返回投递状态，tick 据此 defer 而非消耗配额
   check('proactive.mjs guarded 返回投递状态（throttled/inflight/safety/sent）',
     /return 'throttled'/.test(proSrc) && /return 'inflight'/.test(proSrc)

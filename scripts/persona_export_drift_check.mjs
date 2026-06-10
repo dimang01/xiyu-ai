@@ -11,8 +11,14 @@
  *      （PATCH 能写的人格字段，要么导出、要么显式豁免并写明理由）
  *   2) PERSONA_FIELDS ⊆ (STRING ∪ INT ∪ FLOAT ∪ JSON ∪ ENUM)
  *      （导出了但导入侧没有类型处理 = 导入时静默丢，同样算漂移）
+ *   3) DDL 布尔风格列（INTEGER DEFAULT 0|1）∩ ALLOWED_FIELDS ⊆ BOOL_FIELDS ∪ 豁免
+ *      （布尔字段漏 BOOL_FIELDS → REST PUT 传 JSON 布尔直接 SQLite 绑定 500，
+ *       v1.19.3 first_love 踩过）
  */
-import { ALLOWED_FIELDS } from '../src/db.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { ALLOWED_FIELDS, BOOL_FIELDS } from '../src/db.mjs';
 import {
   PERSONA_FIELDS, IMPORT_STRING_FIELDS, IMPORT_INT_FIELDS,
   IMPORT_FLOAT_FIELDS, IMPORT_JSON_FIELDS, IMPORT_ENUM_VALUES,
@@ -59,8 +65,27 @@ for (const f of PERSONA_FIELDS) {
   }
 }
 
+// ── 规则 3：布尔风格列必须在 BOOL_FIELDS（防 REST 传布尔 500）─────────────
+// 从 db.mjs 源码扫所有 INTEGER DEFAULT 0|1 的列名（含建表 DDL 和 addColIfMissing），
+// 与 ALLOWED_FIELDS 取交集后剔除其它表的同名列；语义上是数值档位而非开关的进豁免。
+const BOOL_EXEMPT = new Map([
+  ['nsfw_level', '0-3 数值档位，不是开关'],
+]);
+const dbSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/db.mjs'), 'utf8');
+const boolStyleCols = new Set();
+for (const m of dbSrc.matchAll(/^\s*(\w+) INTEGER DEFAULT [01]\s*,?\s*(--.*)?$/gm)) boolStyleCols.add(m[1]);
+for (const m of dbSrc.matchAll(/addColIfMissing\('companions',\s*'(\w+)',\s*['"`]INTEGER DEFAULT [01]['"`]\)/g)) boolStyleCols.add(m[1]);
+for (const col of boolStyleCols) {
+  if (!ALLOWED_FIELDS.has(col)) continue;       // 非 companions PATCH 字段（或其它表撞名）
+  if (BOOL_FIELDS.has(col) || BOOL_EXEMPT.has(col)) continue;
+  fail++;
+  console.log(`  ✗ '${col}' 是布尔风格列(INTEGER DEFAULT 0/1)且可 PATCH，但不在 BOOL_FIELDS——`);
+  console.log(`    REST PUT 传 JSON 布尔会 SQLite 绑定 500。加进 db.mjs BOOL_FIELDS，`);
+  console.log(`    或确属数值档位则加进本脚本 BOOL_EXEMPT 并写理由。`);
+}
+
 if (fail) {
   console.log(`persona_export_drift_check: 失败 ${fail} 项`);
   process.exit(1);
 }
-console.log(`persona_export_drift_check: 通过（ALLOWED ${ALLOWED_FIELDS.size} / 导出 ${PERSONA_FIELDS.length} / 豁免 ${EXPORT_EXEMPT.size}）`);
+console.log(`persona_export_drift_check: 通过（ALLOWED ${ALLOWED_FIELDS.size} / 导出 ${PERSONA_FIELDS.length} / 豁免 ${EXPORT_EXEMPT.size} / 布尔列 ${boolStyleCols.size} 扫描）`);
