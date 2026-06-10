@@ -9,6 +9,8 @@ import crypto from 'crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { estimateProviderCost, loadProviderPricing } from './provider_costs.mjs';
+// v1.20 (PR2): 隐私过滤挂在各长期存储写入函数入口（最窄腰部，所有调用方自动覆盖）
+import { filterForStorage, redactSensitiveInfo } from './privacy_filter.mjs';
 
 const DB_PATH = process.env.DB_PATH || path.resolve(process.cwd(), 'data/bot.db');
 // 确保 data 目录存在
@@ -2771,6 +2773,11 @@ export function listPreferences(companionId, { type = null } = {}) {
 export function upsertPreference({ companionId, type, target, intensity = 3, reason = null, source = 'system' }) {
   if (!companionId || !type || !target) throw new Error('upsertPreference: missing required fields');
   if (!['like','dislike','neutral','taboo'].includes(type)) throw new Error('upsertPreference: invalid type');
+  // v1.20 隐私过滤
+  const pfT = filterForStorage(target);
+  if (!pfT.store) { console.warn(`[PrivacyFilter] upsertPreference 拦截 companion=${companionId}`); return; }
+  target = pfT.text;
+  if (reason) reason = redactSensitiveInfo(reason);
   const db = getDb();
   db.prepare(`
     INSERT INTO companion_preferences (companion_id, type, target, intensity, reason, source)
@@ -2810,6 +2817,11 @@ const SHAPING_SINGLETON = ['nickname', 'style'];   // 单例 kind：只保留最
 export function upsertShaping({ companionId, kind, content, rawMsg = null }) {
   if (!companionId || !kind || !content) throw new Error('upsertShaping: missing fields');
   if (!SHAPING_KINDS.includes(kind)) throw new Error('upsertShaping: invalid kind');
+  // v1.20 隐私过滤（教她/专属梗也是长期存储）
+  const pf = filterForStorage(content);
+  if (!pf.store) { console.warn(`[PrivacyFilter] upsertShaping 拦截 companion=${companionId}`); return; }
+  content = pf.text;
+  if (rawMsg) rawMsg = redactSensitiveInfo(String(rawMsg));
   const db = getDb();
   const c = String(content).slice(0, 120);
   if (SHAPING_SINGLETON.includes(kind)) {
@@ -2835,6 +2847,11 @@ export function deleteShaping(companionId, id) {
 // ─── v1.8.0 #4: companion_open_loops CRUD ──────────────────────────────────
 export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight = 5, expectedFollowup = null, sourceMessageId = null }) {
   if (!companionId || !title) throw new Error('saveOpenLoop: missing required fields');
+  // v1.20 隐私过滤（她记得的"未完成事"同属长期存储）
+  const pf = filterForStorage(title);
+  if (!pf.store) { console.warn(`[PrivacyFilter] saveOpenLoop 拦截 companion=${companionId}`); return null; }
+  title = pf.text;
+  if (expectedFollowup) expectedFollowup = redactSensitiveInfo(String(expectedFollowup));
   const db = getDb();
   // 防重复：同 companion 最近 7 天内的相同 title 视为重复（轻量去重）
   const existing = db.prepare(`
@@ -2933,6 +2950,10 @@ function unpackEmbedding(buf) {
 }
 
 export function saveMemory({ companionId, userId, memoryType, content, importance = 5, keywords = null, embedding = null, pinned = null }) {
+  // v1.20 隐私过滤：密码/key/身份证/银行卡级 → 整条不入长期记忆；手机号/住址/学校班级 → 脱敏
+  const pf = filterForStorage(content);
+  if (!pf.store) { console.warn(`[PrivacyFilter] saveMemory 拦截敏感内容 companion=${companionId}`); return; }
+  content = pf.text;
   const db = getDb();
   const isPinned = pinned !== null ? (pinned ? 1 : 0) : (importance >= 7 ? 1 : 0);
   const kw = Array.isArray(keywords) ? JSON.stringify(keywords) : (keywords || null);
@@ -3802,7 +3823,14 @@ export function upsertUserProfile(userId, companionId, data) {
   for (const k of allowed) {
     if (data[k] === undefined) continue;
     cols.push(k);
-    vals.push(PROFILE_JSON_FIELDS.includes(k) ? toJson(data[k]) : (data[k] ?? null));
+    let v = PROFILE_JSON_FIELDS.includes(k) ? toJson(data[k]) : (data[k] ?? null);
+    // v1.20 隐私过滤：画像字段（notes/职业等可能引用原话）脱敏；含绝不入库级内容则该字段置空
+    if (typeof v === 'string' && v) {
+      const pf = filterForStorage(v);
+      v = pf.store ? pf.text : null;
+      if (!pf.store) console.warn(`[PrivacyFilter] upsertUserProfile 字段 ${k} 拦截 user=${userId}`);
+    }
+    vals.push(v);
   }
   if (cols.length === 0) return getUserProfile(userId, companionId);
 

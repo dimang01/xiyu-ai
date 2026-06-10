@@ -22,6 +22,7 @@ import {
 import { extractStructuredInfo } from './ai.mjs';
 import { getEmotionStateWithDefaults, buildEmotionPromptHint } from './emotion_state.mjs';
 import { isSensitiveMemoryContent, sanitizeMemoryContent } from './memory_v2.mjs';
+import { redactSensitiveInfo } from './privacy_filter.mjs';
 
 // v1.9.9: 3 → 1。之前 3 轮门槛对刚认识的用户太苛刻，dashboard "她还没有写下日记"
 // 体验差。1 轮也能写（哪怕只是"今天他说了一句..."这种淡淡的笔触）。
@@ -42,9 +43,10 @@ const STAGE_LABELS = {
 function buildDiaryPrompt(companion, turns, emotionHint, kind, dateKey) {
   const c = companion;
   const quiet = turns.length < 3;   // v1.x(#2)：安静的一天 → 写她自己的日子
+  // v1.20 (PR2): 喂给日记 LLM 的用户原话先脱敏——日记成文会引用原话且永久保存
   const turnLines = turns
     .slice(-60)
-    .map(t => `${t.role === 'user' ? '他' : '我'}：${String(t.content).slice(0, 160)}`)
+    .map(t => `${t.role === 'user' ? '他' : '我'}：${redactSensitiveInfo(String(t.content)).slice(0, 160)}`)
     .join('\n');
 
   const stage = STAGE_LABELS[c.relationship_stage] || c.relationship_stage || '';
