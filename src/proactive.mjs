@@ -643,7 +643,8 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   const _es = getEmotionStateWithDefaults(companion.id);
   const _ml = getMissingLevel(_es, companion.last_user_reply_at);
   const _ns = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
-  const emotionHint = buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule });
+  // v1.20: 安全模式不拼想念/撒娇类情绪话术
+  const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule });
   const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
   const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}
 
@@ -654,8 +655,10 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   let effectiveKind = kind;
   const aff = companion.affection_level || 0;
   // v1.12.1：AI 主动表白只在深夜 22:30 之后——这个点人感情最敏感、最像真人鼓起勇气说出口的时刻
+  // v1.20 安全收尾：安全模式（疑似未成年）绝不主动告白
   const _nowMin = ((new Date().getUTCHours() + 8) % 24) * 60 + new Date().getUTCMinutes();
   if (kind === 'normal'
+      && !Number(companion.safe_mode)
       && _nowMin >= 22 * 60 + 30
       && !companion.confessed_at
       && !companion.user_confessed_at
