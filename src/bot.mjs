@@ -24,6 +24,7 @@ import {
   recordSafetyEvent,
   upsertShaping, listShaping,
   claimMessage, clearProactiveUnanswered,
+  getOpenRelationshipEvent,
 } from './db.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt, buildFirstTurnHint } from './companion.mjs';
@@ -32,7 +33,8 @@ import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
-import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak } from './moderation.mjs';
+import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubConflictRedline } from './moderation.mjs';
+import { runArcSignalTick } from './relationship_arc_runtime.mjs';
 import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -710,22 +712,57 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const esc = escalationLevel(userText, recentTurns);
     emotionState = updateEmotionFromUserMessage(companion.id, emotionState, userText, { companion, repeatLevel: esc.level });
 
+    // ── v1.21 冲突弧前置链：history → 危机检测 → inner OS（同趟产结构化字段）→ arc tick ──
+    const history = getRecentHistory(msg.fromUser, botId, 20);
+    // 危机检测前置：危机优先级最高，arc 冷淡表达在危机下必须挂起（红线 #5）
+    const _recentUserTexts = (recentTurns || []).filter(t => t && t.role === 'user').slice(-3).map(t => t.content || '');
+    const _crisisLevel = detectCrisisLevel(userText, _recentUserTexts);
+    if (_crisisLevel === 'high') log('warn', `[Bot] ★ 危机干预触发 → 退出角色给资源 companion=${companion.id}`);
+    // inner OS 生成前置（v1.8.0 #6）：同一趟调用顺便产出冲突弧结构化字段（严禁第三趟）；
+    // 冲突期间道歉短句（"对不起嘛"）靠 hasOpenArcEvent 放行
+    const innerRes = await generateInnerMonologue({
+      companion,
+      userText,
+      history,
+      context: { accountId: binding.account_id || null, hasOpenArcEvent: !!getOpenRelationshipEvent(companion.id) },
+    }).catch(() => null);
+    // arc 状态机 tick：检测信号 → 状态转移落库 → 返回本轮主导语气指令
+    let arcCtx = { arcState: 'normal', active: false, directive: '', voiceConcern: false };
+    try {
+      arcCtx = runArcSignalTick(companion, { userText, escalationLevel: esc.level, inner: innerRes?.struct || null });
+    } catch (e) { log('warn', `[Arc] tick 异常（按 normal 继续）: ${e.message}`); }
+    // 红线 #5：危机最高优先——冲突表达确定性替换为关怀指令（不是删掉靠模型自觉）
+    if (_crisisLevel !== 'none' && arcCtx.active) {
+      arcCtx = {
+        ...arcCtx,
+        directive: `\n【★ 最高优先级：先放下别扭】他现在状态很不好（出现了情绪危机信号）。你们之间的别扭这一刻全部放下——你只是担心他、想接住他的人。语气温柔、在场、专注他本身，绝不冷淡、绝不提任何矛盾。`,
+      };
+    }
+    // 红线 #3：冲突态绝不武器化他的脆弱记忆——从召回源头不给料（出站无法确定性判定）
+    if (arcCtx.arcState === 'hurt' || arcCtx.arcState === 'cold' || arcCtx.arcState === 'withdrawing') {
+      memories = memories.filter(m => !m?.sensitive_flag && m?.memory_layer !== 'emotion');
+    }
+
     const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();
     const stickerHint = buildStickerPromptHint(stickerEnabled);
     // v1.4.1: 算出 missingLevel 让 prompt 按"想念档"给出指令
     const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
     const neglectStage = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
     // v1.14 P0: 久别重逢 → 走"修复弧"而非"失望变凉"（失望是她主动找时的状态；他主动回来=重逢修复）
-    const reunionHint = buildReunionHint(neglectStage, companion.attachment_style, companion.last_user_reply_at);
+    // v1.21 收编：arc 激活时重逢表达由 arc 的 repairing(distance) 统一输出，这里不直拼
+    const reunionHint = arcCtx.active ? '' : buildReunionHint(neglectStage, companion.attachment_style, companion.last_user_reply_at);
     // v1.20: 安全模式不拼想念/撒娇类情绪话术（确定性不给料，不靠 LLM 自觉）
-    const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule });
+    // v1.21: arcActive 时低能量/负面 mood/想念浓档在 hint 内部让位（单一语气出口）
+    const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule, arcActive: arcCtx.active });
     const preferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
     // M1 共建：检测"他在教你"→ 写入塑造痕迹 + 当场确认；并把"他教过你的"注入人设（她必守）
     const _taught = detectTeaching(userText);
     if (_taught.length) { for (const _t of _taught) { try { upsertShaping({ companionId: companion.id, kind: _t.kind, content: _t.content, rawMsg: userText }); } catch (e) { log('warn', `[Shaping] upsert failed: ${e.message}`); } } }
     const shapingConfirmHint = buildShapingConfirmHint(_taught);
     const shapingHint = buildShapingPromptHint(listShaping(companion.id));
-    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + escalationDirective(esc.level);
+    // v1.21: arc 激活时 escalation 指令让位（L2+ 已作为 pressure_spam 喂进状态机，
+    // arc directive 自带冷语气，双指令会打架）；arc 主导语气追加在最后（最高优先）
+    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + (arcCtx.active ? '' : escalationDirective(esc.level)) + (arcCtx.directive || '');
     // v1.16.x: 首轮破冰 —— 她还没回过任何消息(全新对话) → 首次回复精心破冰(onboarding 留人)
     try {
       const _prior = getRecentHistory(msg.fromUser, botId, 6) || [];
@@ -797,20 +834,9 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
 - 如果他坚持再聊几句，你就再陪一下下，但别忘了你也困了、也该睡了`;
     }
 
-    // ── 历史记录 ─────────────────────────────────────────────────────────────
-    const history = getRecentHistory(msg.fromUser, botId, 20);
-
-    // ── v1.8.0 #6: Inner OS 内心独白 ─────────────────────────────────────────
-    // 先生成她的"内心想法"（不发送），再基于此生成对外回复
-    // 短消息（<8字）/ 关闭时 skip，省 token
-    const innerThought = await generateInnerMonologue({
-      companion,
-      userText,
-      history,
-      context: { accountId: binding.account_id || null },
-    }).catch(() => null);
-    if (innerThought) {
-      systemPrompt += buildInnerOsHint(innerThought);
+    // ── v1.8.0 #6: Inner OS 内心独白 hint（生成已前置到 arc tick 之前）────────
+    if (innerRes?.thought) {
+      systemPrompt += buildInnerOsHint(innerRes.thought);
     }
 
     // v1.13.x 真人感#3：连环追问"在吗/人呢"时强制打破"在呢+刚XX"模板（prompt 拦不住，这里硬注入）
@@ -836,9 +862,7 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // 把 temperature 收紧到 min(base, 0.4|0.6)。不上调用户已设的低温值。
     let reply;
     // ★ 危机干预：检测到自伤/自杀(结合最近多轮上下文) → 退出角色、直接给求助资源，覆盖 LLM，绝不继续演
-    const _recentUserTexts = (recentTurns || []).filter(t => t && t.role === 'user').slice(-3).map(t => t.content || '');
-    const _crisisLevel = detectCrisisLevel(userText, _recentUserTexts);
-    if (_crisisLevel === 'high') log('warn', `[Bot] ★ 危机干预触发 → 退出角色给资源 companion=${companion.id}`);
+    // （v1.21: _crisisLevel 的检测已前置到 arc tick 之前——危机下 arc 冷淡表达被挂起）
     const genReplyOnce = () => _crisisLevel === 'high'
       ? buildCrisisReply()
       : generateReply(
@@ -861,9 +885,11 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       throw err;
     }
 
-    // ── 出站审核：AI 回复过黑名单 + 确定性防人设泄露 ───────────────────────
+    // ── 出站审核：AI 回复过黑名单 + 确定性防人设泄露 + 冲突红线 ─────────────
     reply = safeOutboundReply(reply);
     reply = scrubPersonaLeak(reply, companion.name);
+    // v1.21 红线 #1/#2：冲突态绝不说威胁性告别/愧疚操控/索要补偿（确定性出站扫描）
+    reply = scrubConflictRedline(reply, arcCtx.arcState);
 
     // ── Persona Guard ─────────────────────────────────────────────────────────
     try {

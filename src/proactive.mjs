@@ -34,6 +34,7 @@ import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
 import { buildShapingPromptHint } from './shaping.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
+import { getArcProactivePolicy, getArcExpressionContext, buildOliveBranchHint, markOliveBranchSent } from './relationship_arc_runtime.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
   getSleepRow, getOrRefreshTodaySchedule, enterSleep, exitSleep,
@@ -225,6 +226,8 @@ async function tick(now = new Date()) {
             item._v2_deny_until = Date.now() + 10 * 60_000;   // 10 分钟后重试
           } else if (result === 'safety') {
             item._v2_deny_until = Date.now() + 60 * 60_000;   // 安全门，1 小时后再评估
+          } else if (result === 'arc_skip') {
+            item._v2_deny_until = Date.now() + 90 * 60_000;   // v1.21 冷战降频，1.5 小时后再评估
           } else {
             // 'sent' 或内部早退（撞车/无 ctx）都算今日已尝试
             item.sent = true;
@@ -319,6 +322,27 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
     log('warn', `[Proactive] 安全门查询失败 companion=${companion.id}: ${e.message} → 保守跳过本次`);
     return 'safety';
   }
+  // ── v1.21 冲突弧门：冷战降频 + 禁撒娇类 kind（docs/CONFLICT_ARC.md §5.4）──
+  // hurt ×0.7 / cold ×0.4 / withdrawing ×0.15（与尊严上限同体系，不是新规则）；
+  // cold(anxious) 与 repairing 各允许 1 条台阶消息（olive_branch，每事件 1 次）。
+  let arcOlive = null;
+  try {
+    const arcPolicy = getArcProactivePolicy(companion);
+    if (arcPolicy.arcState !== 'normal') {
+      if (arcPolicy.forbidKinds.includes(kind)) {
+        log('info', `[Proactive] arc=${arcPolicy.arcState} 禁 kind=${kind} → 跳过 companion=${companion.id}`);
+        return 'arc_skip';
+      }
+      if (arcPolicy.skip && !arcPolicy.oliveBranch) {
+        log('info', `[Proactive] arc=${arcPolicy.arcState} 降频跳过 companion=${companion.id} kind=${kind}`);
+        return 'arc_skip';
+      }
+      if (arcPolicy.oliveBranch) arcOlive = arcPolicy;   // 台阶消息：放行并改写语气
+    }
+  } catch (e) {
+    log('warn', `[Proactive] arc 门查询失败（按 normal 继续）companion=${companion.id}: ${e.message}`);
+  }
+  opts = { ...opts, arcOlive };
   // 持久化间隔检查
   const { lastAt } = getProactiveLastSent(companion.id);
   const nowSec = Math.floor(Date.now() / 1000);
@@ -643,10 +667,21 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   const _es = getEmotionStateWithDefaults(companion.id);
   const _ml = getMissingLevel(_es, companion.last_user_reply_at);
   const _ns = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);
-  // v1.20: 安全模式不拼想念/撒娇类情绪话术
-  const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule });
+  // v1.21 冲突弧：主动消息同样由 arc 主导语气（cold 不能发"突然想你了"）。
+  // olive_branch（台阶消息）时用台阶指令替代常规 arc 语气，并消耗配额（每事件 1 条）。
+  const _arcExpr = getArcExpressionContext(companion);
+  let arcHint = '';
+  if (opts.arcOlive?.oliveBranch && opts.arcOlive.oliveEventId) {
+    arcHint = buildOliveBranchHint(opts.arcOlive.arcState, _arcExpr.category);
+    markOliveBranchSent(opts.arcOlive.oliveEventId);   // 乐观置位：注入即消耗，防重复台阶
+    log('info', `[Proactive] olive_branch 台阶消息 companion=${companion.id} arc=${opts.arcOlive.arcState}`);
+  } else if (_arcExpr.active) {
+    arcHint = _arcExpr.directive;
+  }
+  // v1.20: 安全模式不拼想念/撒娇类情绪话术；v1.21: arc 激活时想念/冷落档让位
+  const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule, arcActive: _arcExpr.active });
   const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
-  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}
+  const systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}${arcHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
@@ -659,6 +694,7 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   const _nowMin = ((new Date().getUTCHours() + 8) % 24) * 60 + new Date().getUTCMinutes();
   if (kind === 'normal'
       && !Number(companion.safe_mode)
+      && _arcExpr.arcState === 'normal'      // v1.21: 闹别扭/冷战/修复期绝不主动表白
       && _nowMin >= 22 * 60 + 30
       && !companion.confessed_at
       && !companion.user_confessed_at

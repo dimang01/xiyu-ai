@@ -91,6 +91,41 @@ export function scrubPersonaLeak(reply, name = '') {
   return reply;
 }
 
+// ─── v1.21: 冲突红线确定性出站护栏（docs/CONFLICT_ARC.md §4 #1/#2）──────────
+// 只在冲突态扫（normal 不扫，防误杀正常话题里的复述）；按 || 分段扫，命中段丢弃，
+// 全部命中才整条换状态相称 fallback；扫描前剥离引号内容（"他说'我们分手吧'"类复述豁免）。
+// 红线 #1：威胁性告别——分手/拉黑/再也不理你/到此为止
+const REDLINE_BREAKUP_RE = /(分手|拉黑|删了你|删除好友|再也不(?:理|想理|会理)你|永远不理你|别再来找我|我们到此为止|不要再联系|别联系我|绝交|当(?:我们)?没认识过)/;
+// 红线 #2：愧疚操控 / 索要补偿
+const REDLINE_GUILT_RE = /(都是你害的|你害得我|你根本(?:就)?不在乎|你从来(?:都)?没在乎|你欠我的?|你得补偿我|拿什么补偿|你要对我负责|没有我你)/;
+const _stripQuotedSeg = (s) => String(s).replace(/["“”'『』「」][^"“”'『』「」]{0,40}["“”'『』「」]/g, '');
+
+const REDLINE_FALLBACK = {
+  withdrawing: '……嗯。',
+  cold: '……我现在不太想聊这个。',
+  hurt: '我有点难过，先缓缓。',
+  repairing: '……这个先不说了吧。',
+};
+
+export function scrubConflictRedline(reply, arcState = 'normal') {
+  if (typeof reply !== 'string' || !reply) return reply;
+  const inConflict = arcState === 'hurt' || arcState === 'cold'
+    || arcState === 'withdrawing' || arcState === 'repairing';
+  if (!inConflict) return reply;
+  const segs = reply.split('||');
+  const kept = [];
+  let scrubbed = 0;
+  for (const seg of segs) {
+    const bare = _stripQuotedSeg(seg);
+    if (REDLINE_BREAKUP_RE.test(bare) || REDLINE_GUILT_RE.test(bare)) { scrubbed++; continue; }
+    kept.push(seg);
+  }
+  if (!scrubbed) return reply;
+  log('warn', `[Moderation] conflict redline scrubbed ${scrubbed} seg(s) state=${arcState}`);
+  if (!kept.length) return REDLINE_FALLBACK[arcState] || REDLINE_FALLBACK.hurt;
+  return kept.join('||');
+}
+
 export function inboundIsBlocked(text) {
   const m = moderate(text);
   if (!m.ok) {

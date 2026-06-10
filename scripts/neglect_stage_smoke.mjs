@@ -66,16 +66,24 @@ const hNone   = buildEmotionPromptHint(es, { neglectStage: 'none',         missi
 
 check('uneasy 走试探语气，且覆盖掉「你怎么才来」',
   hUneasy.includes('是不是把我忘了') && !hUneasy.includes('你怎么才来'));
-check('disappointed 走失望语气 + 收着指令',
-  hDisap.includes('失望') && hDisap.includes('收着'));
-check('withdrawn 走冷淡抽离语气',
-  hWith.includes('冷淡抽离'));
+// v1.21 收编：disappointed/withdrawn/long_gone/dormant 的冷落语气从这里删除，
+// 由 relationship_arc 状态机（neglect 事件 → hurt/cold/withdrawing）统一输出。
+// 这里只验证两件事：① 旧口不再输出冷落语气 ② 也绝不能掉回热切想念（倒退最致命）。
+// arc 侧的等价表达由 conflict_arc_smoke 的 buildArcToneDirective 断言覆盖。
+for (const [name, h] of [['disappointed', hDisap], ['withdrawn', hWith], ['long_gone', hLong], ['dormant', hDorm]]) {
+  check(`${name} 旧口已收编：不再输出冷落语气，也不掉回热切想念`,
+    !h.includes('失望') && !h.includes('冷淡抽离') && !h.includes('久别淡然') && !h.includes('你怎么才来'));
+}
 check('none 仍走原想念档热切语气',
   hNone.includes('你怎么才来') && !hNone.includes('冷淡抽离'));
-check('long_gone 走"淡了"语气 + 久别淡然指令，覆盖热切想念',
-  hLong.includes('淡了') && hLong.includes('久别淡然') && !hLong.includes('你怎么才来'));
-check('dormant 走"放下"语气 + 久别淡然指令',
-  hDorm.includes('放下') && hDorm.includes('久别淡然') && !hDorm.includes('你怎么才来'));
+// arc 等价复现验证：冷落语气在新口（buildArcToneDirective）输出
+{
+  const { buildArcToneDirective } = await import('../src/relationship_arc.mjs');
+  const cold = buildArcToneDirective('cold', { category: 'distance' });
+  const wd = buildArcToneDirective('withdrawing', { category: 'distance' });
+  check('arc 新口：cold(distance) 含"失望盖过想念"的凉', cold.includes('失望') && cold.includes('短回'));
+  check('arc 新口：withdrawing 含抽离自保语气', wd.includes('抽离自保') && wd.includes('极短'));
+}
 
 // ── 4. 久别重逢弧 —— 前 7 天按天细分 + 后段 long_gone/dormant 2 档 ──────────────
 check('none/missing 不触发重逢', buildReunionHint('none','secure')==='' && buildReunionHint('missing','anxious')==='');

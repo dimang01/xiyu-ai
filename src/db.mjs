@@ -184,6 +184,8 @@ function migrateRelationshipArc() {
   `);
   addColIfMissing('companions', 'arc_state',            "TEXT DEFAULT 'normal'");
   addColIfMissing('companions', 'arc_state_changed_at', 'TEXT');
+  // PR-B: 台阶消息配额（cold 期 anxious 试探 / repairing 主动递台阶，每事件 1 条）
+  addColIfMissing('companion_relationship_events', 'olive_sent', 'INTEGER DEFAULT 0');
 }
 
 /** 读当前弧状态（兜底 normal） */
@@ -240,7 +242,7 @@ export function listRelationshipEvents(companionId, limit = 50) {
 
 const ARC_EVENT_UPDATABLE = new Set([
   'severity', 'severity_updated_at', 'repair_status', 'repair_warm',
-  'repair_from', 'apology_kind', 'reopened', 'resolved_at', 'state_after',
+  'repair_from', 'apology_kind', 'reopened', 'resolved_at', 'state_after', 'olive_sent',
 ]);
 
 /** 事件 partial update（白名单字段） */

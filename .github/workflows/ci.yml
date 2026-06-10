@@ -74,5 +74,8 @@ jobs:
       - name: 冲突与和好弧 状态机转移表
         run: node scripts/conflict_arc_smoke.mjs
 
+      - name: 冲突与和好弧 落库链 e2e
+        run: node scripts/conflict_arc_e2e.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
