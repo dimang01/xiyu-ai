@@ -1248,7 +1248,9 @@ const JSON_ARRAY_FIELDS = new Set([
   'scene_history', 'chat_modes',
   'dislikes',  // v1.7.0: 她不喜欢的话题/食物/类型/人格特质
 ]);
-const BOOL_FIELDS = new Set([
+// export 供 scripts/persona_export_drift_check.mjs 对账——布尔语义字段漏加这里时
+// REST PUT 传 JSON 布尔会 SQLite 绑定 500（v1.19.3 first_love 踩过）
+export const BOOL_FIELDS = new Set([
   'use_kaomoji', 'can_joke', 'avoid_cheesy', 'no_pressure', 'occasional_tantrum',
   'encouraging', 'proactive_enabled', 'voice_reply_enabled', 'sticker_reply_enabled',
   'memory_enabled', 'silent_mode', 'first_love',
