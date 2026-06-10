@@ -194,12 +194,20 @@ export const REALISM_CORE = Object.freeze([
   'safe adult everyday content',
   'modest everyday content',
 ]);
-// 主角是人时叠加：毛孔/碎发/轻微不对称——"不完美"才是真（正面措辞，不写 no/not）。
+// 主角是人时叠加：毛孔/碎发/轻微不对称——"不完美"才是真。
+// v1.20.1: 按 2026-06-10 A/B 实验（用户反馈"照片太假"，gemini-2.5-flash-image
+// 18 张对照）升级——旧词表压不住模型的"瓷面 AI 脸"默认；新词表三处关键：
+// ①首句构图锚定（防 realism 词把场景/自拍构图带偏，第一轮实验实测会跑偏）
+// ②"清晰可见毛孔/肤色不均/小瑕疵/黑眼圈/T 区油光"比"细腻毛孔"压得住磨皮
+// ③尾句点名反 AI 理想脸（negative 句式，sanitize 的剥离机制只用于安全检查、原文保留）
 export const REALISM_PERSON = Object.freeze([
-  'natural realistic skin with fine visible pores and subtle texture',
+  'strictly keep the exact composition, framing and setting described above, apply only the photographic realism below',
+  'unretouched real skin with clearly visible pores and slightly uneven skin tone',
+  'one or two tiny natural blemishes, faint under-eye shadows, slight natural shine on the T-zone',
   'a few stray flyaway hairs, subtle natural facial asymmetry',
   'soft realistic highlights on the skin, sharp natural focus on the eyes',
   'fresh natural complexion with light or no makeup',
+  'looks like a real unfiltered phone photo posted on social media, not an idealized AI-generated face, no beauty filter, no airbrushing',
 ]);
 // 主体是景时叠加：分层纵深 + 大气 + 自然色（绝不写 skin/face）。
 export const REALISM_SCENERY = Object.freeze([
