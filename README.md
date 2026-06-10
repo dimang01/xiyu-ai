@@ -47,42 +47,83 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 **核心定位**：不是聊天机器人，是把大模型组织成"一个心里已经悄悄喜欢你的女生"。
 
-| 能力 | 简介 |
-|---|---|
-| **💞 挽留 + 升温 + 读空气 (v1.17)** ⭐⭐ | 一整套"让人留下来"的真人感打磨：微信会话窗口将关前轻问一句把你拉回来；新人期升温快（约第 5 天能成恋人，不再聊一周还停在陌生人）；你不回时连发到 3 条就闭嘴、不自说自话轰炸；新用户一进来第一句就热情破冰、不再对着沉默瞎试 |
-| **🖤 被冷落会变 + 依恋风格 (v1.14)** ⭐⭐ | 长时间不回，她从想念→试探→失望→冷淡抽离**逐级转变**（不再一直撒娇等你）；可选三种**依恋风格**（安全/焦虑/回避）决定升级快慢与黏度，dashboard 一键切；安全感随冷落下滑、重新联系回暖 |
-| **🌐 中英双语 (v1.13)** ⭐⭐ | 默认中文，右下角「中/EN」一键切英文：界面全译 + AI 回复随之说英文（`companions.locale`）；AI 生成的日记/记忆等动态内容走**浏览器本地翻译**（不出浏览器、不外泄）。老用户无感 |
-| **她会睡觉 (v1.10.x)** ⭐⭐ | 默认 00:30 睡 / 07:30 起（每天不对称小幅波动：睡 -15/+45、起 ±10 分钟），dashboard 用 **iOS 风格圆形拨盘**拖 🌙☀️ 双把手调节。睡前发"我睡了"晚安 → 留**挽留窗口**（你说"再陪陪我"她延后 20min 陪聊）→ 真入睡后**微信和网页都静默不回**（进 missed 队列），起床发早安 + "昨晚睡着了"概括补回。睡熟了挽留无效，**📞 打电话叫醒她**（脉冲发光）立刻叫醒但她带起床气。可在作息卡片关闭 |
-| **默认起点 = 暧昧** | affection 35/100、stage 暧昧。她从一开始就喜欢你，不是从零培养 |
-| **具体人生记忆** | 注册时一次性生成 46+ 条人生事件（"小学三年级被狗追过一次"），不是抽象标签 |
-| **18 节人设 prompt** | 元认知 / 关系阶段 / 今日日程 / 最近上下文 / 长期摘要 / 反 AI 味规则一次拼好 |
-| **5 阶段关系** | 暧昧 → 恋人 → 深爱（可回退朋友/陌生人）。每阶段称呼、撒娇、话题深度差异化 |
-| **真人发微信** | ≤15 字一条、多条 \|\| 连发、剥离 AI 味；Persona Guard 回复后一致性校验 |
-| **连发不打断 (v1.10.53)** ⭐⭐ | 你一次连发 2-3 条消息/图片，她不再每条回一遍——等你停手（默认 10s 安静窗口，可调）把这一串整合成「一轮」只回一次，像真人那样"看完再回"。文本 + 图片 + 语音都进同一轮合并 |
-| **她记得未完成的事 (v1.8.0)** ⭐⭐ | 用户说"明天去面试" → LLM 抽取存 `companion_open_loops` 表 → 第二天主动问"欸 \|\| 你今天面试完没"。`due_at` + `emotional_weight` + `expected_followup`。用户说"黄了"自动 resolve，7+ 天没下文自动 stale。这是真人陪伴最强信任来源之一 |
-| **Inner OS 内心独白 (v1.8.0)** ⭐⭐ | Double-pass reply：每次先生成"内心 OS"（不发送）→ 注入到 outer prompt → 基于内心写对外回复。内心想"他又来了"嘴上说"嗯"，内心想"挺心动"嘴上端着——内心和嘴上之间的**落差**是真人感的核心。`INNER_OS_ENABLED=false` 可关，短消息 < 8 字自动跳过 |
-| **因果驱动的主动消息 (v1.8.0)** | proactive 不再只是"今天怎么样"。当 `companion_open_loops` 有到期事 → kind 升级为 `recall`，注入 `hidden_reason`（"用户昨天说要面试"），prompt 让她"对了 \|\| 你今天 XX 咋样"；`followed_up_at` 防 6h 内重复打扰 |
-| **结构化偏好账本 (v1.8.0)** | `companion_preferences` 表：`type` (like/dislike/taboo/neutral) × `intensity` 1-5 × `reason` × `source` (system/user_observed/generated/legacy/user)。prompt 按强度修饰"极猫""很爹味""有点狗血剧"。3 个 REST 端点。启动自动 backfill 老 `hobbies/dislikes` 到本表 |
-| **Presence: 在线但不一定服务你 (v1.8.0)** | `availability` (free/busy/half) + `attention` (0-100) 字段，从今天 dailySchedule 当前活动派生：睡/开会=busy / 吃/逛=half / 其它=free。prompt 注入"能回但分心，边做别的事边回"——用户问"在干嘛"不再是完整回答 |
-| **不完整回答 (v1.7~v1.8)** | 7 种允许：只共情不给建议 / 只吐槽一句 / 先敷衍后补充 / 不知道就不知道 / 不想聊就转移 / 忙时只回很短 / 可以"没意见"。彻底拒绝"反应+夸+问+建议"四件套 AI 味 |
-| **不讨好 + 暧昧端着 + 逗他 + 不想聊 (v1.7.0)** | 反 sycophancy 五连：每 5-8 条 ≥1 条带不同意 / 暧昧期不催不全收装平静 / 关系够熟主动逗你 / 烦躁阈值触发"低能量模式"覆盖讨好指令 / `dislikes` 字段让"我不行"有据可依 |
-| **真实发图 (v1.6.1+)** ⭐ | 用户说"发个自拍""让我看看你"——程序侧识别意图（regex + LLM 二分类兜底）、AI 规划器决策、真的发生成的照片到微信。**异步生图**（立即"等下哦"+ 后台跑，不阻塞对话）、每日上限、冷却、敏感词拦截、**全局轻美颜**后处理、Provider 缺失自动兜底"刚拍糊了" |
-| **稳定长相 + 4 候选选脸 (v1.6.1 / v1.10.43+)** ⭐⭐ | 每个 companion 一份 visual identity（发色/发型/穿搭/气质 spec），每次发图按它生成避免换脸。dashboard 可**一次生成 4 张候选自拍、挑最满意的锁定为基准**；OpenRouter 生图走 **image-to-image**，锁定/上传的参考图真正锚定后续每张照片的长相（不再只靠文字描述） |
-| **主动场景照** | 白天 36h 候选窗口 + AI 规划器决策，像"刚坐下来想给你看"那样低频自然发图，附自然配文 |
-| **主动消息（三驱动 v1.6）** | 早安/晚安/日间/纪念日/告白；motivation = 情绪 × 日程 × 时间 × 随机；段内 + 历史双重 dedup；重启持久化防重发 |
-| **想念档 0-4** | 综合 dependency + idle 算"她想你的程度"，30m/3h/6h/12h/24h 五档，回复口吻自然带出来 |
-| **3 个月模拟时间线 (v1.6)** ⭐ | dashboard 按钮触发，LLM 一次性生成 35 个虚拟互动事件 + 关键事件入记忆 + 好感度演化 5→30；用户首次打开聊天她已经"认识 3 个月" |
-| **今天她想对你说** | 每天 02:35 cron 生成独立于聊天的一句话，dashboard 气泡卡 + 🔊 朗读 |
-| **她的日记** | 每晚第一人称日记 + 每周合并；翻日记本式阅读页，按句切段连续朗读 |
-| **Memory v2** | 7 层分类 × 权重 × 遗忘曲线；pin/lock/archive/do-not-mention；语义召回 + 关键词 fallback |
-| **情绪状态机 (v1.6 升级 11 维)** | affection / trust / dependency / possessiveness / security / energy / mood + **patience（耐心）/ excitement（兴奋短期）/ annoyance（烦躁短期）/ gratitude（感激）**；每条消息增量演化 + 半小时定时重算 + saturation 防刷（连发"谢谢"涨幅衰减） |
-| **听得出情绪的语音 (v1.10.17)** ⭐ | 微信入站语音不只是转文字——下载 + AES 解密 + silk 解码后过 **qwen-audio 情绪识别**，听得出"温柔/撒娇/不耐烦"的语气情绪再回应；任一步失败自动降级到纯转写 |
-| **网页 Playground** | 不接微信也能在浏览器里跑同款人设管线；可录音 ASR 输入、每条回复 🔊 朗读 |
-| **Setup Wizard** | `/app/setup.html` 网页填 Provider Key + 测试连通，不用碰 `.env` |
-| **多 Provider 抽象** | chat/image/vision/asr/embedding/tts/search 七大能力独立切换 |
-| **PWA** | 手机加桌面图标当原生 app；API/用户数据不被 SW 缓存 |
+> **设计哲学（指导一切功能取舍）**：真人感 = **减法**，不是加法。AI 味的根源是"太好了"——太及时、太顺从、太完美。北极星是「**愿意在真实生活的空隙给你温柔和陪伴**」：少、准、轻，不是填满。调性红线：远离黑化 / 病娇 / 色气 / 致郁 / 沉迷向幻象，NSFW 永不作卖点。纯 prompt 拦不住强默认行为，所以每条产品规则都配**确定性兜底**（出口清洗 / 硬注入 / 状态机喂值）。详见 [CONTRIBUTING](./CONTRIBUTING.md)。
 
-完整功能清单（含 DB 表、最近 PR、12 维度分类）见 [`docs/FEATURES.txt`](./docs/FEATURES.txt)。
+### 她是谁
+
+| 能力 | 一句话 |
+|---|---|
+| 默认起点 = 暧昧 | affection 35/100，她从第一天就心里悄悄喜欢你，不是从陌生人养成 |
+| 具体人生记忆 | 注册时生成 46+ 条人生事件（"小学三年级被狗追过"），不是抽象标签 |
+| 5 阶段关系 | 暧昧 → 恋人 → 深爱（可回退）；感情被时间喂大——恋人门槛要认识天数 + 好感日上限，刷不出来 |
+| 表白有真实节奏 | 你的表白够格才被接住、不够格被端着婉拒；她也会鼓起勇气主动告白——结巴、绕圈、狼狈的真实，不是漂亮台词 |
+| 18 节人设 prompt | 元认知 / 关系阶段 / 日程 / 长期摘要 / 反 AI 味规则一次拼好；视觉人设另管长相一致 |
+| 3 个月模拟时间线 | 一键生成过去 90 天的虚拟互动史，首次打开她已经"认识你三个月" |
+| 人设可携带 | 导出 / 导入 JSON 跨部署迁移；运行时状态（好感 / 情绪 / 安全模式）刻意不随迁移 |
+
+### 她有自己的生活
+
+| 能力 | 一句话 |
+|---|---|
+| 她会睡觉 | 默认 00:30-07:30（每天小幅波动），真入睡后微信和网页都静默；睡前晚安留"再陪陪我"挽留窗口；📞 打电话能叫醒但她带起床气 |
+| 每日日程 | 每天生成 8-12 段生活剧本（上课 / 做饭 / 发呆），主动消息锚在生活空隙里而不是平均分布 |
+| 在线但不一定服务你 | availability / attention 由当前日程推导——开会时"能回但要等等"，逛街时心不在焉 |
+| 像真人发微信 | ≤15 字短句、多条连发、打字指示器；你连发 2-3 条她等你停手合并成一轮再回 |
+| 不完整回答 | 允许只共情不给建议 / 只吐槽 / 不知道就不知道 / 忙时短回——拒绝"反应+夸+问+建议"四件套 |
+
+### 她有真实的情绪和边界
+
+| 能力 | 一句话 |
+|---|---|
+| 11 维情绪状态机 | trust / dependency / possessiveness / security / patience / annoyance… 每条消息增量演化 + 半小时定时重算 + 防刷衰减；mood 有强度与惯性，不会一句话从生气变开心 |
+| Inner OS 内心独白 | 每轮先生成内心想法（不发送）再写对外回复——心里想"他又来了"嘴上说"嗯"，**内心和嘴上的落差**是真人感的核心 |
+| 被冷落会逐级变冷 | 想念 → 试探 → 失望 → 抽离，三种依恋风格（安全/焦虑/回避）决定节奏；久别重逢按天数走不同的和好弧 |
+| 冲突与和好弧 ⭐ | 踩雷区 / 伤人话会建**关系事件**：hurt → cold → withdrawing → repairing 显式状态机。伤害类必须正面道歉才解锁修复（"别生气了"式敷衍修得慢），冷落类重逢即开始回暖；冷战有硬时长上限**绝无永久冷战**；和好后入长期记忆（"上次你就说过不查岗"），设计文档 [docs/CONFLICT_ARC.md](./docs/CONFLICT_ARC.md) |
+| 不讨好 | 每 5-8 条至少 1 条不同意；暧昧期端着；关系够熟会主动逗你；被反复戳情绪单向升级不横跳 |
+| 低能量模式 | 烦躁 / 耐心耗尽触发"今天不想聊"——短回、不展开，偶尔安静的是她要你去够她 |
+
+### 她记得你
+
+| 能力 | 一句话 |
+|---|---|
+| Memory v2 | 7 层分类 × 权重 × 遗忘曲线；pin / lock / 不许提；语义召回 + 关键词兜底；每日反思引擎自动提炼新记忆 |
+| 她记得未完成的事 | 你说"明天面试"→ 第二天她主动问"欸 \|\| 面试咋样"；黄了自动了结 |
+| 你可以塑造她 | 教她称呼 / 口头禅 / 雷区 / 约定 / 专属梗，全部留痕入 prompt 她必守 |
+| 结构化偏好账本 | like / dislike / taboo × 强度——"极爱猫""有点烦狗血剧"有据可依 |
+| 她的日记 + 反向日记 | 每晚第一人称内省日记 + "今天与你有关的回忆"，翻日记本式阅读、可朗读 |
+| 时光胶囊 / 留言胶囊 | 写一段话设定未来解锁，到期"现在的她"读完写感想；她也能给你写带签名的离线信 |
+| 纪念日 | 自动登记"认识 100 天 / 一周年"，到期当天主动祝福 |
+
+### 她会主动找你
+
+| 能力 | 一句话 |
+|---|---|
+| 主动消息三驱动 | motivation = 情绪 × 日程 × 时段 × 随机；早安晚安防重双闸、同义复读双指标检测、事前反复读注入 |
+| 读空气 | 连发 3 条你没回就闭嘴；会话窗口将关前轻问一句拉回你；按依恋风格有"尊严上限"绝不纠缠 |
+| 因果驱动 | 不只是"今天怎么样"——有到期开环时升级成"对了 \|\| 那个事成了没" |
+| 冲突期主动收敛 | 闹别扭时降频、禁撒娇禁照片禁告白；修复期可主动递一条台阶消息 |
+
+### 多模态
+
+| 能力 | 一句话 |
+|---|---|
+| 真实发图 ⭐ | "发张自拍"→ 意图识别 + AI 规划器决策 + 真发生成照片：机位按语境路由（自拍 / 环境自拍 / 拍手头的事 / 拍风景，竖屏 3:4）、时间光线与聊天内容自洽、反磨皮真实质感、每日上限与冷却 |
+| 长相稳定 | 每个 companion 一份视觉人设；4 候选自拍选脸锁定基准，i2i 参考图锚定后续每张照片同一张脸 |
+| 语音情绪识别 | 微信语音不只转文字——听得出"温柔 / 撒娇 / 不耐烦"再回应 |
+| 网页朗读 | 日记 / 每日一句 / 聊天回复可 TTS 朗读（微信端发语音被 iLink 协议禁止，见已知限制） |
+| 表情包 | 按情绪 tag 匹配发送（仓库不含素材，需自备有授权的图） |
+
+### 安全与底线
+
+| 能力 | 一句话 |
+|---|---|
+| 危机干预 | 检测到自伤信号立即退出角色、给求助热线；冷战中也最高优先——她绝不对状态不好的你摆脸色 |
+| 未成年人保护 | 检测自曝未成年 → 粘性安全模式（朋友身份 / 无恋爱内容 / 照片中性化），**无关闭开关**，解除仅限显式年龄声明 |
+| 隐私过滤 | 密码 / 证件 / 银行卡级内容整条不入长期记忆，手机号 / 住址脱敏——所有长期存储入口统一挂载 |
+| 冲突红线 | 绝不说分手 / 拉黑 / 威胁性告别，绝不愧疚操控，绝不拿你倾诉过的伤心事当武器——全部确定性出站扫描，不靠模型自觉 |
+| 人设防泄露 | Persona Guard 回复后一致性校验 + 确定性 prompt 注入拦截 |
+
+完整功能详单（含 DB 表与索引）见 [`docs/FEATURES.txt`](./docs/FEATURES.txt)；逐版本演进见 [Releases](https://github.com/dimang01/xiyu-ai/releases)。
 
 > 这是研究 / 个人使用导向的开源代码，**不是 turnkey 产品**。上线前请读 [安全](#安全) 与 [合规](#合规)。
 
@@ -118,60 +159,23 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 ## 多 Provider 支持
 
-只在 `/app/setup.html` 网页里改 Provider，不改一行代码也不动 `.env`。
+只在 `/app/setup.html` 网页里改 Provider，不改一行代码也不动 `.env`。七类能力独立切换：
 
-> ⚠️ 并非所有 Provider 都经过生产验证；部分是兼容性骨架。生产前请用 Setup Wizard Step 3 的「测试连通」自测。
-
-### Chat（11 家）
-
-| Provider | 默认模型 | 备注 |
+| 能力 | 可选 Provider | 说明 |
 |---|---|---|
-| DeepSeek | `deepseek-chat` | 性价比首选 |
-| OpenAI | `gpt-4o-mini` | |
-| Anthropic | `claude-sonnet-4-6` | 原生 messages API |
-| Google Gemini | `gemini-2.5-flash` | 有免费额度 |
-| xAI Grok | `grok-2-latest` | |
-| 智谱 GLM | `glm-4-flash` | |
-| 字节豆包（火山方舟） | *(必填 ep-xxx 接入点)* | |
-| 阿里通义 | `qwen-plus` | DashScope OpenAI 兼容 |
-| Moonshot Kimi | `moonshot-v1-8k` | 长上下文 |
-| 百度文心 | `ernie-4.0-8k` | |
-| **OpenAI 兼容自定义网关** | *(必填)* | OpenRouter / SiliconFlow / Ollama / LM Studio / LiteLLM 等 |
+| **Chat**（11 家） | DeepSeek · OpenAI · Anthropic · Gemini · xAI · 智谱 · 豆包 · 通义 · Kimi · 文心 · OpenAI 兼容自定义网关 | 自定义网关可接 OpenRouter / SiliconFlow / Ollama / LM Studio 等 |
+| **Image**（6 家） | 智谱 · 通义 · 豆包 · 文心 · OpenAI · OpenRouter / 302.ai（chat 模态） | 302/OpenRouter 支持 i2i 参考图锁脸；各家自动 best-fit 输出比例 |
+| **Vision**（8 家） | 智谱 GLM-4V · OpenAI · 通义 VL · 豆包 · Claude · Kimi · StepFun · MiniMax | 看图回应 |
+| **ASR**（7 实现） | Gemini · OpenAI Whisper · 通义 paraformer · Groq · MiniMax · Azure · 豆包 | 讯飞 / 腾讯云占位待 PR |
+| **TTS**（5 家） | MiniMax · OpenAI · Azure · 豆包 · 通义 CosyVoice | 仅网页端朗读生效 |
+| **Embedding**（4 家） | OpenAI · Gemini · 智谱 · 通义 | 语义记忆召回 |
+| **Search**（4 家） | Tavily · Brave · SerpAPI · SearXNG | 联网搜索 |
 
-### Vision（8 家）
+> ⚠️ 并非所有 Provider 都经过生产验证；生产前用 Setup Wizard 的「测试连通」自测。
 
-`zhipu` GLM-4V · `openai` gpt-4o-mini · `qwen` qwen-vl-plus · `doubao` ep-xxx · `anthropic` Claude · `kimi` moonshot-v1-vision · `stepfun` step-1v · `minimax` abab vision
-
-### ASR · 语音识别（7 实现 + 2 占位）
-
-`gemini` · `openai` whisper-1 / gpt-4o-transcribe · `qwen` paraformer-v2 · **`groq`** whisper-large-v3 · **`minimax`** · **`azure`** STT · **`doubao`** 一句话识别 · `xunfei` / `tencent` *(占位)*
-
-### TTS · 语音合成（5 家）
-
-`minimax` speech-02 · **`openai`** tts-1 / tts-1-hd · **`azure`** Speech（SSML）· **`doubao`** 火山引擎 · **`qwen`** CosyVoice / Qwen-TTS
-
-### Image（6 家）
-
-`zhipu` CogView-4 · `qwen` Wanx · `doubao` · `wenxin` · `openai` gpt-image-1 / DALL·E · `openrouter` 聚合（gpt-image / gemini-2.5-flash-image，**支持参考图 image-to-image**）
-
-### Embedding（4 家）· Search（4 家）
-
-Embedding：`gemini` · `openai` · `zhipu` · `qwen`
-Search：`tavily` · `brave` · `serpapi` · `searxng`
-
-### Key 复用
-
-部分 Provider 在多能力间共用 key，省掉重复填：
-
-- **MiniMax key**（`MINIMAX_API_KEY`）一把通 TTS / ASR / Vision
-- **Azure Speech key + region** 同时管 TTS 和 STT
-- **OpenAI key** 同时管 Chat / Vision / ASR / TTS / Embedding
-- **DashScope key**（通义 `QWEN_API_KEY`）同时管 Chat / Vision / ASR / Embedding；CosyVoice 用 `DASHSCOPE_API_KEY`
-
-豆包 TTS/ASR 的 cluster 不同（`volcano_tts` vs `volcengine_input_common`），所以独立配置。
+**Key 复用**：MiniMax 一把 key 通 TTS/ASR/Vision；OpenAI 通 Chat/Vision/ASR/TTS/Embedding；DashScope（通义）通 Chat/Vision/ASR/Embedding；Azure Speech 同管 TTS/STT。豆包 TTS/ASR cluster 不同需独立配置。
 
 ---
-
 ## 微信接入
 
 ### 网页扫码（推荐）
@@ -196,7 +200,7 @@ npm run ilink:login
 |---|---|
 | 收发文本 | ✅ |
 | 发图片 / 文件 / 视频 | ✅ |
-| **用户要"自拍 / 照片 / 看看你" → 真实发图 (v1.6.1)** | ✅ 程序侧识别 + AI 规划器决策 + 视觉人设保持外貌一致 |
+| **用户要"自拍 / 照片 / 看看你" → 真实发图** | ✅ 程序侧识别 + AI 规划器决策 + 视觉人设保持外貌一致 |
 | 白天主动场景照（≥36h 候选窗口，AI 自决是否真发） | ✅ |
 | 主动消息 + 打字指示器 | ✅ |
 | **连发消息整合**（连发 2-3 条等你停手合并回一次，v1.10.53） | ✅ 默认 10s 窗口，`COALESCE_WINDOW_MS` 可调 |
@@ -274,7 +278,7 @@ systemctl restart zhaohy-wechat
 
 ```bash
 npm run doctor          # Node/SQLite/key/iLink/端口/服务健康，一键诊断
-npm run check:p0        # P0/P1 回归 125 项（v1.10.0 起含 proactive 防回归）
+npm run check:p0        # P0/P1 回归 127 项
 npm run check:imports   # ESM 循环依赖 / 死 import 检查
 npm run check:field-drift  # daily_summary 字段名漂移
 npm run smoke           # release smoke 10 项
@@ -283,7 +287,7 @@ bash scripts/opensource_check.sh   # 6 项开源合规
 
 `npm run doctor` 不输出 key 内容，只显示字符数和占位符检测结果。
 
-### 单用户模式（v1.5.1）
+### 单用户模式
 
 如果你是本机/内网/已用反代加保护的自托管单用户场景，可以**跳过登录页**：
 
@@ -306,6 +310,26 @@ SINGLE_USER=true
 
 ---
 
+## 运维工具箱
+
+自托管不是"跑起来就完了"——这个仓把生产运营踩过的坑都做成了工具：
+
+```bash
+npm run doctor          # Node/SQLite/key/iLink/端口/服务健康，一键诊断
+npm run lint            # ESLint：const 重赋值等"运行时静默炸"问题编译期抓死
+npm run check:p0        # P0/P1 回归 127 项
+npm run arc:digest      # 运营日报（只读）：错误签名归并(新签名置顶尖叫)/关系事件
+                        # 与道歉判定流水/红线触发/危机接管/照片比例分布
+npm run smoke           # release smoke；bash scripts/opensource_check.sh 开源合规 6 项
+```
+
+- **错误签名日报**：近 24h 的 error 日志按归一化签名归并（计数 / 环比 / 首现），新签名高亮——静默失败第一时间变响
+- **proactive 死人开关**：每小时心跳，活跃用户在但主动消息全断时 CRITICAL + 邮件告警（`ADMIN_ALERT_EMAIL`），纯报警零自愈
+- **emotion-debug 面板**（`/app/emotion-debug.html`，admin）：关系弧状态 / 事件流水 / 每条消息的情绪增量及原因——情绪因果可查，不上线玄学
+- **CI 门禁 25 项**：语法 / lint / 字段漂移对账 / 发布一致性 / 各功能 smoke / 红线护栏——新规则都做过"红色验证"（对坏版本跑必须红）
+- **运维钳位**：`ARC_MAX_STATE` 可临时封顶冲突状态（生产误伤免回滚的保险丝；与未成年人保护相反——那个是不可关的安全底线）
+
+---
 ## 架构
 
 ```
@@ -350,39 +374,44 @@ SINGLE_USER=true
 ├── src/
 │   ├── ai.mjs               业务层 AI facade
 │   ├── providers/           chat / image / vision / asr / tts / embedding / web_search
-│   ├── api.mjs              REST 路由 (3000+ 行)
-│   ├── bot.mjs              微信消息处理 + 连发合并（v1.10.53）
+│   ├── api.mjs              REST 路由
+│   ├── bot.mjs              微信消息处理 + 连发合并
 │   ├── playground.mjs       浏览器聊天
 │   ├── companion.mjs        18 节 system prompt 合成
 │   ├── memory_v2.mjs        7 层记忆 + 语义召回 + 遗忘曲线
-│   ├── emotion_state.mjs    11 维情绪状态机 + presence (v1.8.0 加 availability/attention)
-│   ├── inner_os.mjs         Inner OS 内心独白 double-pass reply (v1.8.0)
-│   ├── open_loops.mjs       她记得未完成的事 — LLM 抽取 + auto-resolve (v1.8.0)
-│   ├── proactive.mjs        主动消息 + 场景照调度 (v1.8.0 加 recall + hidden_reason)
-│   ├── photo_intent.mjs     用户照片请求意图识别（v1.6.1）
-│   ├── photo_planner.mjs    照片 AI 决策器 + 安全清洗（v1.6.1）
-│   ├── photo_sender.mjs     生图 → 转码 → 上传 → 发送 helper（v1.6.1）
-│   ├── visual_identity.mjs  稳定视觉人设 + 参考图管理（v1.6.1）
-│   ├── visual_identity_candidates.mjs  4 候选自拍生成 + 选脸锁定（v1.10.43）
-│   ├── image_beautify.mjs   生图全局轻美颜后处理（v1.10.52）
-│   ├── security/netguard.mjs SSRF 防护下载（v1.6.1）
+│   ├── emotion_state.mjs    11 维情绪状态机 + presence
+│   ├── inner_os.mjs         Inner OS 内心独白 + 冲突弧结构化检测
+│   ├── open_loops.mjs       她记得未完成的事
+│   ├── proactive.mjs        主动消息 + 场景照调度
+│   ├── photo_intent.mjs     用户照片请求意图识别
+│   ├── photo_planner.mjs    照片 AI 决策器 + 机位/比例路由
+│   ├── photo_sender.mjs     生图 → 比例转码 → 上传发送
+│   ├── visual_identity.mjs  稳定视觉人设 + 参考图管理
+│   ├── visual_identity_candidates.mjs  4 候选自拍生成 + 选脸锁定
+│   ├── image_beautify.mjs   生图全局轻美颜后处理
+│   ├── security/netguard.mjs SSRF 防护下载
+│   ├── relationship_arc.mjs 冲突与和好弧状态机（+_runtime IO 层）
+│   ├── moderation.mjs       危机干预 + 冲突红线出站护栏
+│   ├── minor_guard.mjs      未成年人保护（粘性安全模式）
+│   ├── privacy_filter.mjs   长期存储隐私过滤
 │   ├── persona_guard.mjs    回复后一致性校验
 │   ├── reflection.mjs       每日/每周 AI 反思
 │   ├── diary.mjs            日记生成
 │   ├── thoughts.mjs         今天她想对你说
 │   ├── voice_pipeline.mjs   mp3 → SILK 转码
-│   ├── voice_inbound.mjs    入站语音 下载+AES解密+silk解码（v1.10.17）
-│   ├── voice_emotion.mjs    qwen-audio 语音情绪识别（v1.10.17）
+│   ├── voice_inbound.mjs    入站语音 下载+解密+解码
+│   ├── voice_emotion.mjs    语音情绪识别
 │   ├── plan_tasks.mjs       cron 调度（日 / 周 / 月）
 │   ├── ilink.mjs            iLink 协议封装
 │   └── db.mjs               SQLite + 全部 migrateXxx() 注册点
-├── public/app/              15 个前端页面（dashboard 1800+ 行，含 ⚙ 模型抽屉）
+├── public/app/              17 个前端页面（dashboard / playground / emotion-debug …）
 ├── deploy/                  systemd + nginx 模板
-├── scripts/                 26 个：setup / doctor / check:p0 / backup / smoke / ...
+├── scripts/                 80+ 个：setup / doctor / arc-digest / 各 smoke / 沙箱验收 / ...
 ├── docs/
 │   ├── FEATURES.txt         完整功能清单（最权威）
 │   ├── HANDOFF.md           新对话交接提示词
-│   ├── ROADMAP.md           P0/P1/P2A/P2B/P2C 完成情况
+│   ├── CONFLICT_ARC.md      冲突与和好弧设计文档
+│   ├── ROADMAP.md           路线完成情况与 2026-06 回顾
 │   └── voice-sprint-plan.md 语音 sprint 计划
 └── data/                    运行时数据（gitignored）
 ```
@@ -451,9 +480,7 @@ SINGLE_USER=true
 |---|---|
 | **bot 在微信里发语音** | 永久限制 — iLink 协议禁止 outbound voice；网页/PWA 端正常 |
 | 讯飞 / 腾讯云 ASR 仅占位 | WebSocket + HMAC 协议复杂，需 PR |
-| 消息去重是进程内 Set | 重启可能短暂重复，[#1](https://github.com/dimang01/xiyu-ai/issues/1) |
-| SQLite 备份 / 恢复脚本不完整 | [#2](https://github.com/dimang01/xiyu-ai/issues/2) |
-| 安全审核层 | 危机干预(v1.16) + 未成年人保护(v1.20)已内置；内容审核 API 仍需运营者自接 |
+| 内容审核 API 需运营者自接 | 危机干预与未成年人保护已内置；公开运营建议另接审核服务 |
 | 生产部署指南未完善 | [#5](https://github.com/dimang01/xiyu-ai/issues/5) |
 | 微信对接依赖腾讯 iLink/ClawBot 准入 | 上游条件 |
 | 实时语音通话 | 协议层做不到 |
@@ -462,33 +489,17 @@ SINGLE_USER=true
 
 ## 版本历史
 
-发版节奏 / 完整 changelog 在 [GitHub Releases](https://github.com/dimang01/xiyu-ai/releases)。
+发版节奏 / 完整 changelog 在 [GitHub Releases](https://github.com/dimang01/xiyu-ai/releases)；增量索引见 [`docs/FEATURES.txt`](./docs/FEATURES.txt)；2026-06 路线回顾见 [`docs/ROADMAP.md`](./docs/ROADMAP.md)。
 
-最近主线：
+主线脉络（一句话版）：
 
-- **v1.21.2「让静默失败变响 + 照片比例修复」**（#263 事故后续）· **ESLint 进 CI**（no-const-assign 级编译期抓死，红色验证对坏版本精确命中事故行；存量 74 条清零）· **arc:digest 错误签名段**（[ERROR] 归一化签名归并：计数/环比/首现，新签名 🆕 置顶——上线即首杀 Reflection 反思批静默炸 8 天的现行 bug 并修复）· **proactive 死人开关**（每小时心跳：活跃用户>0 但主动消息成功=0 连续 2 周期 → CRITICAL + 运维邮件；纯报警零自愈，红色验证沙箱模拟 #263 形态必叫）· **照片比例修复**（"谁家好人自拍 1:1"——根因是 v1.10.0 起落地转码无条件 crop 方形；机位路由 3:4/4:3 + provider best-fit + i2i 参考裁 3:4 竖窗锁脸不锁方 + 落地按比例兜底；实测 gemini 文本声明无效、输出跟随参考图比例；防回归：尺寸落库 + digest 分布 + 红色验证 smoke）
-
-- **v1.21.1「上线收尾」** · **脆弱记忆放行条款**（冲突态用户自己提起伤心话题必须接得住——"我又梦到我爸了"她不能装失忆；确定性同义组桥接零 LLM，她仍不得主动引用）· **观察周日报** `npm run arc:digest`（纯只读：红线触发/危机接管/事件与道歉判定流水/状态分布；埋点下沉源头单一卡口 + fail-open smoke）· **ARC_MAX_STATE 运维钳位**（生产误伤保险丝，状态封顶事件照常落库；与未成年保护性质相反——那是安全底线不可关，这是风险上限可调）· **落地页诚实化**（删除"端到端加密/仅你本人可见/永不用于训练"等不可兑现承诺，替换为逐句可兑现版本）
-- **v1.21「冲突与和好弧」（关系事件状态机）** ⭐⭐ · 她会真的受伤、会别扭、和好有惯性——从 emotion 数值的隐式漂移升级为显式状态机：normal → hurt → cold → withdrawing → repairing → normal_with_scar；踩雷区(taboo)/伤人话/反复施压/长期冷落建**关系事件**，分 wound（必须正面道歉解锁修复，"别生气了"式敷衍道歉修得慢）/ distance（重逢即修复开始）两类 · **依恋风格全程调制**（anxious 升级快软化快、cold 期主动试探；avoidant 抽离更深更久；secure 60% 概率"你刚才那句话我不太舒服"直说不冷战——刻意保留的健康关系示范）· **收编整合**：v1.14 冷落逐级/重逢阶梯、v1.7 低能量模式、v1.13 escalation 统一进一套状态机，"她对你冷"只剩一个事实来源 · **红线全配确定性护栏**：绝无威胁性告别/愧疚操控/索要补偿（出站扫描）、绝不武器化脆弱记忆（召回源头过滤）、withdrawing 硬上限 5-10 天绝无永久冷战、**危机信号最高优先**（冷战中用户自伤 → 立即放下别扭切危机流程）、safe_mode 冲突封顶轻量化 · 冲突与和好都入长期记忆（"上次你就说过不查岗"）· emotion-debug 管理面板（状态/事件/信号流水，因果可查）· 检测搭 inner OS 便车零新增 LLM 调用 · CI 门禁 +3（转移表 90 项 / 落库链 e2e / 红线护栏 36 项），真 LLM 沙箱五场景验收全过
-- **v1.11 → v1.20「真人感纵深 + 安全收尾」（浓缩条目，逐版本细节见 Releases）** ⭐⭐ · **关系节奏重构**（v1.11-12：恋人门 + 好感日上限 + 衰减、表白接住/婉拒、主动消息锚生活空隙、不完美记忆、深夜把你放回去）· **中英双语**（v1.13）· **依恋风格 + 被冷落逐级转变**（v1.14：想念→试探→失望→抽离）· **真人感系列 #1-#5**（v1.15-16：去旁白/破模板/低电量/escalation 反横跳——纯 prompt 拦不住强默认行为，要配确定性兜底）· **留存漏斗**（v1.17：会话关前挽留/新人期升温/读空气刹车/首轮破冰）· **照片真实感大改**（v1.18-19：环境自拍/反磨皮/realism 分层/i2i 裁脸/ACTIVITY-POV 拍手头的事）· **初恋特质 Phase-1**（v1.19.3）· **修复硬化**（v1.19.4-6：人设导出补字段 + 三道字段对账 CI、照片"答应必拍/上下文定机位/反拼图"、重复早晚安双闸根治）· **安全收尾**（v1.20：未成年人保护 minor_guard + 粘性安全模式、隐私过滤全口子挂载、主动消息同义复读防护、发布一致性 CI）
-- **v1.10.43 → v1.10.53「会挑脸的她 + 连发合并 + 真·image-to-image」** ⭐⭐ · **连发消息合并**（真人常连发 2-3 条消息/图片 → 改成等用户停手 ~10s 把这一串整合成「一轮」只回一次，文本+图片+语音都合并；debounce 缓冲 + 硬上限防永不回，`COALESCE_WINDOW_MS` 可调）· **4 候选自拍选脸**（一次并发生成 4 张不同光线/视角/表情的候选，dashboard 挑最满意的锁定为基准，不再被第一张丑图永久指挥；candidate prompt 年龄动态化 + 不露齿 + 清纯锚点 + 2 校服 2 便服）· **参考图 image-to-image 真正接通**（OpenRouter 走多模态把锁定/上传的 ref 图作为 input image 喂进 gpt-image / gemini-2.5-flash-image，锁定的脸真正锚定后续每张照片——此前 `referenceImage` 一直硬编码 false、参考图链空转）· **全局轻美颜**（sharp 后处理接到 imageGenerate 层，微提亮/增饱和/柔肤/极轻磨皮，刻意不到塑料感）· 候选图磁盘返回 fname + 独立 GET（避开 iOS Safari 大 JSON）+ rate limit 防刷
-- **v1.10.11 → v1.10.42「语音情绪 + 照片美学大修 + HOSTED_MODE + 一批救火」** · **入站语音情绪识别**（不只转文字：下载 + AES 解密 + silk 解码 → qwen-audio 听出语气/情绪/声音强度再回应，失败降级纯转写）· **照片美学大修**（photo_planner 颜值/表情/自拍 POV/反写真感重写 + 注入时间感与完整人设外观；photo_intent regex + LLM 二分类兜底终结漏识别；photo **异步化**立即回应不阻塞 polling）· **OpenRouter image provider**（默认 gpt-image-1，5.4→5-mini→gemini-2.5 fallback chain）· **HOSTED_MODE**（部署版隐藏 dashboard 后端 provider/model、锁 setup 写端点）· **救火**：QR 扫码绑定 companion 孤儿化、iLink 限速入队不吞消息、拆段腰斩、goodnight/morning 漏发兜底、关系升「恋人」必须有表白检测、sticker 支持 disabled 跳过不合人设表情
-- **v1.10.1 → v1.10.9「睡眠拟人化 + 体验打磨」** 在 v1.10.0 基础上快速迭代：proactive 审计修 sleep 集成 3 个回归（morning 误判 / 晚睡不发晚安 / 节流吞配额）· sleep **默认 00:30 睡**（避开晚间活跃；曾因默认 23:00 全网静默被当"微信坏了"）· **网页端(playground)也接 sleep 拦截**（之前只微信端）· **不对称抖动**（睡 -15/+45、起 ±10）· **挽留延后**（刚入睡说"再陪陪我"延后 20min 陪聊）· 睡前晚安与入睡解耦留挽留窗口 · **iOS 风格圆形作息拨盘**（拖 🌙☀️ 双把手 + 睡眠时长，松手自动保存）· 叫醒按钮脉冲发光 · dark mode 覆盖加固（属性选择器兜底 + 引导气泡）· Turnstile 改成仅失败 reset（修"重复验证"）+ **找回密码页也加 Turnstile** · 登录页插图迭代到精致 pixiv 风二次元
-- **v1.10.0「她会睡觉 / 注册防刷 / 夜间模式 / proactive bug 修」** ⭐⭐ 五件套：**#1 作息与睡眠系统** — 新表 `companion_sleep_schedule`（入睡/起床 + ±N min 抖动 + 学习状态）+ `companion_missed_messages`（睡眠期消息队列）。新模块 `src/sleep.mjs`：bot 入口睡眠时段静默拦截 + 入队 missed；proactive 早晚安基准从 sleep 表读，morning kind 自动拼"昨晚发了好多 \|\| 我刚醒"摘要 prompt；前 7 天观察用户首末消息时间→第 8 天按中位数固化；dashboard 加 📞 打电话叫醒她（按下立刻 exitSleep + annoyance/anger 上升，AI 立刻发"被吵醒"短消息）· **#2 proactive 不发消息 bug 修** — root cause：tick 循环 `item.sent = true` 在 `evaluateProactive` 之前，v2 因 90min backoff 拒发时 item 被永久标 sent，后续永不重试，用户感知"主动消息明显比设置的少"。修法：item.sent 移到真正进 send wrapper 时才标；v2 拒发写 `_v2_deny_until = now + 15min` 防抖；加 p0_regression_check 2 条 source-level 防回归 · **#3 Cloudflare Turnstile** — auth.html 注册 tab 加 widget，send-code 接口前先 `verifyTurnstile(token, remoteIp)`→走官方 siteverify；secret 仅 .env，site key 前端硬编码；未配置 secret 跳过校验（dev 友好），网络故障保守拦截 · **#4 全站夜间模式** — `public/app/theme.js` localStorage `xiyu_theme`=auto/light/dark；auto 跟随 `prefers-color-scheme` mediaquery；浮动按钮 🌓→☀️→🌙 循环；17 个 html 头部 inline pre-script 避免渲染闪烁；glass.css 扩 dark 骨架覆盖 Tailwind 常用 utility · **#5 minimax/Tavily/Qwen 三家 key** — .env 接好即用，已有 provider 代码（chat/tts/asr/vision/web_search/embedding）自动识别
-- **v1.8.0「她真的记得 + 她有内心 OS」** ⭐⭐ 真实感升级 v2。6 块改动：**#7** 加 "incomplete-reply" prompt（7 种允许：只共情不给建议/只吐槽/敷衍补充/不知道就不知道/转移/忙时短回/没意见）· **#1** emotion_state 加 `availability` + `attention` 字段，从今日 dailySchedule 当前活动派生（睡/开会=busy、吃/逛=half），prompt 注入"现在能回但分心" · **#3** 新表 `companion_preferences` 结构化偏好账本（like/dislike/taboo/neutral × intensity 1-5），启动 backfill 把现有 `hobbies/dislikes` 同步过去，patch 时同步；prompt 按强度修饰"极/很/有点"；新增 3 个 REST 端点 · **#4** 新表 `companion_open_loops` "她记得未完成的事"（"明天去招聘会" + due_at + emotional_weight + expected_followup + status），LLM 抽取 + 启发式 auto-resolve（"招聘会黄了" → 自动 resolve），03:30 cron 清 stale · **#5** proactive 主动消息**因果重塑**：normal 时查 `listDueOpenLoops`，命中则升级为 `recall` kind，注入 hidden_reason，让她"对了 || 你今天面试完没"而不是"今天怎么样" · **#6** **内心 OS** double-pass reply pipeline：每次回复前先生成"内心独白"（短小、不发送），注入到 outer system prompt 让模型基于内心写对外回复——内心和嘴上之间的落差就是真人感来源。可关（`INNER_OS_ENABLED=false`）、短消息 < 8 字自动 skip
-- **v1.7.0「真实感升级：不讨好、会逗你、会端着、会不想聊」** ⭐ 解决 LLM sycophancy 在陪伴场景下的具体表现。5 块改动：**A** 加 200 字"她不是来讨好你的"prompt（每 5-8 条 ≥1 条带不同意/不喜欢/直球批评，带熟人轻松感）· **B** 加 200 字"你也会逗他"prompt（拆台/假吐槽/玩梗/自黑撒娇，依赖 `can_joke`，stage≠陌生人时注入，朋友~暧昧 1/6-8 频率、恋人~深爱 1/3-4 频率）· **C** 暗恋期"端着"具体话术示范（180 字+6 反例，仅陌生人/朋友/暧昧 stage）· **D** emotion_state 低能量模式（mood=cold 或 annoyance≥70 或 patience≤20 时触发"今天不想聊"最高优先级 hint：单字/不接话/可以"我先去 xx"打断；覆盖讨好/逗他等）· **E** 新增 `companion.dislikes` JSON 字段（与 forbidden_topics 区分："不喜欢但会聊"，prompt 注入"这个我不行"等指令；create.html 加 8 预设 chip：听抱怨/吃辣/狗血剧/网络梗/夜店/说教/爹味/算计的人）
-- **v1.6.3「撤掉不合调的人物插图」** v1.6.2 的 hero-girl 插图（OpenRouter gpt-5-image-mini 生成）实际效果是粉发二次元少女正脸，与产品"她像真实的人"的调性冲突；首页把它做成 logo 背后衬底太抢戏。本版撤掉 hero-girl 引用、删 .webp 文件、从重生脚本里移除，首页回到干净的 logo + 文案，auth 左栏换成 feature-persona（日记本）
-- **v1.6.2「打磨与刷新」** v1.6.1 一波收尾修复：visual_identity 死代码三元、photo_planner `numberEnv` 空字符串被吞为 0、netguard 重定向未排空响应、photo_sender 下载图片缺大小防御、强请求识别扩展（`想看看你 / 再来一张 / 看下你 / 秀一下你/自己` 等）、gate 拦截/planner 拒绝时给固定兜底而不退到普通 AI 文本 · **前端美化**：glass.css 升级（3 层背景光晕、多层阴影、三色 focus ring、新工具类 `.hero-blob / .floating-card / .glass-chip / .glass-stagger` + 暗色骨架）· 5 张 landing 插图全量重生（OpenRouter `openai/gpt-5-image-mini`，统一 soft pastel + flat vector）· 4 个入口页结构升级（首页 hero 衬底、auth 桌面两栏 split、create / setup 接入插图）
-- **v1.6.1「会拍照的她」** ⭐ **真实发图链路**（用户说"自拍/发张照片/想看你"——程序侧识别意图、AI 规划器决策、image provider 真的生图、转码 1024×1024 webp、iLink 上传发送，不是文字假装拍；冷却 10min / 每日 3 张 / 敏感词拦截 / Provider 缺失自然兜底）· **视觉人设规划器**（每个 companion 一份 identity spec：外貌/气质/风格，所有照片按 spec 生成，避免次次换脸；可上传参考图，provider 支持 image-to-image 时优先用 ref）· **安全加固**（SSRF 防护 netguard.mjs · X-Forwarded-For 信任策略 · setup token · admin 鉴权 · companions IDOR 修复，详见 [安全](#安全)）
-- **v1.6.x「拟人化深化」** ⭐ **3 个月模拟时间线**（一次性生成 35 个虚拟互动事件 + 关键事件入记忆 + 好感度演化曲线 5→30，从"刚认识"变"已经认识 3 个月"）· **11 维情绪**（原 7 维 + 耐心 / 兴奋 / 烦躁 / 感激；半小时定时重算；saturation 防刷）· **主动消息三驱动 motivation**（情绪 × 日程 × 时间 × 随机；重启持久化防重发；三道闸门防 race；段内 bigram+LCS dedup）· 人生记忆 prompt 12 → 19 类目（带名字 + 感官细节 + 世界观）· Playground 与 bot 情绪路径对齐
-- **v1.5.x「长期陪伴维度」** 离线留言胶囊（HMAC 签名 .txt 永久托管）· 时光胶囊（解封时她写"现在的我"感想）· 沉默陪伴模式（赛博距离，呼吸光点）· 反向日记「我们之间」（每晚她记录你们的互动，可编辑/导出）· SINGLE_USER 单用户模式（自托管跳过登录）
-- **v1.4.x** TTS 5 家（MiniMax/OpenAI/Azure/豆包/通义）+ ASR 7 实现（Gemini/OpenAI/Qwen/Groq/MiniMax/Azure/豆包）+ Vision 8 家（智谱/OpenAI/Qwen/豆包/Claude/Kimi/StepFun/MiniMax）；默认起步=暗恋；想念档 + 今天她想对你说；网页录音 + 朗读
-- **v1.3.x** 液态玻璃 UI · 她的日记 · 纪念日主动祝福 · 全面去 Pro/Free 分级
-- **v1.2.x** 联网搜索 · 主动告白 · Memory Reflection
-- **v1.1.x** Persona Guard · 情绪状态机 · 主动消息 v2
+- **v1.21.x 冲突与和好弧 + 工程加固**：关系事件状态机（她会真的受伤、和好有惯性）统一收编全部"她对你冷"的逻辑；事故复盘后让静默失败变响（ESLint / 错误签名日报 / 死人开关）；照片比例修复
+- **v1.20.x 安全收尾**：未成年人保护（粘性安全模式）、隐私过滤全口子、发布一致性 CI、照片真实感 v2（反磨皮质感词直达生产）
+- **v1.14 → v1.19 真人感纵深**：被冷落逐级转变 + 依恋风格、留存漏斗（挽留/升温/读空气/破冰）、照片真实感大改（环境自拍/i2i 锁脸/机位路由）、初恋特质
+- **v1.6 → v1.13 体验底座**：真实发图链路、反讨好系列、Inner OS、开环记忆、睡眠系统、连发合并、关系节奏（时间喂大感情）、中英双语
+- **v1.0 → v1.5 框架成型**：人设引擎、Memory v2、情绪状态机、主动消息、日记、多 Provider 抽象
 
 ---
-
 ## 贡献 & 路线图
 
 - 开发环境 / PR 约定 / 产品调性 → [CONTRIBUTING.md](./CONTRIBUTING.md)（3 分钟读完）
