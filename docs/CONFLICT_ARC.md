@@ -323,6 +323,7 @@ resolved / stale 时写 `addOrMergeMemory`：layer=event，weight=severity，
 | `ARC_SCAR_FADE_DAYS` | 7 | 余痕淡出 |
 | `ARC_REPAIR_WARM_BASE` | 3/4/6 | hurt/cold/withdrawing 来源的 warm 需求 |
 | `INNER_OS_MAX_TOKENS` | 160 | 容纳结构化 JSON 行 |
+| `ARC_MAX_STATE` | （空=不钳） | **运维钳位保险丝**（v1.21.1）：hurt\|cold\|withdrawing，状态封顶、事件照常落库、存量超限状态 30min 批内压回。与未成年保护**性质相反**——safe_mode 是安全底线不可关；这是风险功能的可调上限，生产误伤时免回滚 |
 
 ---
 
