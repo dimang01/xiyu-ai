@@ -186,6 +186,59 @@ function migrateRelationshipArc() {
   addColIfMissing('companions', 'arc_state_changed_at', 'TEXT');
   // PR-B: 台阶消息配额（cold 期 anxious 试探 / repairing 主动递台阶，每事件 1 条）
   addColIfMissing('companion_relationship_events', 'olive_sent', 'INTEGER DEFAULT 0');
+  // PR-C: 信号流水（emotion-debug 面板的"最近 N 条消息的情绪增量及原因"——
+  // 没有这个面板这套系统上线即玄学）。只记有信号/有转移的消息，每 companion 留 200 条。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_arc_signal_log (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id  INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      signal_kind   TEXT,
+      severity      INTEGER,
+      state_before  TEXT,
+      state_after   TEXT,
+      reason        TEXT,
+      inner_tone    TEXT,
+      perceived_hurt INTEGER,
+      user_text_brief TEXT,              -- 过 privacy_filter 后截 60 字
+      created_at    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_arc_signal_log
+      ON companion_arc_signal_log(companion_id, created_at DESC);
+  `);
+}
+
+/** arc 信号流水写入（静默失败，不阻塞主链路） */
+export function insertArcSignalLog(companionId, row = {}) {
+  try {
+    let brief = String(row.userTextBrief || '').slice(0, 60);
+    if (brief) {
+      const pf = filterForStorage(brief);
+      brief = pf.store ? pf.text : '';
+    }
+    getDb().prepare(`
+      INSERT INTO companion_arc_signal_log
+        (companion_id, signal_kind, severity, state_before, state_after, reason, inner_tone, perceived_hurt, user_text_brief, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      companionId, row.signalKind || null, row.severity ?? null,
+      row.stateBefore || null, row.stateAfter || null, row.reason || null,
+      row.innerTone || null, row.perceivedHurt ?? null, brief || null,
+      new Date().toISOString(),
+    );
+    // 轻量轮转：超 200 条删最老的
+    getDb().prepare(`
+      DELETE FROM companion_arc_signal_log WHERE companion_id = ? AND id NOT IN (
+        SELECT id FROM companion_arc_signal_log WHERE companion_id = ? ORDER BY id DESC LIMIT 200
+      )
+    `).run(companionId, companionId);
+  } catch { /* debug 流水失败不致命 */ }
+}
+
+/** arc 信号流水读取（debug 面板） */
+export function listArcSignalLog(companionId, limit = 50) {
+  return getDb().prepare(`
+    SELECT * FROM companion_arc_signal_log WHERE companion_id = ? ORDER BY id DESC LIMIT ?
+  `).all(companionId, Math.max(1, Math.min(200, limit | 0)));
 }
 
 /** 读当前弧状态（兜底 normal） */

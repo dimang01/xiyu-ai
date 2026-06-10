@@ -17,7 +17,7 @@ import {
 import {
   getDb, getArcState, setArcState, getOpenRelationshipEvent, applyArcEventOp,
   countTodayRelationshipEvents, getLastArchivedEventType, updateRelationshipEvent,
-  listPreferences, saveMemory, upsertEmotionState,
+  listPreferences, saveMemory, upsertEmotionState, insertArcSignalLog,
 } from './db.mjs';
 import { getNeglectStage, buildReunionHint, getEmotionStateWithDefaults } from './emotion_state.mjs';
 import { log } from './logger.mjs';
@@ -114,6 +114,11 @@ export function runArcTimeTickOne(companion, now = new Date()) {
       interactionsSinceEvent: interactions, now,
     });
     _applyResult(companion, r, { stateBefore: arc_state, openEvent, now });
+    if (r.changed && r.state !== arc_state) {
+      insertArcSignalLog(companion.id, {
+        signalKind: 'time_decay', stateBefore: arc_state, stateAfter: r.state, reason: r.reason,
+      });
+    }
     return r.changed ? r.state : arc_state;
   } catch (e) {
     log('warn', `[Arc] time tick 失败 companion=${companion.id}: ${e.message}`);
@@ -157,6 +162,15 @@ export function runArcSignalTick(companion, { userText = '', escalationLevel = 0
       _applyResult(companion, result, {
         stateBefore: arc_state, openEvent, triggerText: isHostile ? userText : '', now,
       });
+      // debug 面板信号流水：有信号 / 有转移 / 有事件操作才记
+      if (result.changed || result.eventOp) {
+        insertArcSignalLog(companion.id, {
+          signalKind: signal.kind, severity: signal.severity ?? null,
+          stateBefore: arc_state, stateAfter: result.state, reason: result.reason,
+          innerTone: inner?.user_tone || null, perceivedHurt: inner?.perceived_hurt ?? null,
+          userTextBrief: userText,
+        });
+      }
     }
 
     // 3) 表达上下文（用 tick 后的最新状态）

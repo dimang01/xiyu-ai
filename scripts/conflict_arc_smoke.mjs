@@ -108,7 +108,11 @@ ok(eventCategory('taboo_hit') === 'wound' && eventCategory('harsh_words') === 'w
 }
 {
   const r = sig({ state: 'hurt', openEvent: ev({ repair_warm: 2, created_at: hAgo(6) }), signal: { kind: 'warm' } });
-  ok(r.state === 'hurt', 'hurt: warm×3 但 <12h 不转移（情绪惯性）');
+  ok(r.state === 'hurt', 'hurt: warm×3 但 <12h 不转移（wound 情绪惯性）');
+}
+{
+  const r = sig({ state: 'hurt', openEvent: ev({ type: 'neglect', repair_warm: 2, created_at: hAgo(1) }), signal: { kind: 'warm' } });
+  ok(r.state === 'normal', 'hurt: distance 类不卡 12h——重逢哄几句就软（v1.14 原语义）');
 }
 {
   const r = sig({ state: 'hurt', openEvent: ev(), signal: { kind: 'harsh_words', severity: 2 } });
@@ -170,6 +174,9 @@ ok(repairNeed('cold', 'secure', 'generic') === 6, 'repairNeed: generic +2');
   const r = sig({ state: 'repairing', stateChangedAt: hAgo(6),
     openEvent: ev({ repair_status: 'repairing', repair_from: 'hurt', repair_warm: 2 }), signal: { kind: 'warm' } });
   ok(r.state === 'repairing', 'repairing: 达标但未到最短时长不转移（不许秒和好）');
+  const rd = sig({ state: 'repairing', stateChangedAt: hAgo(7),
+    openEvent: ev({ type: 'neglect', repair_status: 'repairing', repair_from: 'hurt', repair_warm: 2 }), signal: { kind: 'warm' } });
+  ok(rd.state === 'normal', 'repairing: distance 类最短时长减半（hurt 来源 6h 即可）');
 }
 {
   const r = sig({ state: 'repairing', stateChangedAt: hAgo(13), style: 'anxious',
