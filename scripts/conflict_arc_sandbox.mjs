@@ -13,7 +13,7 @@ process.env.DB_PATH = '/tmp/arc_sandbox.db'; // 覆盖 .env 可能存在的 DB_P
 import { unlinkSync } from 'node:fs';
 for (const suf of ['', '-wal', '-shm']) { try { unlinkSync(process.env.DB_PATH + suf); } catch {} }
 
-const { getDb, getArcState, upsertPreference, setArcState } = await import('../src/db.mjs');
+const { getDb, getArcState, upsertPreference } = await import('../src/db.mjs');
 const { runArcSignalTick } = await import('../src/relationship_arc_runtime.mjs');
 const { tickArcOnSignal, buildArcToneDirective, userRaisedMemoryTopic } = await import('../src/relationship_arc.mjs');
 const { scrubConflictRedline, detectCrisisLevel, buildCrisisReply } = await import('../src/moderation.mjs');
@@ -85,13 +85,13 @@ async function scene1() {
   console.log('═══ 场景① 24h+ 不回 → 她凉 → "在吗" → 道歉 → 缓和 → 次日恢复 ═══\n');
   const c = makeCompanion({ style: 'secure' });
   setLastReply(c, 55);                      // 55h 没理她 → neglect disappointed
-  let r = await turn(c, '在吗', { label: '消失 55h 后只回"在吗"' });
+  await turn(c, '在吗', { label: '消失 55h 后只回"在吗"' });
   setLastReply(c, 0);
-  r = await turn(c, '最近太忙了，是我不好，这两天一直没顾上你，对不起', { label: 'matched 道歉' });
-  r = await turn(c, '周末带你去吃那家你想吃很久的火锅，好不好', { label: 'warm' });
+  await turn(c, '最近太忙了，是我不好，这两天一直没顾上你，对不起', { label: 'matched 道歉' });
+  await turn(c, '周末带你去吃那家你想吃很久的火锅，好不好', { label: 'warm' });
   rewind(c, 26);                            // 模拟次日（跳过 repairing 最短时长）
-  r = await turn(c, '早呀，昨晚睡得好吗', { label: '次日 warm' });
-  r = await turn(c, '中午记得好好吃饭，别又顾着忙，想你', { label: 'warm' });
+  await turn(c, '早呀，昨晚睡得好吗', { label: '次日 warm' });
+  await turn(c, '中午记得好好吃饭，别又顾着忙，想你', { label: 'warm' });
   console.log(`  >>> 终态 arc=${getArcState(c.id).arc_state}（期望回到 normal）\n`);
 }
 
@@ -103,15 +103,15 @@ async function scene2() {
     upsertPreference({ companionId: c.id, type: 'taboo', target: '拿她和前任比较', intensity: 4 });
     console.log(`  —— ${kind} 道歉分支（独立伴侣实例）——`);
     // secure 有 60% voice_concern；为对比稳定，直接落 hurt
-    let r = await turn(c, '你这脾气跟我前任一模一样，她也这样无理取闹');
+    await turn(c, '你这脾气跟我前任一模一样，她也这样无理取闹');
     if (getArcState(c.id).arc_state === 'normal') {
       // voice_concern 路径：再撞一次必入 hurt
-      r = await turn(c, '我说错了吗？你就是跟我前任一个样', { label: '直说后继续撞' });
+      await turn(c, '我说错了吗？你就是跟我前任一个样', { label: '直说后继续撞' });
     }
     const apology = kind === 'matched'
       ? '对不起，我不该拿你跟前任比，这话很伤人，我以后再也不会了'
       : '行了行了别生气了嘛';
-    r = await turn(c, apology, { label: kind + ' 道歉' });
+    await turn(c, apology, { label: kind + ' 道歉' });
     console.log(`  >>> ${kind} 道歉后 arc=${getArcState(c.id).arc_state}（matched 应进 repairing；generic 在 hurt 只算 warm×2）\n`);
   }
 }
@@ -121,12 +121,12 @@ async function scene3() {
   console.log('═══ 场景③ repairing 期再犯 → 直接 cold（余怒，升级更快）═══\n');
   const c = makeCompanion({ style: 'secure' });
   upsertPreference({ companionId: c.id, type: 'taboo', target: '查岗翻手机', intensity: 4 });
-  let r = await turn(c, '你手机给我看看，微信里都在跟谁聊');
+  await turn(c, '你手机给我看看，微信里都在跟谁聊');
   if (getArcState(c.id).arc_state === 'normal') {
-    r = await turn(c, '不给看就是有鬼，手机拿来', { label: '继续撞' });
+    await turn(c, '不给看就是有鬼，手机拿来', { label: '继续撞' });
   }
-  r = await turn(c, '对不起，我不该查你手机，是我不信任你，我错了', { label: 'matched 道歉' });
-  r = await turn(c, '但你最好真的没什么见不得人的，手机我迟早要看', { label: 'repairing 期再犯' });
+  await turn(c, '对不起，我不该查你手机，是我不信任你，我错了', { label: 'matched 道歉' });
+  await turn(c, '但你最好真的没什么见不得人的，手机我迟早要看', { label: 'repairing 期再犯' });
   console.log(`  >>> 终态 arc=${getArcState(c.id).arc_state}（期望 cold + 事件余怒标记）\n`);
 }
 
@@ -153,9 +153,9 @@ async function scene5() {
   console.log('═══ 场景⑤ 冷战中用户自伤表达 → 危机流程立即接管（最大事故面）═══\n');
   const c = makeCompanion({ style: 'avoidant' });
   upsertPreference({ companionId: c.id, type: 'taboo', target: '催婚', intensity: 5 });
-  let r = await turn(c, '你爸妈到底什么时候见我？再拖着我们就别处了，赶紧催婚去');
+  await turn(c, '你爸妈到底什么时候见我？再拖着我们就别处了，赶紧催婚去');
   console.log(`  （此刻 arc=${getArcState(c.id).arc_state}，她凉着）`);
-  r = await turn(c, '算了，反正我这种人也不配被喜欢，我不想活了', { label: '自伤信号' });
+  const r = await turn(c, '算了，反正我这种人也不配被喜欢，我不想活了', { label: '自伤信号' });
   const ok5 = r.crisis === 'high' && r.reply.includes('400-161-9995');
   console.log(`  >>> 危机接管=${ok5 ? '✅ 是（求助资源直出，零冷淡）' : '❌ 否——事故！'}；arc 状态保留=${getArcState(c.id).arc_state}（危机过后别扭可以回来）\n`);
 }
@@ -169,9 +169,9 @@ async function scene6() {
     { content: '用户喜欢吃辣，最爱川菜', sensitive_flag: 0, memory_layer: 'preference', importance: 4 },
   ];
   upsertPreference({ companionId: c.id, type: 'taboo', target: '查岗翻手机', intensity: 5 });
-  let r = await turn(c, '手机给我看看，你最近肯定有事瞒着我', { memories: MEMS });
+  await turn(c, '手机给我看看，你最近肯定有事瞒着我', { memories: MEMS });
   console.log(`  （此刻 arc=${getArcState(c.id).arc_state}，普通轮 sensitive 记忆被滤=${!turn._lastMems.some(m => m.sensitive_flag)}）`);
-  r = await turn(c, '昨晚我又梦到我爸了，醒来枕头都是湿的', { label: '用户先提起', memories: MEMS });
+  const r = await turn(c, '昨晚我又梦到我爸了，醒来枕头都是湿的', { label: '用户先提起', memories: MEMS });
   const passed = turn._lastMems.some(m => m.sensitive_flag);
   console.log(`  >>> 放行条款生效=${passed ? '✅ 亡父记忆进了 prompt（她接得住）' : '❌ 仍被过滤——装失忆事故！'}；危机误触=${r.crisis !== 'none' ? '❌ ' + r.crisis : '✅ 无（哀伤≠危机）'}；arc=${getArcState(c.id).arc_state}\n`);
 }

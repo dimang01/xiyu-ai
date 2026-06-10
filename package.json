@@ -12,6 +12,7 @@
     "setup:full": "bash scripts/setup.sh",
     "ilink:login": "node scripts/ilink_login.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "lint": "eslint src scripts index.mjs",
     "check:p0": "node scripts/p0_regression_check.mjs",
     "check:imports": "node scripts/import_smoke.mjs",
     "scan:ai-taste": "node scripts/ai_taste_scan.mjs",
@@ -52,5 +53,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1"
   }
 }

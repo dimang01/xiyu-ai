@@ -72,7 +72,6 @@ for (const f of ['README.md', 'README.en.md']) {
 
 // ── 5) 中英功能表行数一致 ───────────────────────────────────────────────
 {
-  const zhRows = (read('README.md').match(/^\|[^\n]*\|$/gm) || []);
   const zh = (read('README.md').split('## 它能做什么')[1] || '').split('\n---')[0].split('\n').filter(l => /^\|/.test(l)).length;
   const en = (read('README.en.md').split(/## What it does/i)[1] || '').split('\n---')[0].split('\n').filter(l => /^\|/.test(l)).length;
   if (zh === en && zh > 0) good(`中英功能表行数一致（${zh} 行）`);

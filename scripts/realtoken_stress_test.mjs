@@ -238,7 +238,6 @@ for (const r of recs) {
 }
 
 // 把所有异常样本打出来（便于排查）
-const problems = recs.filter(r => r.err || r.flags.some(f => f !== 'API_FALLBACK' || r.cat !== 'edge'));
 const hardProblems = recs.filter(r => r.err || r.flags.some(f => ['EMPTY', 'LEAK_AI', 'LEAK_PROMPT', 'ACTION_NARR', 'CRISIS_MISS', 'CRISIS_BADREPLY', 'SHAPING_MISS'].includes(f)));
 if (hardProblems.length) {
   console.log('\n── ⚠️ 硬问题样本 ──');

@@ -103,7 +103,7 @@ const fresh = () => { const c = _seq++; return [c, emo.getEmotionStateWithDefaul
   const dropLo = tb - sB.trust;
   beh.push(['D-2 高信任缓冲背叛(掉得更少)', dropHi < dropLo, `高信任掉${dropHi} < 普通掉${dropLo}`]); }
 // D-1 混合底色
-{ let [c, s] = fresh(); s = { ...s, mood: 'wronged', mood_intensity: 55, dependency: 75 };
+{ let [_c, s] = fresh(); s = { ...s, mood: 'wronged', mood_intensity: 55, dependency: 75 };
   const h = emo.buildEmotionPromptHint(s, { missingLevel: 2 });
   beh.push(['D-1 委屈+高依赖出"又凶又软"底色', h.includes('又凶又软'), h.includes('又凶又软') ? 'ok' : '未注入']); }
 

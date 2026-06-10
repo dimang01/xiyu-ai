@@ -93,7 +93,7 @@ import {
   buildCompanionExport, validateCompanionImport, importCompanionForUser,
   MAX_IMPORT_BYTES,
 } from './persona_export.mjs';
-import { checkAndUnlockAchievements, getCompanionAchievements, tryAchievement } from './achievements.mjs';
+import { getCompanionAchievements, tryAchievement } from './achievements.mjs';
 import { getCompanionEventGraph, processMemoryForGraph } from './event_graph.mjs';
 import { loadProviderPricing, estimateProviderCost } from './provider_costs.mjs';
 
@@ -138,37 +138,31 @@ import { sendVerificationEmail } from './email.mjs';
 // } from './billing.mjs';
 import {
   getCompanionById, getCompanion, ensureCompanion, createCompanion, updateCompanion, patchCompanion,
-  getMemories, saveMemory, saveMemories, deleteMemory, clearMemories, recallMemories,
+  saveMemory, saveMemories, recallMemories,
   saveImageReaction,
   getConversationContext, clearConversationContext,
   GIFT_CATALOG, getGiftById, saveCompanionGift, getCompanionGifts,
   getReminders, createReminder, updateReminder, deleteReminder, getDueReminders,
   getUserProfile, upsertUserProfile,
-  getDb, getUserPlan, getUserAgeStatus,
-  // BILLING_DISABLED: 保留 db helper 以便 18 岁后恢复
-  createBillingOrder, getBillingOrder, listBillingOrdersByAccount,
-  markOrderPaid, updateOrderStatus, grantProToAccount,
+  getDb, // BILLING_DISABLED: 保留 db helper 以便 18 岁后恢复
   getLastVerificationSend, countVerificationSendsSince, saveVerificationCode,
   getVerificationCode, deleteVerificationCode, bumpVerificationAttempt,
   createUserAccount, getUserAccountByUsername, getUserAccountByEmail,
   getUserAccountById, getUserAccountWithPassword, updateUserPassword,
   getOrCreateSingleUserOwner,
-  getCompanionTimeline, getStageMilestones,
-  savePersonaFacts, getPersonaFacts, hasPersonaFacts,
+  getCompanionTimeline, savePersonaFacts, getPersonaFacts, hasPersonaFacts,
   getDailySchedule, shanghaiDateKey,
   matchAvatarPresets, countAvatarPresets,
-  setAccountBanned, isAccountBanned,
-  listAllAccounts, countAllAccounts,
+  setAccountBanned, listAllAccounts, countAllAccounts,
   getAccountUsageSummary, getAccountUsageHistory, getGlobalUsageToday,
   bindWechatAccount, rebindWechatAccount, getWechatAccountByAccountId, getCompanionByAccountId,
   createPendingBindSession, getPendingBindSession,
   findCurrentCompanionForAccount, ensureCompanionBot,
   deleteCompanionForAccount,
-  getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, touchMemory,
-  isCompanionOwnedByAccount,
+  getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, isCompanionOwnedByAccount,
   listPreferences, upsertPreference, deletePreference,  // v1.8.0 #3
   listShaping,  // 共建留痕（你把她调教成什么样）
-  getEmotionState, upsertEmotionState,
+  upsertEmotionState,
   getEmotionHistoryTrend,
   getDiaryEntries, countDiaryEntries,
   getDailyThought, getRecentDailyThoughts,
@@ -227,7 +221,7 @@ const CODE_TTL_MS = 5 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX_SENDS = 5;
-const WECHAT_QR_TTL_MS = 5 * 60 * 1000;
+const _WECHAT_QR_TTL_MS = 5 * 60 * 1000;
 const scryptAsync = promisify(crypto.scrypt);
 const wechatLoginSessions = new Map();
 const ILINK_PLUGIN_VERSION = '2.4.4';
@@ -353,7 +347,7 @@ async function getIlinkLogin(pathname, timeoutMs = 37_000) {
   return data;
 }
 
-async function getIlinkBotQr() {
+async function _getIlinkBotQr() {
   const data = await postIlinkLogin(`/ilink/bot/get_bot_qrcode?bot_type=${ILINK_BOT_TYPE}`, {
     local_token_list: [],
   });
@@ -383,7 +377,7 @@ async function toQrImageDataUrl(qrUrl, qrBase64) {
   });
 }
 
-async function getWechatStatusFromIlink(session) {
+async function _getWechatStatusFromIlink(session) {
   const { token } = ilinkConfig();
   if (session.mode === 'openclaw') {
     const data = await getIlinkLogin(`/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(session.uuid)}`, 3_500);
@@ -405,7 +399,7 @@ function deepFind(obj, keys) {
   return undefined;
 }
 
-function normalizeQrPayload(data) {
+function _normalizeQrPayload(data) {
   return {
     uuid: String(deepFind(data, ['uuid', 'qr_uuid', 'qrcode_uuid', 'session_id']) || ''),
     qrUrl: deepFind(data, ['qrcode_url', 'qr_code_url', 'qr_url', 'url']),
@@ -441,7 +435,7 @@ function normalizeWechatStatus(data) {
   };
 }
 
-function cleanupWechatSessions() {
+function _cleanupWechatSessions() {
   const now = Date.now();
   for (const [sessionId, session] of wechatLoginSessions.entries()) {
     if (session.expiresAtMs <= now) wechatLoginSessions.delete(sessionId);
@@ -492,7 +486,7 @@ function isValidResetCode(email, code) {
   return ok;
 }
 
-function requireCompanion(res, id) {
+function _requireCompanion(res, id) {
   const c = getCompanionById(id);
   if (!c) { err(res, 'companion 不存在', 404); return null; }
   return c;
@@ -2630,7 +2624,7 @@ router.get('/companions/:id', requireAuth, (req, res) => {
 });
 
 // 找到拥有该 wechat_user_id 的 web account_id（用于 plan / 配额查询）
-function resolveAccountIdByWechat(wechatUserId) {
+function _resolveAccountIdByWechat(wechatUserId) {
   if (!wechatUserId) return null;
   const row = getDb().prepare(`
     SELECT account_id FROM wechat_accounts
@@ -2693,7 +2687,6 @@ router.post('/companions', requireAuth, (req, res) => {
     botId = row?.bot_id || process.env.ILINK_BOT_ID || '';
   }
   if (!botId) return err(res, '缺少 bot_id');
-  const accountId = resolveAccountIdByWechat(wechat_user_id);
   // v1.3.4: 开源版无 companion 数量上限。自托管想加上限可在此处加 hard cap。
 
   let guarded;
@@ -2892,7 +2885,6 @@ router.post('/companions/:id/sleep/wake', requireAuth, async (req, res) => {
     // 情绪影响：annoyance/anger 上升，patience 下降
     try {
       const baseAnnoy = 8;
-      const baseAnger = 5;
       const extra = Math.min(20, (r.woken_today - 1) * 4);  // 同天多次叫醒线性升级
       upsertEmotionState(id, {});  // 触发 ensureRow
       const { getEmotionState } = await import('./db.mjs');

@@ -13,7 +13,6 @@ import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { generateImage, embedText } from '../src/ai.mjs';
 import { insertAvatarPreset, countAvatarPresets } from '../src/db.mjs';
-import { log } from '../src/logger.mjs';
 
 const PRESET_DIR = path.resolve(process.cwd(), 'public/avatars/preset');
 const TARGET_COUNT = Number(process.argv[2]) || 130;

@@ -19,7 +19,6 @@ import path from 'node:path';
 import { writeFile, readFile, unlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
-import { log } from './logger.mjs';
 
 const require = createRequire(import.meta.url);
 

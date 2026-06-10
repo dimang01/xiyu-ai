@@ -11,7 +11,6 @@
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
-import { log } from './logger.mjs';
 import { getAppSetting } from './db.mjs';
 
 const QWEN_ENDPOINT = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';

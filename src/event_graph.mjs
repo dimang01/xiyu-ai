@@ -205,8 +205,6 @@ export function processMemoryForGraph(companionId, memoryText, memoryId = null, 
   const extractions = extractSimpleEntitiesFromMemory(memoryText);
   if (!extractions.length) return;
 
-  const db = getDb();
-
   // Use a single "user" entity as source for all relations
   let userId;
   try {

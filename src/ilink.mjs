@@ -219,7 +219,7 @@ export async function requestIlink(ctx, path, body = {}, options = {}) {
     : commonHeaders();
 
   let response;
-  let raw = '';
+  let raw;
   let data = {};
   try {
     response = await fetch(url, {

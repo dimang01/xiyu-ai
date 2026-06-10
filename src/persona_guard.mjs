@@ -84,7 +84,7 @@ export function buildPersonaAnchor(companion) {
  * @returns {{ ok: boolean, reasons: string[], severity: 'ok'|'minor'|'major' }}
  */
 export function checkPersonaConsistency(reply, context = {}) {
-  const { companion = {}, userMsg = '' } = context;
+  const { companion = {} } = context;
   const reasons = [];
 
   for (const re of AI_SELF_DISCLOSURE) {

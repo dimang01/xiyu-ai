@@ -8,7 +8,6 @@ process.env.DB_PATH = '/tmp/relpace_test.db';
 
 const {
   calcAffectionDelta, syncUpdateCompanionState, canAcceptConfession, affectionDailyCap,
-  AFFECTION_DAILY_CAP, DAYS_TO_LOVER, DAYS_AS_LOVER_TO_DEEP,
 } = await import('../src/memory.mjs');
 const { shanghaiDateKey } = await import('../src/db.mjs');
 

@@ -12,8 +12,7 @@
 
 import {
   tickArcOnSignal, tickArcOnTime, composeArcSignal, buildArcToneDirective,
-  eventCategory, ARC_PARAMS,
-} from './relationship_arc.mjs';
+  eventCategory, } from './relationship_arc.mjs';
 import {
   getDb, getArcState, setArcState, getOpenRelationshipEvent, applyArcEventOp,
   countTodayRelationshipEvents, getLastArchivedEventType, updateRelationshipEvent,
@@ -187,8 +186,6 @@ export function runArcSignalTick(companion, { userText = '', escalationLevel = 0
     openEvent = getOpenRelationshipEvent(companion.id);
     const voiceConcern = !!result?.voiceConcern;
     const category = openEvent ? eventCategory(openEvent.type) : 'wound';
-    const active = finalState !== 'normal' || voiceConcern
-      || (finalState === 'normal_with_scar');
     let reunionHint = '';
     if (finalState === 'repairing' && category === 'distance') {
       const ns = getNeglectStage(companion.last_user_reply_at, companion.attachment_style);

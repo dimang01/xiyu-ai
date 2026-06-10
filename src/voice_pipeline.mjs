@@ -104,8 +104,8 @@ export async function synthesizeAndConvertToSilk(text, opts = {}) {
   // Step 2: 落盘 → wx-voice 编码 → 读回 SILK
   const mp3File = tmpPath('mp3');
   const silkFile = tmpPath('silk');
-  let silk = null;
-  let duration_ms = 0;
+  let silk;
+  let duration_ms;
 
   try {
     await writeFile(mp3File, mp3);

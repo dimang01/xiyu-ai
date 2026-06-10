@@ -299,7 +299,7 @@ export function updateEmotionFromUserMessage(companionId, currentState, userText
   if (Object.keys(update).length === 0) return currentState;
 
   try {
-    const next = upsertEmotionState(companionId, update);
+    upsertEmotionState(companionId, update);
     return { ...currentState, ...update };
   } catch (e) {
     log('warn', `[EmotionState] update from user message failed: ${e.message}`);
@@ -648,7 +648,7 @@ const MOOD_HINTS = {
 // ─── Emotion History snapshot ─────────────────────────────────────────────────
 
 const MIN_SNAPSHOT_GAP_MS = 15 * 60_000; // 15 minutes
-const MAX_SNAPSHOTS_PER_DAY = 96;        // ~1 per 15min safety cap
+const _MAX_SNAPSHOTS_PER_DAY = 96;        // ~1 per 15min safety cap
 
 /**
  * Record a snapshot of the emotion state into companion_emotion_history.

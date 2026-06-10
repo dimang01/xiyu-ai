@@ -21,7 +21,7 @@
  */
 
 import 'dotenv/config';
-import { existsSync, writeFileSync, chmodSync } from 'node:fs';
+import { writeFileSync, chmodSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fetch from 'node-fetch';

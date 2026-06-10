@@ -29,6 +29,11 @@ jobs:
       - name: 语法检查 (node --check 全 src + scripts)
         run: find src scripts -name '*.mjs' -exec node --check {} \;
 
+      # v1.21.2 (#263 事故后续)：no-const-assign 等运行时 TypeError 级问题在 CI 抓死。
+      # 红色验证过：对 v1.20.1 坏版本跑能精确报出 'systemPrompt' is constant。
+      - name: ESLint（真 bug 级规则，零风格审美）
+        run: npm run lint
+
       - name: import 链 smoke
         run: npm run check:imports
 

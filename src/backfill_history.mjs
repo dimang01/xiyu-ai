@@ -19,7 +19,7 @@
 
 import { log } from './logger.mjs';
 import {
-  getDb, bulkInsertSyntheticTurns, markCompanionBackfilled,
+  bulkInsertSyntheticTurns, markCompanionBackfilled,
   getCompanionBackfillStatus, saveMemory, upsertEmotionState,
 } from './db.mjs';
 import { extractStructuredInfo, embedText } from './ai.mjs';

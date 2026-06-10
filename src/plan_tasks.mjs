@@ -16,7 +16,7 @@
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
-import { mkdir, writeFile, readdir, readFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   cleanupPlanMemories, getAllActiveCompanions, getConversationTurnsBetween,
@@ -43,7 +43,6 @@ import {
   getOrRefreshTodaySchedule,
   enterSleep,
   exitSleep,
-  drainMissed,
   tryLockSchedule,
 } from './sleep.mjs';
 import { dispatchUrgentGoodnight, dispatchUrgentMorning } from './proactive.mjs';

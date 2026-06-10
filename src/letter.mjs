@@ -16,7 +16,6 @@
 import crypto from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { log } from './logger.mjs';
-import { getDb } from './db.mjs';
 import { extractStructuredInfo } from './ai.mjs';
 import { getEmotionStateWithDefaults, getMissingLevel, getMissingLabel } from './emotion_state.mjs';
 import { computeRelationshipStage } from './memory.mjs';
@@ -116,7 +115,7 @@ export async function generateOfflineLetter(companion, { hint = '', accountId = 
     body = String(raw || '').trim();
   } catch (e) {
     log('error', `[letter] companion=${companion.id} 生成失败: ${e.message}`);
-    throw new Error(`生成失败：${e.message}`);
+    throw new Error(`生成失败：${e.message}`, { cause: e });
   }
 
   // 清掉模型可能输出的信头/署名残留

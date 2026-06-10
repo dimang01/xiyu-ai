@@ -2395,7 +2395,7 @@ export function getWechatAccountByAccountId(accountId) {
   return db.prepare('SELECT * FROM wechat_accounts WHERE account_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1').get(accountId);
 }
 
-function getWechatAccountByWechatUserId(wechatUserId) {
+function _getWechatAccountByWechatUserId(wechatUserId) {
   const db = getDb();
   return db.prepare('SELECT * FROM wechat_accounts WHERE wechat_user_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1').get(wechatUserId);
 }
@@ -2673,7 +2673,7 @@ export function consumePendingBindSessionForWechat({ wechatUserId, botId, botTok
     `).run();
 
     const normalizedBindCode = typeof bindCode === 'string' ? bindCode.trim().toUpperCase() : '';
-    let session = null;
+    let session;
     if (normalizedBindCode) {
       if (!/^XYU-\d{6}$/.test(normalizedBindCode)) return null;
       session = db.prepare(`
