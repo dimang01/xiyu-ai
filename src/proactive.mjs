@@ -18,7 +18,7 @@ import {
 import { computeRelationshipStage, canAcceptConfession } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
-import { sendTextMessage, sendMessageItem, recallContextToken } from './ilink.mjs';
+import { sendTextMessage, sendMessageItem, recallContextToken, peekSendQuota } from './ilink.mjs';
 import { dedupSegments, isSemanticallySimilar } from './text_similarity.mjs';
 // v1.4.0: 微信端 voice 路径已废弃（iLink 协议禁止 bot outbound voice，腾讯
 // 官方 SDK 没有 sendVoiceMessageWeixin，HTTP 200 但消息静默丢弃）。
@@ -1017,6 +1017,10 @@ async function sendScenePhoto(companion, ctx) {
   }
   if (result.caption) {
     await new Promise(r => setTimeout(r, plan.delayCaptionMs || 900));
+    // v1.20.1: caption 尽力而为——撞 iLink 限速时放弃不排队（排队 3 分钟后才到更怪）
+    if (!peekSendQuota(ctx.botId)) {
+      log('info', `[Proactive] 场景照 caption 撞限速 → 放弃不排队 companion=${companion.id}`);
+    } else {
     await sendTextMessage(ctx, companion.wechat_user_id, result.caption, null);
     saveMessage({
       msgId: `proactive_photo_text_${companion.id}_${Date.now()}`,
@@ -1026,6 +1030,7 @@ async function sendScenePhoto(companion, ctx) {
       content: result.caption,
       direction: 'out',
     });
+    }
   }
   log('info', `[Proactive] ★ 场景照已发送 companion=${companion.id} activity="${result.activity}" caption="${result.caption || ''}"`);
 }

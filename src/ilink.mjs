@@ -65,8 +65,9 @@ function generateClientId() {
 }
 
 // ── iLink 每个 bot 大约 7 条 / 5 分钟。预留 buffer：6 条 / 5 分钟。 ───────────
-const SEND_RATE_LIMIT = 6;
-const SEND_RATE_WINDOW_MS = 5 * 60 * 1000;
+// 可经 env 调（自托管/本地沙箱用；默认不变）。
+const SEND_RATE_LIMIT = Number(process.env.ILINK_SEND_RATE_LIMIT) || 6;
+const SEND_RATE_WINDOW_MS = Number(process.env.ILINK_SEND_RATE_WINDOW_MS) || 5 * 60 * 1000;
 const sendHistoryByBot = new Map(); // botId -> timestamps[]
 
 function consumeSendQuota(botId) {
@@ -84,7 +85,9 @@ function consumeSendQuota(botId) {
 }
 
 // v1.10.12: 不消耗 quota 看一眼是否能发（drain loop 用）。
-function peekSendQuota(botId) {
+// v1.20.1: export 给 photo caption 的"尽力而为"判断——caption 撞限速会排队
+// 3 分钟后才到（生产实测 13:02 发图 → 13:05 才到配文），上下文早走了，不如不发。
+export function peekSendQuota(botId) {
   if (!botId) return true;
   const now = Date.now();
   const arr = sendHistoryByBot.get(botId) || [];
