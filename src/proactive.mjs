@@ -19,7 +19,7 @@ import { computeRelationshipStage, canAcceptConfession } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem, recallContextToken } from './ilink.mjs';
-import { dedupSegments } from './text_similarity.mjs';
+import { dedupSegments, isSemanticallySimilar } from './text_similarity.mjs';
 // v1.4.0: 微信端 voice 路径已废弃（iLink 协议禁止 bot outbound voice，腾讯
 // 官方 SDK 没有 sendVoiceMessageWeixin，HTTP 200 但消息静默丢弃）。
 // 语音功能改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。
@@ -779,6 +779,16 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
 - 结合此刻时间段和你的心情人设，但别报时、别像播报${pmReserved ? `
 - **你们还没那么熟（${pmStage}）**：别说"想你/好想你/有点想你/想见你/惦记你"这类话，也别撒娇黏人、别用亲密称呼，顶多好奇、找个话题、随口说件小事。` : ''}`;
 
+  // v1.20: 事前反复读——把她最近说过的话注入 prompt，禁止重复同一话题/意象。
+  // （撞车检测仍兜底，但事前注入能省一次重生重试，且拦截"换两个字的同义复读"）
+  const recentAssistantTexts = recentTurns
+    .filter(t => t.role === 'assistant' && t.content)
+    .slice(-5)
+    .map(t => String(t.content));
+  if (recentAssistantTexts.length) {
+    systemPrompt += `\n\n【★ 反复读】你最近已经说过这些话：\n${recentAssistantTexts.slice(-3).map(t => `- ${t.slice(0, 60)}`).join('\n')}\n这次**严格禁止**重复其中任何话题、意象或开场方式（比如上面说过"困/眼皮打架"，这次就绝不能再提困）。换全新的话题或心情。`;
+  }
+
   const proactiveBinding = getActiveWechatBinding(companion.wechat_user_id, companion.bot_id);
   let reply = await generateReply(systemPrompt, history, userMessage, {
     temperature: companion.temperature,
@@ -787,11 +797,7 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
   }, { accountId: proactiveBinding?.account_id || null });
   reply = safeOutboundReply(reply);
 
-  // ★ 撞车检测：若与最近 5 条 assistant 内容相似度 ≥ 0.6（char 3-gram Jaccard），重生一次
-  const recentAssistantTexts = recentTurns
-    .filter(t => t.role === 'assistant' && t.content)
-    .slice(-5)
-    .map(t => String(t.content));
+  // ★ 撞车检测：字面（3-gram 0.6）+ 语义（bigram/LCS）双指标，命中重生一次
   const collision = findCollision(reply, recentAssistantTexts);
   if (collision) {
     log('info', `[Proactive] 撞车检测：与最近一条相似度=${collision.sim.toFixed(2)} 重生 companion=${companion.id}`);
@@ -1026,7 +1032,12 @@ async function sendScenePhoto(companion, ctx) {
 
 // 撞车检测：把回复和最近 assistant 内容比相似度（char 3-gram Jaccard），
 // 返回相似度最高的一条（若超过阈值）
-function findCollision(reply, recentTexts, threshold = 0.6) {
+// v1.20 (实测复读案例)：trigram 0.6 只能拦逐字复读——"好困…数学课眼皮一直在打架"
+// vs"好困…眼皮在打架了"语义重复度接近 100%，但 trigram Jaccard 只有 ~0.07。
+// 升级为双指标：字面级（trigram 0.6）OR 语义级（isSemanticallySimilar：bigram 0.25/LCS≥4，
+// text_similarity.mjs 注释明说中文 trigram 在 LLM 改写场景区分度太低）。
+// 误杀代价低：撞车只是重生一次，重生再撞才放弃。
+export function findProactiveCollision(reply, recentTexts, threshold = 0.6) {
   if (!reply || !recentTexts?.length) return null;
   const a = _normalizeForSim(reply);
   if (a.length < 6) return null;
@@ -1038,9 +1049,11 @@ function findCollision(reply, recentTexts, threshold = 0.6) {
     const bGrams = _ngramSet(b, 3);
     const sim = _jaccard(aGrams, bGrams);
     if (sim >= threshold && (!best || sim > best.sim)) best = { text: t, sim };
+    if (!best && isSemanticallySimilar(a, b).hit) best = { text: t, sim: 0.99 /* 语义命中 */ };
   }
   return best;
 }
+const findCollision = findProactiveCollision;
 function _normalizeForSim(s) {
   return String(s).replace(/\|\|/g, ' ').replace(/\[[^\]]*\]/g, '').replace(/\s+/g, '').toLowerCase();
 }
