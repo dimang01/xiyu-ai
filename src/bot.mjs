@@ -9,7 +9,7 @@
  * Copyright (c) 2026 溪语 AI Contributors. MIT License.
  */
 
-import { parseMessage, sendTextMessage, sendTyping, sendMessageItem, rememberContextToken } from './ilink.mjs';
+import { parseMessage, sendTextMessage, sendTyping, sendMessageItem, rememberContextToken, peekSendQuota } from './ilink.mjs';
 import { generateReply, recognizeImage, recognizeVoice, embedText } from './ai.mjs';
 import { downloadInboundVoiceToMp3 } from './voice_inbound.mjs';
 import { analyzeVoiceWithQwen } from './voice_emotion.mjs';
@@ -129,10 +129,18 @@ function firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, com
           maintainIdentity: plan.maintainIdentity !== false,
         });
         if (result.ok) {
-          const captionText = result.caption || plan.caption;
+          let captionText = result.caption || plan.caption;
           if (captionText) {
             await sleep(plan.delayCaptionMs || randInt(700, 1400));
-            await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, captionText, photoTaskCtx.msg.contextToken);
+            // v1.20.1: caption 尽力而为——一轮"连发+ack+图"常把 6 条/5min 的 iLink 配额
+            // 吃满，caption 作为第 7 条会进 30s-drain 队列、3 分钟后才到（生产实测
+            // 13:02 图 → 13:05 文），上下文早走了。配额不够直接放弃，图自己会说话。
+            if (peekSendQuota(photoTaskCtx.botId)) {
+              await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, captionText, photoTaskCtx.msg.contextToken);
+            } else {
+              log('info', `[Bot] photo caption 撞限速 → 放弃不排队 companion=${photoTaskCtx.companion.id}`);
+              captionText = '';
+            }
           }
           saveConversationTurn(photoTaskCtx.companion.id, 'assistant', captionText || '[photo]', photoTaskCtx.companion.chat_mode_active);
           log('info', `[Bot] async photo sent companion=${photoTaskCtx.companion.id}`);
