@@ -19,7 +19,7 @@ import {
   markTimeCapsuleOpened,
 } from './db.mjs';
 import { extractStructuredInfo } from './ai.mjs';
-import { getEmotionStateWithDefaults, getMissingLevel, getMissingLabel } from './emotion_state.mjs';
+import { getEmotionStateWithDefaults } from './emotion_state.mjs';
 import { computeRelationshipStage } from './memory.mjs';
 
 // ─── 构造"她解封时的感想" prompt ─────────────────────────────────────────

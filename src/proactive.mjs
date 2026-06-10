@@ -15,7 +15,7 @@ import {
   getRecentSafetyRisk,                        // v1.9.0 #1
   listShaping,                                // 共建留痕（教过她的注入主动消息）
 } from './db.mjs';
-import { computeRelationshipStage, canAcceptConfession } from './memory.mjs';
+import { canAcceptConfession } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem, recallContextToken, peekSendQuota } from './ilink.mjs';
@@ -37,7 +37,7 @@ import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
 import { getArcProactivePolicy, getArcExpressionContext, buildOliveBranchHint, markOliveBranchSent } from './relationship_arc_runtime.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
-  getSleepRow, getOrRefreshTodaySchedule, enterSleep, exitSleep,
+  getSleepRow, getOrRefreshTodaySchedule, exitSleep,
   drainMissed, upsertSleepSchedule,
 } from './sleep.mjs';
 

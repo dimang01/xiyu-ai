@@ -13,7 +13,7 @@ const SERVICE = process.env.XIYU_SERVICE_NAME || 'xiyu-ai.service';
 
 function readEnvFile(file) {
   const env = {};
-  let raw = '';
+  let raw;
   try {
     raw = fs.readFileSync(file, 'utf-8');
   } catch {

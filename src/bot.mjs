@@ -10,7 +10,7 @@
  */
 
 import { parseMessage, sendTextMessage, sendTyping, sendMessageItem, rememberContextToken, peekSendQuota } from './ilink.mjs';
-import { generateReply, recognizeImage, recognizeVoice, embedText } from './ai.mjs';
+import { generateReply, recognizeImage, embedText } from './ai.mjs';
 import { downloadInboundVoiceToMp3 } from './voice_inbound.mjs';
 import { analyzeVoiceWithQwen } from './voice_emotion.mjs';
 import { dedupSegments } from './text_similarity.mjs';
@@ -19,14 +19,12 @@ import {
   getConversationContext, saveConversationTurn,
   getActiveWechatBinding, getCompanionById, consumePendingBindSessionForWechat,
   isAccountBanned, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
-  markUserConfessed, markCompanionConfessed, patchCompanion,
-  getCompanionPreferencesForPrompt,
+  markUserConfessed, markCompanionConfessed, getCompanionPreferencesForPrompt,
   recordSafetyEvent,
   upsertShaping, listShaping,
   claimMessage, clearProactiveUnanswered,
   getOpenRelationshipEvent,
 } from './db.mjs';
-import { computeRelationshipStage } from './memory.mjs';
 import { buildSystemPrompt, buildFirstTurnHint } from './companion.mjs';
 import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach, canAcceptConfession, daysSinceMeet, DAYS_TO_LOVER } from './memory.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
@@ -41,7 +39,7 @@ import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel, getNeglectStage, buildReunionHint } from './emotion_state.mjs';
 import { escalationLevel, escalationDirective } from './escalation.mjs';
-import { detectPhotoIntent, detectPhotoIntentSmart, detectPhotoPromise, hasUnsafePhotoContent } from './photo_intent.mjs';
+import { detectPhotoIntentSmart, detectPhotoPromise, hasUnsafePhotoContent } from './photo_intent.mjs';
 import { detectMinorSmart, activateSafeMode } from './minor_guard.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
@@ -51,7 +49,7 @@ import { generateInnerMonologue, buildInnerOsHint } from './inner_os.mjs';
 import { maybeSleepBlock } from './sleep.mjs';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
-const PHOTO_REQUEST_ENABLED = !['0', 'false', 'no', 'off'].includes(String(process.env.PHOTO_REQUEST_ENABLED ?? 'true').toLowerCase());
+const _PHOTO_REQUEST_ENABLED = !['0', 'false', 'no', 'off'].includes(String(process.env.PHOTO_REQUEST_ENABLED ?? 'true').toLowerCase());
 const PHOTO_REQUEST_FALLBACKS = [
   '刚才没拍好，等我一下',
   '现在有点乱，等我拍好点',

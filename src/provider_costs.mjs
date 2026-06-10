@@ -55,7 +55,7 @@ export function estimateProviderCost(usage, pricing) {
   if (!typePricing) return { estimated_cost: null, currency: null };
 
   const currency = typePricing.currency ?? null;
-  let cost = 0;
+  let cost;
 
   if (modelType === 'image') {
     const perImage = parseFloat(typePricing.per_image ?? 0);

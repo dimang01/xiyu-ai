@@ -215,7 +215,6 @@ if (!provider) {
   if (keyName) {
     const envVal = env[keyName] || '';
     const dbVal  = dbProviderKey === keyName ? '(已配置)' : '';
-    const hasKey = (envVal && envVal.length >= 8 && !envVal.startsWith('your_') && !envVal.startsWith('sk-xxx')) || dbVal;
     if (envVal && envVal.length >= 8 && !envVal.startsWith('your_')) {
       ok(`${keyName} 已配置 (${envVal.length} 字符，来源: env，内容已隐藏)`);
     } else if (dbVal) {

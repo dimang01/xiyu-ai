@@ -10,7 +10,7 @@
 
 import { log } from './logger.mjs';
 import {
-  saveMemories, recallMemories as dbRecall, upsertShaping,
+  saveMemories, recallMemories as upsertShaping,
   patchCompanion, getUserProfile, upsertUserProfile,
   saveStageMilestone, shanghaiDateKey,
 } from './db.mjs';

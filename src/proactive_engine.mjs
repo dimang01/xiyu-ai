@@ -228,7 +228,7 @@ export function shouldBackoffProactive(companion, context = {}) {
 
 // ─── Trigger selection ────────────────────────────────────────────────────────
 
-const TRIGGER_TYPES = [
+const _TRIGGER_TYPES = [
   'morning_greeting',
   'goodnight',
   'idle_miss',

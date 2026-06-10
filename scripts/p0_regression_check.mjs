@@ -21,7 +21,6 @@ let failed = 0;
 const results = [];
 
 function check(name, ok, detail = '') {
-  const status = ok ? '✓' : '✗';
   results.push({ ok, name, detail });
   if (ok) passed++; else failed++;
 }
