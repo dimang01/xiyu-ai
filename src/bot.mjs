@@ -127,6 +127,8 @@ function firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, com
           trigger: 'user_request',
           source: 'request',
           emotionState: photoEmotionState,
+          aspect: plan.aspect,
+          shotMode: plan.shotMode,
           maintainIdentity: plan.maintainIdentity !== false,
         });
         if (result.ok) {

@@ -1048,6 +1048,8 @@ async function sendScenePhoto(companion, ctx) {
     trigger: 'proactive',
     source: 'proactive',
     emotionState: photoEmotionState,
+    aspect: plan.aspect,
+    shotMode: plan.shotMode,
     maintainIdentity: plan.maintainIdentity !== false,
     recordTurn: true,
   });

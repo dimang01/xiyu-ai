@@ -207,6 +207,33 @@ function migrateRelationshipArc() {
   `);
 }
 
+// ─── v1.21.2 PR-D: 照片尺寸流水（比例防回归——'1:1 错了大半个月才被肉眼发现，
+// 下次要自己跳出来'）。arc-digest 读它出各机位比例分布。───────────────────────
+function migratePhotoLog() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_photo_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL,
+      file TEXT, shot_mode TEXT, aspect TEXT,
+      width INTEGER, height INTEGER,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_photo_log ON companion_photo_log(companion_id, created_at DESC);
+  `);
+}
+
+/** 照片尺寸流水写入（fail-open） */
+export function insertPhotoLog(companionId, { file, shotMode, aspect, width, height } = {}) {
+  try {
+    migratePhotoLog();
+    getDb().prepare(`
+      INSERT INTO companion_photo_log (companion_id, file, shot_mode, aspect, width, height, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(companionId, file || null, shotMode || null, aspect || null,
+      width ?? null, height ?? null, new Date().toISOString());
+  } catch { /* 流水失败不致命 */ }
+}
+
 /** arc 信号流水写入（静默失败，不阻塞主链路） */
 export function insertArcSignalLog(companionId, row = {}) {
   try {

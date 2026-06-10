@@ -19,7 +19,20 @@ import { log } from '../logger.mjs';
 const ACTIVE = (process.env.IMAGE_PROVIDER || 'zhipu').toLowerCase();
 
 // ─── 智谱 CogView ─────────────────────────────────────────────────────────
+// ── v1.21.2: per-provider 尺寸 best-fit ───────────────────────────────────
+// 请求比例 → 该家最近的合法档位（竖配竖、横配横）。各家档位以当前文档为准：
+// zhipu cogview: 864x1152(3:4)/1152x864 ✓ · qwen wanx: 720*1280/1280*720 ·
+// openai gpt-image-1: 1024x1536/1536x1024（dall-e-3 则 1024x1792/1792x1024）·
+// doubao/wenxin: OpenAI 兼容，透传 WxH · 302ai/openrouter: chat 模态无原生参数，
+// 文本声明=尽力而为（实测 gemini 文本无效，靠 i2i 参考图比例 + 落地裁切兜底）。
+function bestFitSize(size, { square, portrait, landscape }) {
+  const [w, h] = String(size || '1024x1024').split(/[x*]/).map(Number);
+  if (!w || !h || w === h) return square;
+  return h > w ? portrait : landscape;
+}
+
 async function zhipuGenerate(prompt, size) {
+  size = bestFitSize(size, { square: '1024x1024', portrait: '864x1152', landscape: '1152x864' });
   const key = process.env.ZHIPU_API_KEY;
   if (!key) throw new Error('ZHIPU_API_KEY 未配置');
   const model = process.env.IMAGE_MODEL || process.env.ZHIPU_IMAGE_MODEL || 'cogview-4';
@@ -38,6 +51,7 @@ async function zhipuGenerate(prompt, size) {
 
 // ─── 通义万相（DashScope，异步任务模式） ──────────────────────────────────
 async function qwenGenerate(prompt, size) {
+  size = bestFitSize(size, { square: '1024x1024', portrait: '720x1280', landscape: '1280x720' });
   const key = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY;
   if (!key) throw new Error('QWEN_API_KEY 未配置');
   const model = process.env.IMAGE_MODEL || 'wanx-v1';
@@ -122,6 +136,9 @@ async function openaiGenerate(prompt, size) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('OPENAI_API_KEY 未配置');
   const model = process.env.IMAGE_MODEL || 'gpt-image-1';
+  size = /dall-e/i.test(model)
+    ? bestFitSize(size, { square: '1024x1024', portrait: '1024x1792', landscape: '1792x1024' })
+    : bestFitSize(size, { square: '1024x1024', portrait: '1024x1536', landscape: '1536x1024' });
   const resp = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
