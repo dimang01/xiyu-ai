@@ -85,5 +85,8 @@ jobs:
       - name: 冲突红线护栏 + 危机覆盖
         run: node scripts/conflict_redline_guard.mjs
 
+      - name: proactive 死人开关心跳
+        run: node scripts/proactive_deadman_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。

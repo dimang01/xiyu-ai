@@ -50,6 +50,33 @@ function logDevCode(email, code) {
   console.log(`${banner}\n`);
 }
 
+/**
+ * v1.21.2 (#263 后续)：运维告警邮件——proactive 死人开关等系统级 CRITICAL 用。
+ * 复用注册验证码同一 Resend 通道，**不依赖 bot 自身回复链路**；
+ * dev_stdout 模式直接打印（测试/红色验证靠它断言）。失败抛错由调用方 fail-open。
+ */
+export async function sendOpsAlertEmail(to, subject, text) {
+  const mode = getEmailMode();
+  if (mode === 'dev_stdout') {
+    console.log(`\n${'═'.repeat(60)}\n🚨  [EMAIL_DEV_MODE] 运维告警（未真发邮件）\n    收件人：${to}\n    主题：${subject}\n    ${String(text).split('\n').join('\n    ')}\n${'═'.repeat(60)}\n`);
+    log('warn', `[Email] dev_stdout 运维告警：${subject}`);
+    return;
+  }
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey || !process.env.RESEND_FROM) throw new Error('RESEND_API_KEY / RESEND_FROM 未配置');
+  const res = await fetch(RESEND_EMAILS_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: normalizeFrom(process.env.RESEND_FROM),
+      to: [to],
+      subject: `[溪语运维告警] ${subject}`,
+      text: String(text),
+    }),
+  });
+  if (!res.ok) throw new Error(`Resend HTTP ${res.status}`);
+}
+
 export async function sendVerificationEmail(email, code) {
   const mode = getEmailMode();
 
