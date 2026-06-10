@@ -2,7 +2,7 @@
 
 > An experimental open-source framework that treats an LLM as a virtual companion character with a complete backstory: 46+ generated life memories, a daily schedule, a 5-stage relationship arc, and a real-person texting cadence. Node.js backend, plain-HTML frontend, plug-in adapters for 9 chat / 5 image / 5 vision / 5 ASR / 4 embedding providers, and an in-browser playground so you can exercise the AI without WeChat. Optional WeChat integration via Tencent iLink / ClawBot using in-browser QR binding.
 
-> 一个把大模型当作"有完整人生背景的虚拟个体"来调度的开源 AI 陪伴框架。注册时生成 46+ 条具体人生记忆，每天有自己的日程剧本，关系按 5 个阶段自然演进，像真人微信节奏聊天。Node.js 后端 + 纯静态 HTML 前端，9 家 chat / 5 家 image / 5 家 vision / 5 家 ASR / 4 家 embedding 通过同一套 provider 抽象切换。**网页里就能扫码绑微信、就能直接聊**，没有腾讯 iLink 准入也能用浏览器 playground 完整体验。
+> 一个把大模型当作"有完整人生背景的虚拟个体"来调度的开源 AI 陪伴框架。注册时生成 46+ 条具体人生记忆，每天有自己的日程剧本，关系按 5 个阶段自然演进，像真人微信节奏聊天。Node.js 后端 + 纯静态 HTML 前端，多家 chat / image / vision / ASR / embedding provider 通过同一套抽象切换（最新清单见 README）。**网页里就能扫码绑微信、就能直接聊**，没有腾讯 iLink 准入也能用浏览器 playground 完整体验。
 
 ## Project
 
