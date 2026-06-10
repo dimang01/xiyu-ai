@@ -8,6 +8,7 @@
 
 import { imageGenerate } from './providers/image.mjs';
 import { saveCandidateImage } from './visual_identity.mjs';
+import { ANTI_COLLAGE_PROMPT } from './photo_sender.mjs';
 import { log } from './logger.mjs';
 
 // v1.10.53: 4 seed 强差异化 + 全部不露齿（用户反馈「笑最好不漏齿」）。
@@ -132,6 +133,7 @@ export function buildIdentityCandidatePrompt(companion, seed) {
     variation,  // v1.10.51: 包含具体表情 + 视角 + 场景，不再只是光线
     'photorealistic real life amateur phone photography',
     av.atmo,
+    ANTI_COLLAGE_PROMPT,  // v1.19.5 issue#237: 候选自拍同样偶发拼图
   ].join(', ');
 }
 

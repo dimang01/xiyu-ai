@@ -93,6 +93,38 @@ export function hasUnsafePhotoContent(text) {
  * @param {Array<{role?:string, direction?:string, content?:string}>} recentMessages 可选最近对话
  * @returns {Promise<{type: 'strong_photo_request'|'weak_photo_context'|'none', reason: string}>}
  */
+/**
+ * v1.19.5 (issue #237 #1): 检测**她的回复**是否在"答应发图"。
+ *
+ * 背景：用户说"我看看（你的作业）"不含索图触发词 → photo intent 没启动，但对话模型
+ * 顺着人设答应了"那你看吧，别笑我字丑就行"——口头答应了，发图链路根本不知道，
+ * 用户等一小时啥也没有。"嘴上答应"和"真的去拍"是两套系统，这里把它们焊上：
+ * 出口检测到她答应 → 调用方确定性入队发图。
+ *
+ * 两档置信防误报：
+ * - 强答应：句子里有"拍/照/图/相"实义词（"这就拍""等下拍给你""发你一张照片"）→ 直接算
+ * - 弱答应："你看吧 / 给你看"类没有拍照动词 → 还要求用户这条消息确实在要看什么
+ *   （"我看看 / 让我看下 / 给我瞅瞅"），双边都对上才算
+ * - 否定排除：她说"不拍 / 拍不了 / 怎么拍"不算答应
+ *
+ * 纯 regex 零 LLM，可被 smoke 确定性回归。
+ */
+const PROMISE_NEGATE_RE = /(不|别|没法|没办法|不能|不想|懒得|怎么|咋)\s*(拍|发|给你看)|拍不了|发不了/;
+const PROMISE_STRONG_RE = /(这就|马上|现在|立刻|等(?:我|下|一下)?|稍等|回头|一会儿?)[^，。!！?？;；]{0,8}(拍|照片?|图|相)|拍(?:一?[张个])?(?:给你|发你)|拍(?:好|完)?了?(?:就)?发(?:给)?你|发(?:给)?你[^，。!！?？;；]{0,4}(照片?|图|一?张)|给你拍/;
+const PROMISE_WEAK_RE = /(?:那)?你看吧|给你看看?(?!电影|视频|新闻)|让你看看?|看吧[^，。]{0,6}别笑|你自己看/;
+const USER_WANT_LOOK_RE = /(?:我|让我|给我)\s*(?:看看|看一?下|看一眼|瞅瞅|瞧瞧)|想看|发(?:我|给我)|拍(?:给我|一张)/;
+
+export function detectPhotoPromise(assistantText, userText = '') {
+  const a = String(assistantText || '');
+  if (!a) return { promised: false, reason: '' };
+  if (PROMISE_NEGATE_RE.test(a)) return { promised: false, reason: '否定语境' };
+  if (PROMISE_STRONG_RE.test(a)) return { promised: true, reason: '强答应（含拍照动词）' };
+  if (PROMISE_WEAK_RE.test(a) && USER_WANT_LOOK_RE.test(String(userText || ''))) {
+    return { promised: true, reason: '弱答应 + 用户在要看' };
+  }
+  return { promised: false, reason: '' };
+}
+
 export async function detectPhotoIntentSmart(text, recentMessages = []) {
   const r = detectPhotoIntent(text);
   if (r.type === 'strong_photo_request') return r;

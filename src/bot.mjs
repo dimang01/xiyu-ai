@@ -38,7 +38,7 @@ import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel, getNeglectStage, buildReunionHint } from './emotion_state.mjs';
 import { escalationLevel, escalationDirective } from './escalation.mjs';
-import { detectPhotoIntent, detectPhotoIntentSmart, hasUnsafePhotoContent } from './photo_intent.mjs';
+import { detectPhotoIntent, detectPhotoIntentSmart, detectPhotoPromise, hasUnsafePhotoContent } from './photo_intent.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
@@ -84,6 +84,87 @@ function pickPhotoBusyReply() {
 
 // v1.10.40: 异步生图防并发锁 — companion_id 在 inflight 时拒绝再触发
 const inflightPhoto = new Set();
+
+// v1.19.5 (issue #237 #1): 异步发图任务，从 strong_photo_request 路径提炼，
+// 让"她答应发图"出口检测也能复用同一条链路。
+// 调用方负责先 inflightPhoto.add()；本函数 fire-and-forget，finally 里删锁。
+// silentOnDecline=true（promise 路径）：planner 拒绝/生图失败时**静默**只记日志——
+// 她不是被用户直接索图，补一条"拍不了"反而突兀；下轮聊到再自然圆。
+function firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, companion, gate, silentOnDecline = false }) {
+  const photoTaskCtx = { ctx, msg, botId, photoCompanion, binding, userText, companion };
+  (async () => {
+    const recentForPlanner = getRecentHistory(photoTaskCtx.msg.fromUser, photoTaskCtx.botId, 10);
+    let photoEmotionState = null;
+    try {
+      photoEmotionState = getEmotionStateWithDefaults(photoTaskCtx.companion.id);
+    } catch (e) {
+      log('warn', `[Bot] async photo emotion state unavailable: ${e.message}`);
+    }
+    try {
+      const plan = await planPhotoMessage({
+        companion: photoTaskCtx.photoCompanion,
+        user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
+        userText: photoTaskCtx.userText,
+        recentMessages: recentForPlanner,
+        trigger: 'user_request',
+        context: { accountId: photoTaskCtx.binding.account_id || null },
+        cooldownState: gate,
+        imageProviderAvailable: gate.imageProviderAvailable,
+        emotionState: photoEmotionState,
+      });
+      if (plan.shouldSendPhoto) {
+        const result = await sendCompanionPhoto({
+          companion: photoTaskCtx.photoCompanion,
+          user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
+          context: photoTaskCtx.ctx,
+          contextToken: photoTaskCtx.msg.contextToken,
+          activity: photoTaskCtx.companion.current_scene || '',
+          imagePrompt: plan.imagePrompt,
+          caption: plan.caption,
+          trigger: 'user_request',
+          source: 'request',
+          emotionState: photoEmotionState,
+          maintainIdentity: plan.maintainIdentity !== false,
+        });
+        if (result.ok) {
+          const captionText = result.caption || plan.caption;
+          if (captionText) {
+            await sleep(plan.delayCaptionMs || randInt(700, 1400));
+            await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, captionText, photoTaskCtx.msg.contextToken);
+          }
+          saveConversationTurn(photoTaskCtx.companion.id, 'assistant', captionText || '[photo]', photoTaskCtx.companion.chat_mode_active);
+          log('info', `[Bot] async photo sent companion=${photoTaskCtx.companion.id}`);
+          return;
+        }
+        log('warn', `[Bot] async photo send failed companion=${photoTaskCtx.companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
+      } else {
+        log('debug', `[Bot] async photo planner declined companion=${photoTaskCtx.companion.id} reason=${plan.reason}`);
+      }
+      if (silentOnDecline) {
+        log('info', `[Bot] photo promise path declined/failed silently companion=${photoTaskCtx.companion.id}`);
+        return;
+      }
+      // 生不出来 / 拒绝 / send 失败：给一个 fallback 文字
+      const fallback = pickPhotoRequestFallback();
+      await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, fallback, photoTaskCtx.msg.contextToken);
+      saveConversationTurn(photoTaskCtx.companion.id, 'assistant', fallback, photoTaskCtx.companion.chat_mode_active);
+    } catch (e) {
+      log('warn', `[Bot] async photo gen error companion=${photoTaskCtx.companion.id}: ${e.message}`);
+      if (!silentOnDecline) {
+        try {
+          await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, '光线不好 等下再发哈', photoTaskCtx.msg.contextToken);
+        } catch (e2) {
+          log('warn', `[Bot] async photo fallback send also failed: ${e2.message}`);
+        }
+      }
+    } finally {
+      inflightPhoto.delete(photoTaskCtx.companion.id);
+    }
+  })().catch(e => {
+    log('error', `[Bot] async photo task unhandled: ${e.message}`);
+    inflightPhoto.delete(companion.id);
+  });
+}
 
 const BIND_CODE_RE = /(?:^绑定\s*)?(XYU-\d{6})$/i;
 // 模拟打字延迟：按文字长度自适应
@@ -535,76 +616,7 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       saveConversationTurn(companion.id, 'assistant', ackText, companion.chat_mode_active);
 
       inflightPhoto.add(companion.id);
-      const photoTaskCtx = {
-        ctx, msg, botId, photoCompanion, binding, userText, companion,
-      };
-      // 用 IIFE async fire-and-forget；外层不 await。catch 兜底防 unhandled rejection。
-      (async () => {
-        const recentForPlanner = getRecentHistory(photoTaskCtx.msg.fromUser, photoTaskCtx.botId, 10);
-        let photoEmotionState = null;
-        try {
-          photoEmotionState = getEmotionStateWithDefaults(photoTaskCtx.companion.id);
-        } catch (e) {
-          log('warn', `[Bot] async photo emotion state unavailable: ${e.message}`);
-        }
-        try {
-          const plan = await planPhotoMessage({
-            companion: photoTaskCtx.photoCompanion,
-            user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
-            userText: photoTaskCtx.userText,
-            recentMessages: recentForPlanner,
-            trigger: 'user_request',
-            context: { accountId: photoTaskCtx.binding.account_id || null },
-            cooldownState: gate,
-            imageProviderAvailable: gate.imageProviderAvailable,
-            emotionState: photoEmotionState,
-          });
-          if (plan.shouldSendPhoto) {
-            const result = await sendCompanionPhoto({
-              companion: photoTaskCtx.photoCompanion,
-              user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
-              context: photoTaskCtx.ctx,
-              contextToken: photoTaskCtx.msg.contextToken,
-              activity: photoTaskCtx.companion.current_scene || '',
-              imagePrompt: plan.imagePrompt,
-              caption: plan.caption,
-              trigger: 'user_request',
-              source: 'request',
-              emotionState: photoEmotionState,
-              maintainIdentity: plan.maintainIdentity !== false,
-            });
-            if (result.ok) {
-              const captionText = result.caption || plan.caption;
-              if (captionText) {
-                await sleep(plan.delayCaptionMs || randInt(700, 1400));
-                await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, captionText, photoTaskCtx.msg.contextToken);
-              }
-              saveConversationTurn(photoTaskCtx.companion.id, 'assistant', captionText || '[photo]', photoTaskCtx.companion.chat_mode_active);
-              log('info', `[Bot] async photo sent companion=${photoTaskCtx.companion.id}`);
-              return;
-            }
-            log('warn', `[Bot] async photo send failed companion=${photoTaskCtx.companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
-          } else {
-            log('debug', `[Bot] async photo planner declined companion=${photoTaskCtx.companion.id} reason=${plan.reason}`);
-          }
-          // 生不出来 / 拒绝 / send 失败：给一个 fallback 文字
-          const fallback = pickPhotoRequestFallback();
-          await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, fallback, photoTaskCtx.msg.contextToken);
-          saveConversationTurn(photoTaskCtx.companion.id, 'assistant', fallback, photoTaskCtx.companion.chat_mode_active);
-        } catch (e) {
-          log('warn', `[Bot] async photo gen error companion=${photoTaskCtx.companion.id}: ${e.message}`);
-          try {
-            await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, '光线不好 等下再发哈', photoTaskCtx.msg.contextToken);
-          } catch (e2) {
-            log('warn', `[Bot] async photo fallback send also failed: ${e2.message}`);
-          }
-        } finally {
-          inflightPhoto.delete(photoTaskCtx.companion.id);
-        }
-      })().catch(e => {
-        log('error', `[Bot] async photo IIFE unhandled: ${e.message}`);
-        inflightPhoto.delete(companion.id);
-      });
+      firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, companion, gate });
 
       return;
     }
@@ -906,6 +918,27 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     saveConversationTurn(companion.id, 'assistant', reply, companion.chat_mode_active);
 
     log('info', `[Bot] 已回复 → ${msg.fromUser}`);
+
+    // ── v1.19.5 (issue #237 #1): 她嘴上答应了发图，但发图意图识别没触发（用户措辞
+    // 不含索图词，如"我看看你的作业"）→ 出口确定性入队，别让她"说了不做"。
+    // 老经验：纯 prompt/单边识别不可靠，要配确定性兜底。planner 仍是第二道闸（它拒绝
+    // 时静默，因为她没被直接索图，补"拍不了"反而突兀）。
+    try {
+      const promise = detectPhotoPromise(reply, userText);
+      if (promise.promised && !inflightPhoto.has(companion.id) && !hasUnsafePhotoContent(userText)) {
+        const photoCompanion = { ...companion, wechat_user_id: msg.fromUser };
+        const promiseGate = getPhotoGateState({ companion: photoCompanion, trigger: 'user_request', source: 'request' });
+        if (promiseGate.allowed) {
+          log('info', `[Bot] ★ photo promise 检测命中(${promise.reason}) → 确定性入队 companion=${companion.id} reply="${String(reply).slice(0, 40)}"`);
+          inflightPhoto.add(companion.id);
+          firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, companion, gate: promiseGate, silentOnDecline: true });
+        } else {
+          log('info', `[Bot] photo promise 命中但 gate 拒绝(${promiseGate.reasons.join(',')}) companion=${companion.id}`);
+        }
+      }
+    } catch (e) {
+      log('warn', `[Bot] photo promise check failed: ${e.message}`);
+    }
 
     // ── 异步后处理（不阻塞主流程）───────────────────────────────────────────
     postProcess(companion, userText, reply).catch(err =>

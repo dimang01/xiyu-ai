@@ -45,6 +45,9 @@ jobs:
       - name: 人设导出字段对账（防白名单漂移）
         run: node scripts/persona_export_drift_check.mjs
 
+      - name: 照片链路 issue#237 三连修复回归
+        run: node scripts/photo_fix237_smoke.mjs
+
       - name: 情绪机 1000 轮压测 + fuzzing
         run: node scripts/emotion_stress_test.mjs
 

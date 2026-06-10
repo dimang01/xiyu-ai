@@ -261,6 +261,11 @@ function buildScenePrompt({ activity, timeSlot, mood }) {
   ].join(', ');
 }
 
+// v1.19.5 (issue #237 #3): 生图模型（gpt-image / gemini-flash-image 系）偶发输出
+// 三连格/六宫格 photo-strip 拼图——此前全链没有任何反拼图约束。固定追加在 sanitize
+// **之后**（sanitizePhotoPrompt 的 900 字截断会吃掉尾部，不能拼在它之前）。
+export const ANTI_COLLAGE_PROMPT = 'STRICTLY a single photo in one single frame — NOT a collage, no photo grid, no side-by-side panels, no photo strip, no multi-panel layout, no repeated copies of the same person';
+
 export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
   // v1.19.2: SCENERY/ACTIVITY-POV 无人脸 —— 不写人物 identity，也不写"keep the same face"
   // 的 referenceNote（否则 i2i 会硬把脸塞进无脸的桌面/风景 POV，如电脑前的工作 POV 变成人脸 candid）。
@@ -283,7 +288,9 @@ export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCap
     referenceNote,
     ...tail,
   ].filter(Boolean).join(', ');
-  return sanitizePhotoPrompt(prompt);
+  const sanitized = sanitizePhotoPrompt(prompt);
+  // 反拼图追加在截断之后，保证负面约束永远存活
+  return sanitized ? `${sanitized}, ${ANTI_COLLAGE_PROMPT}` : sanitized;
 }
 
 // v1.10.53: 由扩展名推 data URL 的 mime（ref 图 saveReferenceImage 保留原扩展名）
