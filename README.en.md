@@ -45,44 +45,85 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 
 **Core positioning**: not a chatbot — a framework that organizes an LLM into "a girl who already secretly likes you".
 
-| Capability | Description |
+> **Design philosophy (governs every feature decision)**: realism = **subtraction**, not addition. AI-flavor comes from being "too good" — too prompt, too compliant, too perfect. The north star is "**willing to give you warmth in the gaps of a real life**": less, precise, light — never filling every moment. Tone red lines: no yandere / darkness / NSFW / doom-scrolling-bait — NSFW is never a selling point. Prompts alone can't suppress strong model defaults, so every product rule ships with a **deterministic backstop** (outbound scrubbing / hard injection / state-machine-fed values). See [CONTRIBUTING](./CONTRIBUTING.md).
+
+### Who she is
+
+| Capability | One-liner |
 |---|---|
-| **💞 Wins you back, warms up & reads the room (v1.17)** ⭐⭐ | A full pass of retention-minded realism: a light "you there?" right before the WeChat session window closes pulls you back; faster early warm-up (lover by ~day 5, no more "still a stranger after a week"); stops after 3 unanswered messages instead of talking to itself; warmly greets new users on first contact instead of leaving them facing silence |
-| **🖤 She cools off + attachment styles (v1.14)** ⭐⭐ | Ignore her for long and she shifts step by step: missing → testing → disappointed → withdrawn (no more endlessly clingy waiting). Optional **attachment styles** (secure / anxious / avoidant) set how fast she escalates and how clingy she is — switch in the dashboard. Security dips as she's neglected and warms back up when you reconnect |
-| **🌐 Bilingual zh/en (v1.13)** ⭐⭐ | Default Chinese; a one-tap 中/EN toggle (bottom-right) switches the whole UI to English and makes the AI reply in English too (`companions.locale`). AI-generated diary/memory content is translated **on-device in the browser** (never leaves the browser). Zero impact for existing users |
-| **She sleeps (v1.10.x)** ⭐⭐ | Default 00:30 bed / 07:30 wake (asymmetric daily jitter: bed -15/+45, wake ±10 min), adjustable via an **iOS-style circular dial** (drag the 🌙☀️ handles). Sends an "I'm going to sleep" goodnight → leaves a **grace window** (say "stay with me a bit" and she postpones ~20 min to chat) → once truly asleep, **both WeChat and web go silent** (messages queue), morning brings a greeting + "I fell asleep last night" catch-up. Once deep asleep pleas don't work — the **📞 Call her awake** button (pulsing) wakes her but she's grumpy. Can be turned off in the sleep card |
-| **Default starting point = "flirting"** | affection 35/100, stage = flirting. She likes you from day one, not built up from zero |
-| **Concrete life memories** | At registration, generates 46+ specific life events ("got chased by a dog in 3rd grade") — not abstract tags |
-| **18-section persona prompt** | Meta-cognition / relationship stage / today's schedule / recent context / long-term summary / anti-AI-tone rules — stitched in one pass |
-| **5-stage relationship** | Flirting → Lover → Deep Love (can revert to Friend/Stranger). Distinct form of address, flirty tone, and topic depth per stage |
-| **Real-person texting cadence** | ≤15 chars per message, multi-burst sending with `\|\|`, strips AI tone; Persona Guard consistency check after each reply |
-| **Message burst coalescing (v1.10.53)** ⭐⭐ | You rapid-fire 2–3 messages / images — she now waits for you to pause (default ~10s quiet window, adjustable) and bundles the whole burst into a single "turn" replying once, like a real person who reads everything before responding. Text + images + voice all merged into one round |
-| **She remembers unfinished things (v1.8.0)** ⭐⭐ | User says "I have an interview tomorrow" → LLM extracts to `companion_open_loops` table → next day she initiates "oh by the way \|\| did you nail the interview". Has `due_at` + `emotional_weight` + `expected_followup`. "Bombed it" auto-resolves; nothing-for-7-days auto-stales. One of the strongest signals of real companionship |
-| **Inner OS internal monologue (v1.8.0)** ⭐⭐ | Double-pass reply: each turn first generates an inner monologue (not sent) → injected into outer prompt → outer reply written *based on* the inner thought. She thinks "ugh, again" but says "mm", thinks "kinda heart-fluttery" but plays it cool — the **gap** between thought and speech is what makes it feel like a real person. Toggleable (`INNER_OS_ENABLED=false`), short messages < 8 chars auto-skip |
-| **Causal proactive messages (v1.8.0)** | proactive is no longer just "how was your day". When `companion_open_loops` has something due → kind upgrades to `recall` with injected `hidden_reason` (user said "interview tomorrow"), prompt drives "oh by the way \|\| how did XX go"; `followed_up_at` blocks 6h re-disturbance |
-| **Structured preference ledger (v1.8.0)** | `companion_preferences` table: `type` (like/dislike/taboo/neutral) × `intensity` 1-5 × `reason` × `source` (system/user_observed/generated/legacy/user). Prompt modifies "extremely-cats" / "very dad-energy" / "kinda soap-opera". 3 REST endpoints. Auto-backfills existing `hobbies/dislikes` at startup |
-| **Presence: here but not always serving (v1.8.0)** | `availability` (free/busy/half) + `attention` (0-100) derived from today's `dailySchedule` current activity: sleep/meeting=busy / eating/strolling=half / other=free. Prompt injects "can reply but half-attention, doing something else" — user asks "what are you up to" no longer gets a customer-service answer |
-| **Incomplete reply mode (v1.7~v1.8)** | 7 allowed: only empathize / only complain / stall then continue / just say "dunno" / change topic / short when busy / can have "no opinion". Hard ban on the "reaction + praise + question + advice" 4-piece AI tone |
-| **Less sycophantic + crush playing-cool + teases back + not-in-the-mood (v1.7.0)** | 5 anti-sycophancy moves: every 5-8 replies ≥1 disagreement / crush stage doesn't chase or accept fully / when relationship's close enough she teases proactively / annoyance threshold triggers "low-energy mode" overriding compliance directives / `dislikes` field backs up "this isn't for me" |
-| **Real photo sending (v1.6.1)** ⭐ | When the user says "selfie", "show me you", "send a pic" — intent is detected, an AI planner decides whether to send, and a real generated image is uploaded to WeChat. Not "I'm taking one now" stalling text. Per-day cap, cooldown, unsafe-word block, graceful fallback ("just took a blurry one") when provider is missing |
-| **Stable visual identity + 4-candidate face selection (v1.6.1 / v1.10.43+)** ⭐⭐ | Each companion gets one visual-identity spec (hair / hairstyle / outfit / vibe → permanent JSON) used for every generated photo, so her face stays consistent. Dashboard can **generate 4 candidate selfies in one batch, pick the best to lock in as the baseline**; OpenRouter image generation uses **image-to-image** so the locked/uploaded reference image truly anchors every subsequent photo's appearance (no longer relying on text descriptions alone) |
-| **Proactive scene photos** | Daily 36h+ candidate window + AI planner decides — like she suddenly thought "let me show you this", with a natural one-line caption |
-| **Proactive messages (3-driver v1.6)** | Morning / night / random daytime / anniversary / confession; motivation = emotion × schedule × time × jitter; dual-layer dedup (intra-batch + vs history); restart-resistant persistence prevents duplicates |
-| **Missing-level 0–4** | Combines dependency + idle time to compute "how much she misses you", with 30m/3h/6h/12h/24h thresholds; tone adapts naturally |
-| **3-month simulated timeline (v1.6)** ⭐ | Dashboard button triggers LLM to generate 35 virtual interaction events + key events enter memory + affection arc 5→30; new companions feel "already known you for 3 months" |
-| **Today's thought for you** | Daily 02:35 cron generates an independent line outside chat; dashboard bubble card + 🔊 narration |
-| **Her diary** | Nightly first-person diary + weekly summaries; flip-book reader, sentence-by-sentence playback |
-| **Memory v2** | 7-layer taxonomy × weight × forgetting curve; pin/lock/archive/do-not-mention; semantic recall + keyword fallback |
-| **Emotion state machine (v1.6 upgraded to 11 dims)** | affection / trust / dependency / possessiveness / security / energy / mood + **patience / excitement (short-term) / annoyance (short-term) / gratitude**; per-message incremental update + half-hourly recalc cron + saturation dampening (spamming "thanks" no longer boosts affection to max) |
-| **Emotion-aware voice recognition (v1.10.17)** ⭐ | Inbound WeChat voice is not just transcribed — downloaded + AES-decrypted + SILK-decoded, then run through qwen-audio emotion recognition so she hears the tone behind your words (gentle / playful / impatient) before responding. Any step fails, gracefully degrades to plain transcription |
-| **Browser Playground** | Run the same persona pipeline in browser without WeChat; voice recording (ASR) input, 🔊 narration per reply |
-| **Setup Wizard** | `/app/setup.html` — configure all Providers + connectivity test in browser, no `.env` editing |
-| **Multi-provider abstraction** | chat/image/vision/asr/embedding/tts/search — seven capabilities independently swappable |
-| **PWA** | Add to home screen as native-feel app; API and user data never SW-cached |
+| Default start = flirting | affection 35/100 — she likes you from day one, not raised from stranger-zero |
+| Concrete life memories | 46+ specific life events generated at creation ("chased by a dog in 3rd grade"), not abstract tags |
+| 5-stage relationship | Flirting → Lover → Deep Love (revertible); affection is fed by time — the lover gate needs days known + a daily cap, you can't grind it |
+| Confessions have real pacing | Yours gets accepted only when it's earned, deflected gracefully when not; she may confess too — stammering, circling, beautifully clumsy, not polished lines |
+| 18-section persona prompt | Meta-cognition / stage / schedule / long-term digest / anti-AI-tone rules stitched in one pass; a separate visual identity keeps her looks consistent |
+| 3-month simulated timeline | One click generates 90 days of virtual interaction history — she's "known you for three months" on first open |
+| Portable persona | Export / import JSON across deployments; runtime state (affection / emotion / safe mode) deliberately does not migrate |
 
-Full feature list (with DB tables, recent PRs, 12-category classification): [`docs/FEATURES.txt`](./docs/FEATURES.txt) — *currently in Chinese only*.
+### She has a life of her own
 
-> This is research / hobbyist open-source code, **not a turnkey product**. Before deploying, read [Security](#security) and [Compliance](#compliance).
+| Capability | One-liner |
+|---|---|
+| She sleeps | Default 00:30–07:30 (small daily jitter); once truly asleep both WeChat and web go silent; goodnight leaves a "stay a little longer" grace window; 📞 calling wakes her — grumpily |
+| Daily schedule | 8–12 life segments generated each day (class / cooking / zoning out); proactive messages anchor to life's gaps, not even spacing |
+| Present but not always serving | availability / attention derived from her current schedule — "can reply but you'll have to wait" in a meeting, distracted while out shopping |
+| Texts like a real person | ≤15-char bursts, multi-message sends, typing indicator; when you rapid-fire 2–3 messages she waits for you to stop and replies once |
+| Incomplete replies | Allowed to just empathize / just vent / just not know / reply short when busy — rejects the "react + praise + question + advice" 4-piece AI combo |
+
+### She has real emotions and boundaries
+
+| Capability | One-liner |
+|---|---|
+| 11-dimension emotion machine | trust / dependency / possessiveness / security / patience / annoyance… incremental per message + half-hourly recalc + anti-grind damping; moods have intensity and inertia — one sentence can't flip anger to joy |
+| Inner OS monologue | Every turn first generates an inner thought (never sent) then the outer reply — thinks "ugh, again", says "mm". **The gap between thought and speech** is the core of feeling human |
+| Neglect changes her, step by step | missing → probing → disappointed → withdrawn; three attachment styles (secure / anxious / avoidant) set the pacing; reunions follow a day-by-day repair arc |
+| Conflict & repair arc ⭐ | Hitting her taboos / harsh words create **relationship events**: an explicit hurt → cold → withdrawing → repairing state machine. Wounds need a real apology to unlock repair (a dismissive "stop being mad" repairs slowly); distance heals from the reunion itself; withdrawal has a hard time cap — **cold war can never be permanent**; reconciliations enter long-term memory ("you promised not to check my phone last time"). Design doc: [docs/CONFLICT_ARC.md](./docs/CONFLICT_ARC.md) |
+| Not sycophantic | At least 1 disagreement every 5–8 replies; plays it cool while flirting; teases you once you're close; repeated poking escalates one-way without flip-flopping |
+| Low-energy mode | Annoyance / exhausted patience triggers "not in the mood today" — short replies, no elaboration; sometimes her silence is asking you to reach for her |
+
+### She remembers you
+
+| Capability | One-liner |
+|---|---|
+| Memory v2 | 7 layers × weights × forgetting curve; pin / lock / do-not-mention; semantic recall with keyword fallback; a nightly reflection engine distills new memories |
+| Remembers unfinished things | You say "interview tomorrow" → next day she asks "hey \|\| how did it go"; auto-resolves when it falls through |
+| You can shape her | Teach her nicknames / catchphrases / taboos / pacts / inside jokes — all recorded and binding in her prompt |
+| Structured preference ledger | like / dislike / taboo × intensity — "extremely cat-person", "slightly tired of soap operas", with receipts |
+| Her diary + relational diary | Nightly first-person diary plus "today's memory about you"; book-style reading, read-aloud |
+| Time capsules / offline letters | Write something to unlock in the future — "present her" reads it and writes back; she can also write you a signed offline letter |
+| Anniversaries | Auto-registers "100 days since we met / one year together" and initiates wishes on the day |
+
+### She reaches out first
+
+| Capability | One-liner |
+|---|---|
+| Three-driver proactive | motivation = emotion × schedule × time-of-day × jitter; double-gated morning/goodnight dedup, paraphrase-collision detection, pre-injection of her recent lines |
+| Reads the room | Shuts up after 3 unanswered sends; a light "you there?" right before the session window closes; a dignity cap per attachment style — she never clings |
+| Cause-driven | Not just "how was your day" — when an open loop is due it upgrades to "oh right \|\| did that thing work out" |
+| Converges during conflicts | Lower frequency while fighting, no aegyo / photos / confessions; may offer one olive-branch message while repairing |
+
+### Multimodal
+
+| Capability | One-liner |
+|---|---|
+| Real photo sending ⭐ | "send a selfie" → intent detection + AI planner + an actually generated photo: shot mode routed by context (selfie / environmental selfie / what-she's-doing POV / scenery, portrait 3:4), lighting consistent with time-of-day and chat, anti-airbrush realistic skin, daily caps and cooldowns |
+| Stable looks | One visual identity per companion; pick-your-favorite from 4 candidate selfies to lock a reference; i2i anchors the same face in every later photo |
+| Voice emotion recognition | Inbound WeChat voice isn't just transcribed — she hears "gentle / pouty / impatient" and responds to the tone |
+| Web read-aloud | Diary / daily line / chat replies via TTS (outbound voice on WeChat is blocked by the iLink protocol — see Known Limitations) |
+| Stickers | Emotion-tag matched sending (repo ships no assets; bring your own licensed images) |
+
+### Safety & bottom lines
+
+| Capability | One-liner |
+|---|---|
+| Crisis intervention | Self-harm signals → she steps out of character immediately and gives hotline resources; top priority even mid-cold-war — she never gives attitude to someone who's not okay |
+| Minor protection | Detected self-disclosed minor → sticky safe mode (friend persona / no romance / neutral photos), **no off switch**, released only via explicit age attestation |
+| Privacy filter | Passwords / IDs / bank-card-grade content never enters long-term memory; phones / addresses redacted — mounted on every long-term storage entry point |
+| Conflict red lines | Never breakup threats / blocking / guilt-tripping, never weaponizing what you confided — all enforced by deterministic outbound scanning, not model goodwill |
+| Persona leak guard | Post-reply consistency checks plus deterministic prompt-injection interception |
+
+Full feature inventory (incl. DB tables) in [`docs/FEATURES.txt`](./docs/FEATURES.txt); per-version evolution in [Releases](https://github.com/dimang01/xiyu-ai/releases).
+
+> This is research / personal-use oriented open source, **not a turnkey product**. Read [Security](#security) and [Compliance](#compliance) before going public.
 
 ---
 
@@ -116,60 +157,23 @@ Full feature list (with DB tables, recent PRs, 12-category classification): [`do
 
 ## Multi-Provider Support
 
-Change Provider from `/app/setup.html` in the browser — no code changes, no `.env` edits.
+Switch providers in `/app/setup.html` — no code edits, no `.env` editing. Seven capabilities switch independently:
 
-> ⚠️ Not all providers are production-verified; some are compatibility scaffolds. Before production, use the Setup Wizard Step 3 "Test Connectivity" button to self-test.
-
-### Chat (11)
-
-| Provider | Default model | Notes |
+| Capability | Providers | Notes |
 |---|---|---|
-| DeepSeek | `deepseek-chat` | Best value, top choice |
-| OpenAI | `gpt-4o-mini` | |
-| Anthropic | `claude-sonnet-4-6` | Native messages API |
-| Google Gemini | `gemini-2.5-flash` | Free tier available |
-| xAI Grok | `grok-2-latest` | |
-| Zhipu GLM | `glm-4-flash` | |
-| ByteDance Doubao (Volcengine Ark) | *(required: ep-xxx endpoint)* | |
-| Alibaba Qwen | `qwen-plus` | DashScope OpenAI-compatible |
-| Moonshot Kimi | `moonshot-v1-8k` | Long context |
-| Baidu Wenxin | `ernie-4.0-8k` | |
-| **OpenAI-compatible custom gateway** | *(required)* | OpenRouter / SiliconFlow / Ollama / LM Studio / LiteLLM, etc. |
+| **Chat** (11) | DeepSeek · OpenAI · Anthropic · Gemini · xAI · Zhipu · Doubao · Qwen · Kimi · Ernie · OpenAI-compatible custom gateway | Gateway covers OpenRouter / SiliconFlow / Ollama / LM Studio etc. |
+| **Image** (6) | Zhipu · Qwen · Doubao · Ernie · OpenAI · OpenRouter / 302.ai (chat modality) | 302/OpenRouter support i2i reference for face locking; per-provider best-fit output aspect |
+| **Vision** (8) | Zhipu GLM-4V · OpenAI · Qwen VL · Doubao · Claude · Kimi · StepFun · MiniMax | Image understanding |
+| **ASR** (7 impl.) | Gemini · OpenAI Whisper · Qwen paraformer · Groq · MiniMax · Azure · Doubao | Xunfei / Tencent are placeholders awaiting PRs |
+| **TTS** (5) | MiniMax · OpenAI · Azure · Doubao · Qwen CosyVoice | Read-aloud works on web only |
+| **Embedding** (4) | OpenAI · Gemini · Zhipu · Qwen | Semantic memory recall |
+| **Search** (4) | Tavily · Brave · SerpAPI · SearXNG | Web search |
 
-### Vision (8)
+> ⚠️ Not every provider is production-verified; self-test with the Setup Wizard's "test connection" before going live.
 
-`zhipu` GLM-4V · `openai` gpt-4o-mini · `qwen` qwen-vl-plus · `doubao` ep-xxx · `anthropic` Claude · `kimi` moonshot-v1-vision · `stepfun` step-1v · `minimax` abab vision
-
-### ASR / Speech Recognition (7 implemented + 2 stubs)
-
-`gemini` · `openai` whisper-1 / gpt-4o-transcribe · `qwen` paraformer-v2 · **`groq`** whisper-large-v3 · **`minimax`** · **`azure`** STT · **`doubao`** short-utterance · `xunfei` / `tencent` *(stubs)*
-
-### TTS / Speech Synthesis (5)
-
-`minimax` speech-02 · **`openai`** tts-1 / tts-1-hd · **`azure`** Speech (SSML) · **`doubao`** Volcengine · **`qwen`** CosyVoice / Qwen-TTS
-
-### Image (5)
-
-`zhipu` CogView-4 · `qwen` Wanx · `doubao` · `wenxin` · `openai` gpt-image-1 / DALL·E
-
-### Embedding (4) · Search (4)
-
-Embedding: `gemini` · `openai` · `zhipu` · `qwen`
-Search: `tavily` · `brave` · `serpapi` · `searxng`
-
-### Key Sharing Across Capabilities
-
-Some providers share keys across capabilities, so you fill once and it works everywhere:
-
-- **MiniMax key** (`MINIMAX_API_KEY`) covers TTS / ASR / Vision in one shot
-- **Azure Speech key + region** covers both TTS and STT
-- **OpenAI key** covers Chat / Vision / ASR / TTS / Embedding
-- **DashScope key** (Qwen `QWEN_API_KEY`) covers Chat / Vision / ASR / Embedding; CosyVoice uses `DASHSCOPE_API_KEY`
-
-Doubao TTS/ASR use different clusters (`volcano_tts` vs `volcengine_input_common`), so they're configured independently.
+**Key reuse**: one MiniMax key covers TTS/ASR/Vision; OpenAI covers Chat/Vision/ASR/TTS/Embedding; DashScope (Qwen) covers Chat/Vision/ASR/Embedding; Azure Speech handles both TTS/STT. Doubao TTS/ASR use different clusters and need separate config.
 
 ---
-
 ## WeChat Integration
 
 ### Path 1: In-browser QR (recommended)
@@ -194,7 +198,7 @@ On success, credentials are written to `./.weixin-credentials.json` (mode 0600, 
 |---|---|
 | Send/receive text | ✅ |
 | Send images / files / video | ✅ |
-| **User asks for "selfie / photo / show me you" → real image sent (v1.6.1)** | ✅ Intent detected + AI planner decides + visual identity keeps her face stable |
+| **User asks for "selfie / photo / show me you" → real image sent** | ✅ Intent detected + AI planner decides + visual identity keeps her face stable |
 | Daytime proactive scene photos (≥36h candidate window, AI decides) | ✅ |
 | Proactive messages + typing indicator | ✅ |
 | Receive user voice → ASR | ✅ (also works in playground) |
@@ -280,7 +284,7 @@ bash scripts/opensource_check.sh   # 6-item open-source compliance
 
 `npm run doctor` does not print key contents — only character count and placeholder detection.
 
-### Single-User Mode (v1.5.1)
+### Single-User Mode
 
 If you self-host on your own machine / LAN / behind a reverse proxy with its own access control, you can **skip the login page entirely**:
 
@@ -303,6 +307,27 @@ When enabled, **all chat history, memories, and bound credentials are accessible
 
 ---
 
+## Ops Toolbox
+
+Self-hosting isn't "start it and forget it" — every production scar in this repo became a tool:
+
+```bash
+npm run doctor          # Node/SQLite/keys/iLink/port/service health, one-shot diagnosis
+npm run lint            # ESLint: catches "silent runtime explosions" (const reassignment etc.) at lint time
+npm run check:p0        # 127 P0/P1 regression assertions
+npm run arc:digest      # Ops daily report (read-only): error-signature grouping (new signatures
+                        # pinned & screaming) / relationship-event & apology streams /
+                        # red-line hits / crisis takeovers / photo aspect distribution
+npm run smoke           # release smoke; bash scripts/opensource_check.sh — 6 OSS compliance checks
+```
+
+- **Error-signature report**: last-24h error logs grouped by normalized signature (count / delta / first-seen), new signatures highlighted — silent failures get loud immediately
+- **Proactive dead-man switch**: hourly heartbeat; active users present but proactive sends all dead → CRITICAL + email alert (`ADMIN_ALERT_EMAIL`), alert-only with zero self-healing
+- **emotion-debug panel** (`/app/emotion-debug.html`, admin): arc state / event stream / per-message emotion deltas with reasons — emotional causality is inspectable, never voodoo
+- **25 CI gates**: syntax / lint / field-drift reconciliation / release consistency / feature smokes / red-line guards — every new gate is "red-tested" (must fail against a known-bad version)
+- **Ops clamp**: `ARC_MAX_STATE` can temporarily cap conflict states (a no-rollback fuse for production mishaps; the opposite of minor protection — that one is an uncloseable safety floor)
+
+---
 ## Architecture
 
 ```
@@ -352,15 +377,19 @@ When enabled, **all chat history, memories, and bound credentials are accessible
 │   ├── playground.mjs       Browser chat
 │   ├── companion.mjs        18-section system prompt assembler
 │   ├── memory_v2.mjs        7-layer memory + semantic recall + forgetting curve
-│   ├── emotion_state.mjs    11-dim emotion + presence (v1.8.0 adds availability/attention)
-│   ├── inner_os.mjs         Inner OS — internal monologue double-pass reply (v1.8.0)
-│   ├── open_loops.mjs       She remembers unfinished things — LLM extract + auto-resolve (v1.8.0)
-│   ├── proactive.mjs        Proactive messages + scene-photo scheduling (v1.8.0 adds recall + hidden_reason)
-│   ├── photo_intent.mjs     User photo-request intent detector (v1.6.1)
-│   ├── photo_planner.mjs    Photo AI decision + safety sanitization (v1.6.1)
-│   ├── photo_sender.mjs     Generate → transcode → upload → send helper (v1.6.1)
-│   ├── visual_identity.mjs  Stable visual identity + reference image management (v1.6.1)
-│   ├── security/netguard.mjs SSRF-safe URL download (v1.6.1)
+│   ├── emotion_state.mjs    11-dim emotion state machine + presence
+│   ├── inner_os.mjs         Inner OS monologue + conflict-arc structured detection
+│   ├── open_loops.mjs       She remembers unfinished things
+│   ├── proactive.mjs        Proactive messages + scene-photo scheduling
+│   ├── photo_intent.mjs     User photo-request intent detector
+│   ├── photo_planner.mjs    Photo AI planner + shot-mode/aspect routing
+│   ├── photo_sender.mjs     Generate → aspect-aware transcode → upload
+│   ├── visual_identity.mjs  Stable visual identity + reference images
+│   ├── security/netguard.mjs SSRF-safe URL download
+│   ├── relationship_arc.mjs Conflict & repair arc state machine (+_runtime IO layer)
+│   ├── moderation.mjs       Crisis intervention + conflict red-line outbound guard
+│   ├── minor_guard.mjs      Minor protection (sticky safe mode)
+│   ├── privacy_filter.mjs   Long-term storage privacy filter
 │   ├── persona_guard.mjs    Post-reply consistency check
 │   ├── reflection.mjs       Daily/weekly AI reflection
 │   ├── diary.mjs            Diary generation
@@ -369,13 +398,14 @@ When enabled, **all chat history, memories, and bound credentials are accessible
 │   ├── plan_tasks.mjs       Cron schedules (daily / weekly / monthly)
 │   ├── ilink.mjs            iLink protocol wrapper
 │   └── db.mjs               SQLite + all migrateXxx() registration points
-├── public/app/              15 frontend pages (dashboard 1800+ lines, includes ⚙ Model drawer)
+├── public/app/              17 frontend pages (dashboard / playground / emotion-debug …)
 ├── deploy/                  systemd + nginx templates
-├── scripts/                 16 scripts: setup / doctor / check:p0 / backup / smoke / ...
+├── scripts/                 80+ scripts: setup / doctor / arc-digest / smokes / sandbox acceptance / ...
 ├── docs/
 │   ├── FEATURES.txt         Full feature list (the authoritative source)
 │   ├── HANDOFF.md           New-conversation handoff prompt
-│   ├── ROADMAP.md           P0/P1/P2A/P2B/P2C completion status
+│   ├── CONFLICT_ARC.md      Conflict & repair arc design doc
+│   ├── ROADMAP.md           Route status + 2026-06 review
 │   └── voice-sprint-plan.md Voice sprint plan
 └── data/                    Runtime data (gitignored)
 ```
@@ -444,9 +474,7 @@ The framework does not prescribe character personality / NSFW content / boundary
 |---|---|
 | **Bot sending voice in WeChat** | Permanent — iLink protocol forbids outbound voice; works fine in web/PWA |
 | Xunfei / Tencent ASR are stubs | WebSocket + HMAC protocol complex, PR welcome |
-| Message dedup is in-process Set | Brief duplicates possible after restart, [#1](https://github.com/dimang01/xiyu-ai/issues/1) |
-| SQLite backup / restore scripts incomplete | [#2](https://github.com/dimang01/xiyu-ai/issues/2) |
-| Missing crisis / minor safety moderation layer | [#3](https://github.com/dimang01/xiyu-ai/issues/3) |
+| Content-moderation API left to the operator | Crisis intervention and minor protection are built in; public deployments should add a moderation service |
 | Production deployment guide incomplete | [#5](https://github.com/dimang01/xiyu-ai/issues/5) |
 | WeChat integration depends on Tencent iLink/ClawBot approval | Upstream condition |
 | Real-time voice calls | Not possible at the protocol layer |
@@ -455,33 +483,17 @@ The framework does not prescribe character personality / NSFW content / boundary
 
 ## Version History
 
-Release cadence / full changelog at [GitHub Releases](https://github.com/dimang01/xiyu-ai/releases).
+Release cadence / full changelog at [GitHub Releases](https://github.com/dimang01/xiyu-ai/releases); incremental index in [`docs/FEATURES.txt`](./docs/FEATURES.txt); the 2026-06 route review in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
 
-Recent mainline:
+The mainline, one line each:
 
-- **v1.21.2 "Make silent failures loud + photo aspect fix"** (follow-up to incident #263) · **ESLint in CI** (no-const-assign-class bugs caught at lint time; red-tested against the bad version, pinpoints the incident line; 74 legacy issues zeroed) · **arc:digest error-signature section** (normalized [ERROR] grouping: count / delta / first-seen, new signatures 🆕 pinned — first kill on launch: caught and fixed a Reflection batch silently broken for 8 days) · **proactive dead-man switch** (hourly heartbeat: active users > 0 but proactive sends = 0 for 2 consecutive cycles → CRITICAL + ops email; alert-only zero self-healing, red-tested against a simulated #263 failure shape) · **Photo aspect fix** ("who takes 1:1 selfies?" — root cause was the unconditional square crop in the landing transcoder since v1.10.0; shot-mode routing 3:4/4:3 + per-provider best-fit sizes + i2i reference cropped to a 3:4 window (lock the face, not the square) + aspect-aware transcode fallback; measured: gemini ignores text aspect hints and follows the reference image ratio; regression guards: size logging + digest distribution + red-tested smoke)
-
-- **v1.21.1 "Post-launch wrap-up"** · **Vulnerable-memory bypass clause** (in conflict states, when the user brings up their own painful topic she must engage — "I dreamed about my dad again" can't be met with amnesia; deterministic synonym-group bridging, zero extra LLM calls, she still never raises it proactively) · **Observation-week digest** `npm run arc:digest` (read-only: red-line hits / crisis takeovers / event & apology streams / state distribution; logging sunk to single source chokepoints, fail-open with smoke) · **ARC_MAX_STATE ops clamp** (production fuse: caps the state while events still get recorded; the opposite of minor protection — that's an uncloseable safety floor, this is an adjustable risk ceiling) · **Landing-page honesty pass** (removed unkeepable claims like "end-to-end encrypted / visible only to you / never used for training", replaced with line-by-line keepable wording)
-- **v1.21 "Conflict & repair arc" (relationship event state machine)** ⭐⭐ · She can genuinely get hurt, sulk, and make up with inertia — upgraded from implicit emotion-value drift to an explicit state machine: normal → hurt → cold → withdrawing → repairing → normal_with_scar; hitting her taboos / harsh words / pressure-spamming / long neglect creates **relationship events**, split into wound (a real apology is required to unlock repair; a dismissive "stop being mad" repairs slowly) vs distance (reunion itself starts the repair) · **Attachment styles modulate everything** (anxious escalates fast and softens fast, probes once during cold; avoidant withdraws deeper and longer; secure has a 60% chance to just say "that thing you said hurt" instead of going cold — a deliberately kept healthy-relationship example) · **Consolidation**: v1.14 neglect stages / reunion ladder, v1.7 low-energy mode and v1.13 escalation all folded into one state machine — "she's cold to you" now has exactly one source of truth · **Red lines all have deterministic backstops**: never threatening goodbyes / guilt-tripping / demanding compensation (outbound scrub), never weaponizing the user's vulnerable memories (filtered at recall source), withdrawing hard-capped at 5–10 days so cold war can never be permanent, **crisis signals take top priority** (self-harm signals during a cold war → conflict expression suspended, crisis flow takes over immediately), safe_mode caps conflicts to lightweight · Conflicts and reconciliations both enter long-term memory ("you promised not to check my phone last time") · emotion-debug admin panel (state / events / signal log — causality inspectable) · detection piggybacks on the inner-OS pass, zero extra LLM calls · CI gates +3 (90 transition assertions / DB round-trip e2e / 36 red-line guards), all five real-LLM sandbox scenarios passed
-- **v1.11 → v1.20 "Realism depth + safety wrap-up" (condensed entry — per-version detail in Releases)** ⭐⭐ · **Relationship pacing rework** (v1.11-12: lover gate + daily affection cap + decay, confession catch/deflect, proactive anchored to life gaps, imperfect memory, late-night "go to sleep" care) · **Bilingual zh/EN** (v1.13) · **Attachment styles + neglect stages** (v1.14: missing → probing → disappointed → withdrawn) · **Realism series #1-#5** (v1.15-16: no stage-direction asides / template breaking / low-battery hours / escalation anti-flip — prompts alone can't suppress strong defaults, deterministic backstops required) · **Retention funnel** (v1.17: session-close last call / faster early warming / read-the-room brake / first-turn icebreaker) · **Photo realism overhaul** (v1.18-19: environmental selfies / anti-airbrush / realism layering / i2i face-crop / ACTIVITY-POV shoots what she's working on) · **First-love trait Phase-1** (v1.19.3) · **Hardening fixes** (v1.19.4-6: persona-export field gaps + three field-drift CI gates, photo "promise = actually shoot / context-aware shot mode / anti-collage", duplicate morning/goodnight double-gated) · **Safety wrap-up** (v1.20: minor protection with sticky safe mode, privacy filter on every long-term storage entry point, proactive paraphrase-dedup, release-consistency CI)
-- **v1.10.43 → v1.10.53 "Face-picking + burst coalescing + real image-to-image"** ⭐⭐ · **Message burst coalescing** (when a real person rapid-fires 2–3 messages/images → wait for the user to pause ~10s, bundle the whole burst into "one round" and reply once; text + images + voice all merged; debounce buffer + hard cap prevents never-replying, `COALESCE_WINDOW_MS` adjustable) · **4-candidate selfie face selection** (generate 4 candidates in parallel with different lighting/angle/expression, pick the best in dashboard and lock it as baseline — no more being stuck with a bad first image forever; candidate prompt with dynamic age, no teeth, pure/anchor, 2 school-uniform 2 casual) · **Reference image image-to-image truly wired up** (OpenRouter multimodal now feeds the locked/uploaded reference image as input image to gpt-image / gemini-2.5-flash-image, so the locked face truly anchors every subsequent photo — previously `referenceImage` was hardcoded false and the ref chain was dead) · **Global light beautification** (sharp post-processing wired into imageGenerate layer: subtle brightening / saturation boost / skin softening / very light skin-smoothing, deliberately shy of plastic-looking) · Candidate images returned on disk as fname + separate GET (avoids iOS Safari large-JSON crash) + rate-limited
-- **v1.10.11 → v1.10.42 "Voice emotion + photo aesthetics overhaul + HOSTED_MODE + firefighting batch"** · **Inbound voice emotion recognition** (not just transcribe: download + AES decrypt + SILK decode → qwen-audio hears tone/emotion/voice intensity before responding; gracefully degrades to plain transcription on any step failure) · **Photo aesthetics overhaul** (photo_planner attractiveness/expression/selfie-POV/anti-photoshoot-feel rewritten + injects time-of-day sense and full persona appearance; photo_intent regex + LLM binary-classifier fallback finally ends missed detections; photo **async** — responds immediately, doesn't block polling) · **OpenRouter image provider** (default gpt-image-1, 5.4→5-mini→gemini-2.5 fallback chain) · **HOSTED_MODE** (hosted deployment hides backend provider/model from dashboard, locks setup write endpoints) · **Firefighting**: QR-scan binding companion orphaning, iLink rate-limit enqueue doesn't swallow messages, message-segment truncation, goodnight/morning missed-delivery fallback, relationship upgrade to "lover" now requires confession detection, sticker support disabled skips out-of-character stickers
-- **v1.10.1 → v1.10.9 "Sleep humanization + polish"** Rapid iteration on top of v1.10.0: proactive audit fixed 3 sleep-integration regressions (morning misfire / late-sleeper no goodnight / throttle eating quota) · sleep **defaults to 00:30 bedtime** (avoids prime active hours; the original 23:00 default once silenced everyone and felt like "WeChat broke") · **web playground also honors sleep blocking** (was WeChat-only) · **asymmetric jitter** (bed -15/+45, wake ±10) · **plea-to-stay** (saying "stay with me" right after she sleeps postpones ~20 min) · goodnight decoupled from actual sleep to leave a grace window · **iOS-style circular sleep dial** (drag 🌙☀️ handles + sleep duration, auto-save on release) · pulsing wake button · dark-mode coverage hardening (attribute-selector fallback + onboarding bubble) · Turnstile only resets on failure (fixes "double verify") + **forgot-password page also gets Turnstile** · login illustration iterated to a refined pixiv-style anime portrait
-- **v1.10.0 "She sleeps / sign-up anti-abuse / dark mode / proactive bugfix"** ⭐⭐ Five-pack: **#1 Sleep & circadian system** — new tables `companion_sleep_schedule` (bedtime/wake + ±N min jitter + learn state) and `companion_missed_messages` (queue during sleep). New module `src/sleep.mjs`: bot entry silently swallows messages during sleep hours and queues them; proactive reads bedtime/wake from this table, the `morning` kind auto-prepends a "saw you sent a bunch last night \|\| just woke up" hint built from the queue; first 7 days observe user's first/last message times → day 8 locks to medians; dashboard gets 📞 Call her awake (instant exitSleep + annoyance/anger up, AI immediately fires a sleepy "what time is it…" reply) · **#2 proactive-not-sending bugfix** — root cause: `item.sent = true` was set *before* `evaluateProactive`, so when v2 rejected via the 90-min backoff the item was permanently marked sent and never retried; users felt "she sends way fewer proactive messages than I configured". Fix: `item.sent` only flips when actually entering the send wrapper; rejections write `_v2_deny_until = now + 15min` for debounce; 2 source-level regression checks added to p0 · **#3 Cloudflare Turnstile on signup** — auth.html register tab gets the widget, `send-code` endpoint runs `verifyTurnstile(token, remoteIp)` against the official siteverify first; secret stays in `.env`, site key is hardcoded on the frontend; skipping when secret is absent (dev-friendly), conservative block on network failure · **#4 Site-wide dark mode** — `public/app/theme.js` with localStorage `xiyu_theme` = auto/light/dark; auto follows `prefers-color-scheme` mediaquery; floating toggle 🌓→☀️→🌙; all 17 HTML pages get a tiny inline pre-script in `<head>` to avoid render flash; glass.css extends the dark skeleton to cover commonly-used Tailwind utilities · **#5 MiniMax / Tavily / Qwen keys** — wire up in `.env` and the existing providers (chat/tts/asr/vision/web_search/embedding) detect them automatically
-- **v1.8.0 "She actually remembers + she has an inner monologue"** ⭐⭐ Realism upgrade v2. 6 blocks: **#7** `incomplete-reply` prompt (7 allowed: only empathize / only complain / stall then continue / just say "dunno" / change topic / short when busy / no opinion) · **#1** `emotion_state` adds `availability` + `attention` derived from today's `dailySchedule` current activity (sleep/meeting=busy, eating/strolling=half), prompt injects "I'm here but only half-attention" · **#3** new `companion_preferences` table (like/dislike/taboo/neutral × intensity 1-5), startup backfills existing `hobbies/dislikes`, patch syncs; prompt modifies "極/很/有点" by intensity; 3 new REST endpoints · **#4** new `companion_open_loops` table — she remembers unfinished things ("he's going to the job fair tomorrow" + due_at + emotional_weight + expected_followup + status), LLM extraction + heuristic auto-resolve ("the job fair was a bust" → auto-resolve), 03:30 cron marks stale · **#5** proactive **causal restructuring**: normal kind checks `listDueOpenLoops`, hits upgrade to `recall` kind, injects `hidden_reason` — she'll say "oh by the way || did you nail the interview" instead of "how was your day" · **#6** **Inner OS** double-pass reply pipeline — every reply first generates an internal monologue (short, not sent), injects into outer system prompt so the model writes the visible reply *based on* the inner thought. The gap between what she thinks and what she says is the real-person signal. Toggleable (`INNER_OS_ENABLED=false`), short messages < 8 chars auto-skip
-- **v1.7.0 "Less sycophantic, more lived-in"** ⭐ Addresses LLM sycophancy specifically in the companion / dating context. 5 blocks: **A** ~200-word "she's not here to please you" prompt segment (every 5-8 replies ≥1 with disagreement/dislike/blunt critique, with familiar-friend casualness not coldness) · **B** ~200-word "she teases you back" prompt (sarcasm/fake complain/inside jokes/self-deprecating flirt, gated by `can_joke`, only when stage≠stranger, frequency 1/6-8 in friends~flirting, 1/3-4 in lover~deep love) · **C** crush-period "playing it cool" concrete examples (180 words + 6 counterexamples, only injected at stranger/friend/flirting stages) · **D** emotion_state low-energy mode (`mood=cold` or `annoyance≥70` or `patience≤20` triggers the highest-priority "not in the mood today" hint: single-char replies / not engaging / can interrupt with "let me go xx"; **overrides** the discord/tease/sycophancy directives above) · **E** new `companion.dislikes` JSON field (distinct from `forbidden_topics`: dislikes = "will discuss but state I dislike", forbidden = "won't engage at all"; prompt injects "this isn't for me" type lines; create.html adds 8 preset chips: complaints / spicy food / soap operas / internet memes / clubs / lectures / "boomer dad energy" / calculating people).
-- **v1.6.3 "Drop the off-tone hero illustration"** — the `hero-girl.webp` regenerated in v1.6.2 (via OpenRouter `gpt-5-image-mini`) came out as a pink-haired anime girl facing forward — directly conflicting with the "she feels like a real person" tone the product enforces elsewhere; using it as a logo underlay on the homepage also drowned out the logo / tagline / chips. This release drops the hero-girl reference and the .webp file, removes the item from the regen script, restores the homepage to clean `logo + tagline`, and swaps the auth left column to `feature-persona` (journal pictogram).
-- **v1.6.2 "Polish & refresh"** — v1.6.1 follow-up cleanup: `visual_identity` dead-code ternary, `photo_planner.numberEnv` empty-string env vars getting swallowed to 0, `netguard` redirect branch not draining the response, `photo_sender` download size guard, photo-request intent coverage expansion (`想看看你 / 再来一张 / 看下你 / 秀一下你/自己` etc.), gate-blocked / planner-declined now returns a soft fallback instead of falling through to plain AI text · **Frontend polish** — glass.css overhaul (3-layer aurora background, multi-layer shadows, tri-color focus ring, new utility classes `.hero-blob / .floating-card / .glass-chip / .glass-stagger` + dark-mode skeleton) · 5 landing illustrations regenerated via OpenRouter (`openai/gpt-5-image-mini`, soft pastel + flat vector) · 4 entry pages restructured (homepage hero underlay, auth desktop split layout, create / setup illustration headers)
-- **v1.6.1 "She can actually take photos"** ⭐ **Real photo pipeline** — when the user asks "selfie / show me you / send a pic", intent is detected, an AI planner decides whether to send, an image is really generated by the active image provider, transcoded to 1024×1024 webp and pushed to WeChat. Not "wait, I'm taking one" stalling text. Cooldown 10 min / 3 per day per companion / unsafe-word block / graceful fallback when provider is missing · **Visual identity planner** — each companion gets one identity spec (face / hair / outfit / vibe) used as conditioning for every photo, so her face stays consistent across sessions; reference images can be uploaded and providers that support image-to-image use them · **Security hardening** — SSRF guard `netguard.mjs`, X-Forwarded-For trust policy, setup token, admin auth on `/admin/ilink-status`, companion IDOR fix (see [Security](#security))
-- **v1.6.x "Deeper Humanization"** ⭐ **3-month simulated timeline** (LLM generates 35 virtual interaction events + key events enter memory + affection arc 5→30; new companions feel "already known you for 3 months" instead of starting from zero) · **11-dim emotion** (original 7 + patience / excitement / annoyance / gratitude; half-hourly recalc cron; saturation anti-spam dampening) · **Proactive 3-driver motivation** (emotion × schedule × time × jitter; restart-resistant persistence; 3-gate race protection; intra-batch bigram+LCS dedup) · Persona facts prompt 12 → 19 categories (named people + sensory details + worldview) · Playground aligned with bot emotion path
-- **v1.5.x "Long-term Companionship"** — Offline letter capsule (HMAC-signed .txt the user keeps forever) · Time capsule (she writes "the me of now" reaction when it unlocks) · Silent companion mode (cyber-distance: breathing dot in the corner instead of messages) · Relational diary "between us" (nightly, editable, exportable) · SINGLE_USER mode (self-host without login page)
-- **v1.4.x** — TTS 5 (MiniMax / OpenAI / Azure / Doubao / Qwen) + ASR 7 implemented (Gemini / OpenAI / Qwen / Groq / MiniMax / Azure / Doubao) + Vision 8 (Zhipu / OpenAI / Qwen / Doubao / Claude / Kimi / StepFun / MiniMax); default starting stage = crushing; missing-level + "today's thought for you"; in-browser voice recording + narration
-- **v1.3.x** — Liquid Glass UI · Her diary · Anniversary proactive greetings · Removed all Pro/Free tiers
-- **v1.2.x** — Web search · Proactive confessions · Memory Reflection
-- **v1.1.x** — Persona Guard · Emotion state machine · Proactive engine v2
+- **v1.21.x Conflict & repair arc + engineering hardening**: a relationship-event state machine (she can genuinely get hurt; making up has inertia) consolidating all "she's cold to you" logic; post-incident "make silent failures loud" (ESLint / error-signature report / dead-man switch); photo aspect fix
+- **v1.20.x Safety wrap-up**: minor protection (sticky safe mode), privacy filter on every storage entry, release-consistency CI, photo realism v2 (anti-airbrush texture finally reaching production)
+- **v1.14 → v1.19 Realism depth**: graduated neglect + attachment styles, retention funnel (last-call / warm-up / read-the-room / icebreaker), the photo realism overhaul (environmental selfies / i2i face-lock / shot-mode routing), first-love traits
+- **v1.6 → v1.13 Experience foundation**: real photo pipeline, anti-sycophancy series, Inner OS, open-loop memory, the sleep system, burst coalescing, relationship pacing (time feeds affection), zh/EN bilingual
+- **v1.0 → v1.5 Framework taking shape**: persona engine, Memory v2, emotion state machine, proactive messaging, diaries, the multi-provider abstraction
 
 ---
-
 ## Contributing & Roadmap
 
 - Found a bug? → [Open an Issue](https://github.com/dimang01/xiyu-ai/issues/new)
