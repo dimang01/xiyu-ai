@@ -1726,6 +1726,49 @@ router.get('/admin/ilink-status', requireAdmin, (_req, res) => {
   });
 });
 
+// ─── v1.21.4: 标注语料 admin API（/app/annotate.html）─────────────────────
+// 纯只读消费 turns + 标注表写入；含用户对话原文，admin-only 硬约束。
+router.get('/admin/annotate/turns', requireAdmin, async (req, res) => {
+  try {
+    const { listAnnotatableTurns } = await import('./db.mjs');
+    const companionId = intId(req.query.companion) || null;
+    const limit = Math.max(1, Math.min(300, intId(req.query.limit) || 100));
+    return ok(res, listAnnotatableTurns({ companionId, limit }));
+  } catch (e) {
+    log('error', `[API] annotate/turns 失败: ${e.message}`);
+    return err(res, '加载失败：' + e.message, 500);
+  }
+});
+
+router.post('/admin/annotate', requireAdmin, async (req, res) => {
+  try {
+    const { upsertAnnotation } = await import('./db.mjs');
+    const { turn_id, companion_id, label, tags, note } = req.body || {};
+    const row = upsertAnnotation({
+      turnId: intId(turn_id), companionId: intId(companion_id),
+      label: String(label || ''), tags: Array.isArray(tags) ? tags : [], note: note || null,
+    });
+    return ok(res, row);
+  } catch (e) {
+    return err(res, '保存失败：' + e.message, 400);
+  }
+});
+
+router.get('/admin/annotate/stats', requireAdmin, async (_req, res) => {
+  try {
+    const { annotationStats } = await import('./db.mjs');
+    return ok(res, annotationStats());
+  } catch (e) { return err(res, e.message, 500); }
+});
+
+router.get('/admin/annotate/tags', requireAdmin, async (_req, res) => {
+  try {
+    const { readFileSync } = await import('node:fs');
+    const cfg = JSON.parse(readFileSync(new URL('../config/annotation_tags.json', import.meta.url), 'utf8'));
+    return ok(res, { tags: Array.isArray(cfg.tags) ? cfg.tags : [] });
+  } catch (e) { return err(res, '词表读取失败：' + e.message, 500); }
+});
+
 // GET /api/admin/companions/:id/arc-debug — v1.21 冲突弧情绪因果面板
 // 当前状态 / open 事件 / 事件流水 / 信号流水（最近 N 条消息的增量及原因）/ 情绪趋势
 router.get('/admin/companions/:id/arc-debug', requireAdmin, (req, res) => {

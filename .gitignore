@@ -69,3 +69,7 @@ public/generated/
 config/provider_pricing.json
 __pycache__/
 scripts/_ab_out/
+
+# v1.21.4: 标注语料导出（含用户对话原文，绝不进 git）
+data/exports/
+**/exports/*.jsonl

@@ -326,7 +326,8 @@ npm run smoke           # release smoke; bash scripts/opensource_check.sh — 6 
 - **Error-signature report**: last-24h error logs grouped by normalized signature (count / delta / first-seen), new signatures highlighted — silent failures get loud immediately
 - **Proactive dead-man switch**: hourly heartbeat; active users present but proactive sends all dead → CRITICAL + email alert (`ADMIN_ALERT_EMAIL`), alert-only with zero self-healing
 - **emotion-debug panel** (`/app/emotion-debug.html`, admin): arc state / event stream / per-message emotion deltas with reasons — emotional causality is inspectable, never voodoo
-- **25 CI gates**: syntax / lint / field-drift reconciliation / release consistency / feature smokes / red-line guards — every new gate is "red-tested" (must fail against a known-bad version)
+- **Annotation tool** (`/app/annotate.html`, admin): label real replies good/bad with tags (AI-flavour / lab-report tone / brilliant…) as you read them; `scripts/export-corpus.mjs` exports JSONL — a fine-tuning corpus pipeline that turns "reading" into "collecting"
+- **31 CI gates**: syntax / lint / field-drift reconciliation / release consistency / feature smokes / red-line guards — every new gate is "red-tested" (must fail against a known-bad version)
 - **Ops clamp**: `ARC_MAX_STATE` can temporarily cap conflict states (a no-rollback fuse for production mishaps; the opposite of minor protection — that one is an uncloseable safety floor)
 
 ---

@@ -110,5 +110,8 @@ jobs:
       - name: 表情冒充照片护栏（#281 双向红色验证）
         run: node scripts/photo_impersonation_smoke.mjs
 
+      - name: 标注语料工具（CRUD/导出/admin 鉴权）
+        run: node scripts/annotation_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。

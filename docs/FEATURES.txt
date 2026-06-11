@@ -38,6 +38,10 @@
   · v1.21.2 静默失败变响：ESLint 进 CI / digest 错误签名段(首杀
             Reflection 8 天断供) / proactive 死人开关(心跳+邮件) /
             照片比例修复(机位路由 3:4 竖屏+落库防回归)
+  · v1.21.4 标注生产线：/app/annotate.html(admin) 好/坏+tag+备注
+            标真实回复,annotation_corpus 表,export-corpus.mjs 出 JSONL
+            微调语料;#279 重复消息修复(上下文去重+协议重推查重);
+            #281 表情冒充照片出口护栏
   · v1.21.3 沉浸感卫生包：去"用户"三层防线(prompt 改口/写入护栏/
             称呼泄漏门禁) / proactive 素材级防复读(同梗 14 天冷却+
             归因账本) / 「调教」改名「你们的默契」/ AI 用量 admin-only /

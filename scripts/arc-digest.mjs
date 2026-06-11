@@ -136,7 +136,7 @@ const srcOf = (ev) => {
 for (const ev of events) {
   // 注：事件行的 state_after 随修复推进更新，这里显示"建档起点→当前所处"
   console.log(`  ${fmtT(ev.created_at)}  ${cname(ev.companion_id)}  ${ev.type} sev${ev.severity}  ${ev.state_before}→现${ev.state_after}(${ev.repair_status})  来源=${srcOf(ev)}${ev.reopened ? '  ⟳余怒' : ''}`);
-  if (ev.trigger_text) console.log(`      起因: ${cut(ev.trigger_text, 50)}`);
+  if (ev.trigger_text) console.log(`      起因: ${cut(ev.trigger_text, 50)}  → 标注: /app/annotate.html?companion=${ev.companion_id}`);
 }
 if (!events.length) console.log('  （无）');
 console.log('');
