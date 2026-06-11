@@ -195,4 +195,25 @@ if (hasTable('companion_photo_log')) {
   if (bad) console.log(`  ⚠ ${bad} 种尺寸与机位预期不符——查 provider/转码链`);
 }
 
+// ── 8. proactive 素材复用 TOP（v1.21.3 PR-E：「小汤圆」3 天 3 次——账本冷却
+//      生效后这里不该出现 >2 的复用；出现了就是过滤/归因哪里漏了）────────────
+if (hasTable('companion_proactive_material_log')) {
+  const matRows = db.prepare(`
+    SELECT companion_id, material_ids FROM companion_proactive_material_log
+    WHERE datetime(used_at) >= datetime(?)`).all(sinceIso);
+  const matCount = new Map();
+  for (const r of matRows) {
+    try {
+      for (const id of JSON.parse(r.material_ids)) {
+        const key = `${cname(r.companion_id)} ${id}`;
+        matCount.set(key, (matCount.get(key) || 0) + 1);
+      }
+    } catch {}
+  }
+  const top = [...matCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  console.log('\n── proactive 素材复用 TOP（同素材 >2 = 去重漏了）──');
+  for (const [key, n] of top) console.log(`  ${key}  × ${n}${n > 2 ? '  ⚠' : ''}`);
+  if (!top.length) console.log('  （窗口内无素材引用记录）');
+}
+
 console.log('\n════ 报表完（纯只读，无任何回写）════');

@@ -261,6 +261,79 @@ export function insertArcSignalLog(companionId, row = {}) {
   } catch { /* debug 流水失败不致命 */ }
 }
 
+// ─── v1.21.3 PR-E: proactive 素材指纹账本（跨天素材级去重）──────────────────
+// 背景：「橘猫像小汤圆」同一个梗 3 天 3 次——措辞次次不同，trigram 撞车检测
+// （只比近 5 条原文）抓不到；根因是 pinned 高权重记忆每次必进召回候选。
+// 账本记"哪条素材在哪次主动消息里被引用过"，召回层按素材 ID 冷却 N 天。
+// 这是运营流水不是人格：不进人设导出（persona_export 白名单不收，勿加）。
+// 冷却过滤只挂 proactive 召回点——对话召回绝不过滤（主动两周不提小汤圆是克制，
+// 他聊起小汤圆她接不住是失忆）。
+function migrateProactiveMaterialLog() {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS companion_proactive_material_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id INTEGER NOT NULL,
+      material_ids TEXT NOT NULL,    -- JSON 数组，带类型前缀：["mem:123","loop:45"]
+      kind TEXT,                     -- 当次 proactive kind（仅观察，不参与冷却判定）
+      scene TEXT,                    -- 当次场景（仅观察，不参与冷却判定）
+      used_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_proactive_material_log
+      ON companion_proactive_material_log(companion_id, used_at DESC);
+  `);
+}
+
+/** 素材指纹落账（fail-open：账本失败绝不阻断主动消息链路） */
+export function insertProactiveMaterialLog(companionId, { materialIds, kind, scene, nowIso } = {}) {
+  try {
+    const ids = (Array.isArray(materialIds) ? materialIds : []).map(String).filter(Boolean);
+    if (!ids.length) return;
+    migrateProactiveMaterialLog();
+    getDb().prepare(`
+      INSERT INTO companion_proactive_material_log (companion_id, material_ids, kind, scene, used_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(companionId, JSON.stringify(ids), kind || null, scene || null,
+      nowIso || new Date().toISOString());
+    // 轻量轮转：每 companion 留 200 条
+    getDb().prepare(`
+      DELETE FROM companion_proactive_material_log WHERE companion_id = ? AND id NOT IN (
+        SELECT id FROM companion_proactive_material_log WHERE companion_id = ? ORDER BY id DESC LIMIT 200
+      )
+    `).run(companionId, companionId);
+  } catch { /* 运营流水失败不致命 */ }
+}
+
+/** 近 N 天主动消息引用过的素材 ID 集合（fail-open：失败返回空集=不冷却） */
+export function getRecentlyUsedMaterialIds(companionId, { days = 14, now = Date.now() } = {}) {
+  try {
+    migrateProactiveMaterialLog();
+    const sinceIso = new Date(now - days * 86400_000).toISOString();
+    const rows = getDb().prepare(`
+      SELECT material_ids FROM companion_proactive_material_log
+      WHERE companion_id = ? AND used_at >= ?
+    `).all(companionId, sinceIso);
+    const used = new Set();
+    for (const r of rows) {
+      try { for (const id of JSON.parse(r.material_ids)) used.add(String(id)); } catch {}
+    }
+    return used;
+  } catch { return new Set(); }
+}
+
+/** 近 N 天已发主动消息文本（软约束注入用；fail-open 返回空数组） */
+export function getRecentProactiveTexts(companionId, { days = 7, limit = 10 } = {}) {
+  try {
+    return getDb().prepare(`
+      SELECT content FROM companion_conversation_turns
+      WHERE companion_id = ? AND role = 'assistant'
+        AND topic IN ('主动消息','晚安','早安','纪念日祝福','recall 关心','轻声问候','主动告白')
+        AND created_at >= datetime('now', ?)
+      ORDER BY id DESC LIMIT ?
+    `).all(companionId, `-${Math.max(1, days | 0)} days`, Math.max(1, limit | 0))
+      .map(r => String(r.content || '')).filter(Boolean);
+  } catch { return []; }
+}
+
 /** arc 信号流水读取（debug 面板） */
 export function listArcSignalLog(companionId, limit = 50) {
   return getDb().prepare(`

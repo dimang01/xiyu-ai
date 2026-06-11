@@ -14,7 +14,14 @@ import {
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
   getRecentSafetyRisk,                        // v1.9.0 #1
   listShaping,                                // 共建留痕（教过她的注入主动消息）
+  insertProactiveMaterialLog, getRecentlyUsedMaterialIds, getRecentProactiveTexts,  // v1.21.3 素材账本
 } from './db.mjs';
+// v1.21.3 PR-E: 跨天素材级去重（「小汤圆」3 天 3 次）——冷却过滤只挂这条链路，
+// 对话召回（bot.mjs）绝不挂：主动不提是克制，他聊起来接不住是失忆。
+import {
+  materialDedupDays, filterRecentlyUsed, extractMaterialRefs,
+  memMaterialId, loopMaterialId, buildRecentProactiveHint,
+} from './proactive_material.mjs';
 import { canAcceptConfession } from './memory.mjs';
 import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
@@ -649,9 +656,15 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   const userProfile = getUserProfile(companion.user_id, companion.id);
   const timeContext = buildTimeContext(userProfile, getDueReminders(companion.id, formatDateKey()));
   const recentTurns = getConversationContext(companion.id, 10);
-  const memories = companion.memory_enabled
+  // v1.21.3 素材冷却：N 天内主动消息引用过的记忆不再进候选（看不到就说不出）。
+  // reminder（纪念日/节日）豁免——每年说生日快乐不算复读。fail-open：账本读失败=不冷却。
+  const _materialUsed = kind === 'reminder'
+    ? new Set()
+    : getRecentlyUsedMaterialIds(companion.id, { days: materialDedupDays() });
+  const _recalledRaw = companion.memory_enabled
     ? recallMemories(companion.id, companion.user_id, timeContext.searchText, 7)
     : [];
+  const memories = filterRecentlyUsed(_recalledRaw, _materialUsed);
   const history = getRecentHistory(companion.wechat_user_id, companion.bot_id, 20);
   // v1.3.4: 开源版所有 companion 享受完整长期记忆摘要（不再按 plan 区分）
   const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id);
@@ -713,8 +726,10 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     try {
       const dueLoops = listDueOpenLoops(companion.id, { withinHours: 24 });
       // 选 emotional_weight 最高且最近没主动问过的（防重复）
+      // v1.21.3: loop 也是素材——14 天冷却期内主动问过的不再当 recall 由头
       const candidate = dueLoops
         .filter(l => !l.followed_up_at || (Date.now() - new Date(String(l.followed_up_at).replace(' ','T') + 'Z').getTime()) > 6 * 3600_000)
+        .filter(l => !_materialUsed.has(loopMaterialId(l.id)))
         .sort((a, b) => (b.emotional_weight || 0) - (a.emotional_weight || 0))[0];
       if (candidate) {
         recallLoop = candidate;
@@ -829,6 +844,12 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     systemPrompt += `\n\n【★ 反复读】你最近已经说过这些话：\n${recentAssistantTexts.slice(-3).map(t => `- ${t.slice(0, 60)}`).join('\n')}\n这次**严格禁止**重复其中任何话题、意象或开场方式（比如上面说过"困/眼皮打架"，这次就绝不能再提困）。换全新的话题或心情。`;
   }
 
+  // v1.21.3 跨天素材软约束：近 7 天已发主动消息摘要——硬约束（召回冷却）管的是
+  // 记忆素材，这里再兜从对话历史里捡梗复读的口子。reminder 豁免同硬约束。
+  if (effectiveKind !== 'reminder') {
+    systemPrompt += buildRecentProactiveHint(getRecentProactiveTexts(companion.id, { days: 7 }));
+  }
+
   const proactiveBinding = getActiveWechatBinding(companion.wechat_user_id, companion.bot_id);
   let reply = await generateReply(systemPrompt, history, userMessage, {
     temperature: companion.temperature,
@@ -929,6 +950,27 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     : effectiveKind === 'lastcall' ? '轻声问候'
     : '主动消息';
   saveConversationTurn(companion.id, 'assistant', reply, turnTopic);
+
+  // v1.21.3 素材指纹落账：归因 reply 实际引用了哪些进过 prompt 的记忆（锚匹配），
+  // 命中者进账本供下次召回冷却。reminder 豁免；fail-open 绝不阻断链路。
+  if (effectiveKind !== 'reminder') {
+    try {
+      // 归因对"过滤前全量召回"做：冷却中的梗若被她从对话历史里捡起来复读，
+      // 也要记账续冷却（沙箱 day18"成都草莓"形态），不然冷却一到期立刻复活
+      const refs = extractMaterialRefs(reply, _recalledRaw.map(m => ({ id: memMaterialId(m.id), content: m.content })));
+      if (effectiveKind === 'recall' && recallLoop?.id) refs.push(loopMaterialId(recallLoop.id));
+      if (refs.length) {
+        insertProactiveMaterialLog(companion.id, {
+          materialIds: refs,
+          kind: effectiveKind,
+          scene: proactiveDailySchedule?.scene || companion.current_scene || null,
+        });
+        log('info', `[Proactive] 素材落账 companion=${companion.id} refs=${refs.join(',')}`);
+      }
+    } catch (e) {
+      log('warn', `[Proactive] 素材落账失败（不影响发送）: ${e.message}`);
+    }
+  }
 
   // v1.8.0 #5: recall 发送成功 → mark followed_up_at（防 6h 内重复打扰）
   if (effectiveKind === 'recall' && recallLoop?.id) {
