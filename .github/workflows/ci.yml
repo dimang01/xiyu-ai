@@ -116,5 +116,8 @@ jobs:
       - name: 照片承诺生命周期（PR-B 可行性闸门/超时兜底/改期履约）
         run: node scripts/photo_promise_smoke.mjs
 
+      - name: 月相锚定（PR-C 纯数学/物理锚点/红色验证）
+        run: node scripts/moon_phase_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
