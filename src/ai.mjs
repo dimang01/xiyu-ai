@@ -185,7 +185,7 @@ export async function generatePersonaFacts(companion) {
 - 性格：${personality || '温柔'}
 - 爱好：${hobbies || '看剧、听音乐'}
 - 你们怎么认识的：${c.how_met || '未说明'}
-- 用户已填的额外人设：${c.persona_prompt || '无'}
+- 他（对方）已填的她的额外人设：${c.persona_prompt || '无'}
 
 【生成原则——拟人化的核心】
 1. **因果链**：童年经历 → 塑造性格 → 形成价值观 → 决定她现在的爱好和怕的东西

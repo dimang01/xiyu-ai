@@ -118,6 +118,27 @@ export function filterForStorage(text) {
   return { store: true, text: redactSensitiveInfo(raw) };
 }
 
+// ── v1.21.3 PR-A: 称呼泄漏护栏（写入端确定性兜底）─────────────────────────
+// 背景：抽取管线曾把"用户喜欢逗我玩"写进专属梗——"用户"二字出现在她的
+// 记忆/塑造留痕里，等于人设穿帮。prompt 层已改口，这里是最后一道闸。
+// 保护词：含"用户"但不是指代本人的固定词组（法律文书名/表单术语）。
+const USER_WORD_PROTECTED = ['用户协议', '用户名'];
+
+/**
+ * 把抽取产物里的"用户"重写为称呼（教过的昵称）或"他"。
+ * 挂载点一行调用：content = replaceUserWording(content, alias)
+ */
+export function replaceUserWording(text, alias = '他') {
+  let out = String(text ?? '');
+  if (!out || !out.includes('用户')) return out;
+  const safe = alias && !String(alias).includes('用户') ? String(alias) : '他';
+  // 占位符走 Unicode 私用区，正常文本不会出现
+  USER_WORD_PROTECTED.forEach((w, i) => { out = out.split(w).join(String.fromCharCode(0xE000 + i)); });
+  out = out.split('用户').join(safe);
+  USER_WORD_PROTECTED.forEach((w, i) => { out = out.split(String.fromCharCode(0xE000 + i)).join(w); });
+  return out;
+}
+
 // ── memory_v2 兼容层（原 API 语义保持） ────────────────────────────────────
 /** 原 isSensitiveMemoryContent 语义：true = 含敏感内容（= !shouldStoreMemory） */
 export function isSensitiveMemoryContent(text) {

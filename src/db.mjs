@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { estimateProviderCost, loadProviderPricing } from './provider_costs.mjs';
 // v1.20 (PR2): 隐私过滤挂在各长期存储写入函数入口（最窄腰部，所有调用方自动覆盖）
-import { filterForStorage, redactSensitiveInfo } from './privacy_filter.mjs';
+import { filterForStorage, redactSensitiveInfo, replaceUserWording } from './privacy_filter.mjs';
 
 const DB_PATH = process.env.DB_PATH || path.resolve(process.cwd(), 'data/bot.db');
 // 确保 data 目录存在
@@ -3075,8 +3075,9 @@ export function upsertPreference({ companionId, type, target, intensity = 3, rea
   // v1.20 隐私过滤
   const pfT = filterForStorage(target);
   if (!pfT.store) { console.warn(`[PrivacyFilter] upsertPreference 拦截 companion=${companionId}`); return; }
-  target = pfT.text;
-  if (reason) reason = redactSensitiveInfo(reason);
+  const _alias = companionUserAlias(companionId);   // v1.21.3 称呼泄漏护栏
+  target = replaceUserWording(pfT.text, _alias);
+  if (reason) reason = replaceUserWording(redactSensitiveInfo(reason), _alias);
   const db = getDb();
   db.prepare(`
     INSERT INTO companion_preferences (companion_id, type, target, intensity, reason, source)
@@ -3119,7 +3120,7 @@ export function upsertShaping({ companionId, kind, content, rawMsg = null }) {
   // v1.20 隐私过滤（教她/专属梗也是长期存储）
   const pf = filterForStorage(content);
   if (!pf.store) { console.warn(`[PrivacyFilter] upsertShaping 拦截 companion=${companionId}`); return; }
-  content = pf.text;
+  content = replaceUserWording(pf.text, companionUserAlias(companionId));   // v1.21.3 称呼泄漏护栏
   if (rawMsg) rawMsg = redactSensitiveInfo(String(rawMsg));
   const db = getDb();
   const c = String(content).slice(0, 120);
@@ -3149,8 +3150,9 @@ export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight
   // v1.20 隐私过滤（她记得的"未完成事"同属长期存储）
   const pf = filterForStorage(title);
   if (!pf.store) { console.warn(`[PrivacyFilter] saveOpenLoop 拦截 companion=${companionId}`); return null; }
-  title = pf.text;
-  if (expectedFollowup) expectedFollowup = redactSensitiveInfo(String(expectedFollowup));
+  const _alias = companionUserAlias(companionId);   // v1.21.3 称呼泄漏护栏
+  title = replaceUserWording(pf.text, _alias);
+  if (expectedFollowup) expectedFollowup = replaceUserWording(redactSensitiveInfo(String(expectedFollowup)), _alias);
   const db = getDb();
   // 防重复：同 companion 最近 7 天内的相同 title 视为重复（轻量去重）
   const existing = db.prepare(`
@@ -3248,11 +3250,20 @@ function unpackEmbedding(buf) {
   return new Float32Array(ab);
 }
 
+// v1.21.3 PR-A: 写入端称呼泄漏护栏——抽取产物落库前把"用户"重写为教过的称呼/他
+// （prompt 层已全面改口，这里是确定性兜底，防"用户喜欢逗我玩"再进库）
+function companionUserAlias(companionId) {
+  try {
+    const row = getDb().prepare(`SELECT content FROM companion_shaping WHERE companion_id = ? AND kind = 'nickname' ORDER BY created_at DESC, id DESC LIMIT 1`).get(companionId);
+    return row?.content || '他';
+  } catch { return '他'; }
+}
+
 export function saveMemory({ companionId, userId, memoryType, content, importance = 5, keywords = null, embedding = null, pinned = null }) {
   // v1.20 隐私过滤：密码/key/身份证/银行卡级 → 整条不入长期记忆；手机号/住址/学校班级 → 脱敏
   const pf = filterForStorage(content);
   if (!pf.store) { console.warn(`[PrivacyFilter] saveMemory 拦截敏感内容 companion=${companionId}`); return; }
-  content = pf.text;
+  content = replaceUserWording(pf.text, companionUserAlias(companionId));
   const db = getDb();
   const isPinned = pinned !== null ? (pinned ? 1 : 0) : (importance >= 7 ? 1 : 0);
   const kw = Array.isArray(keywords) ? JSON.stringify(keywords) : (keywords || null);

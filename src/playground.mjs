@@ -155,13 +155,13 @@ export async function playgroundChat(companion, userText) {
   const stageNow = companion.relationship_stage || '陌生人';
   const intimacyOver = detectIntimacyOvereach(text);
   if (intimacyOver.has && (stageNow === '陌生人' || stageNow === '朋友')) {
-    systemPrompt += `\n\n【★ 用户用了过早的亲密词】当前 ${stageNow} 阶段；要害羞但不冷漠地委婉回避，留"以后熟了再说"钩子；多条 || 分段。`;
+    systemPrompt += `\n\n【★ 他用了过早的亲密词】当前 ${stageNow} 阶段；要害羞但不冷漠地委婉回避，留"以后熟了再说"钩子；多条 || 分段。`;
   }
 
   // 用户表白
   const userConfessed = detectUserConfession(text);
   if (userConfessed && !companion.user_confessed_at) {
-    systemPrompt += `\n\n【★★ 用户向你告白】必须接住。不能拒绝，不能转移话题。多条 || 分段。`;
+    systemPrompt += `\n\n【★★ 他向你告白】必须接住。不能拒绝，不能转移话题。多条 || 分段。`;
     try {
       const newAff = Math.max(companion.affection_level || 0, 55);
       const newStage = computeRelationshipStage(newAff);

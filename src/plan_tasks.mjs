@@ -696,8 +696,8 @@ async function compactOldEpisodicMemories(companion) {
 
 // ─── AI 调用：生成总结 ───────────────────────────────────────────────────────
 async function summarizeDaily(dateKey, turns) {
-  const text = turns.map(t => `${t.role === 'user' ? '用户' : '她'}：${String(t.content).slice(0, 300)}`).join('\n').slice(0, 12000);
-  return summarize('日记忆', `请总结 ${dateKey} 这一天的对话，提炼用户的重要事实、偏好、情绪变化、关系进展和需要下次自然接上的话题。控制在 120 字内，只输出总结正文，不要客套。`, text);
+  const text = turns.map(t => `${t.role === 'user' ? '他' : '她'}：${String(t.content).slice(0, 300)}`).join('\n').slice(0, 12000);
+  return summarize('日记忆', `请总结 ${dateKey} 这一天的对话，提炼他（对方）的重要事实、偏好、情绪变化、关系进展和需要下次自然接上的话题（指代对方一律用'他'）。控制在 120 字内，只输出总结正文，不要客套。`, text);
 }
 
 async function summarizeMemoryList(kind, label, rows) {

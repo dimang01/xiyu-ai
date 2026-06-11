@@ -511,10 +511,10 @@ export async function handleMessage(rawMsg, botContext = {}) {
         log('info', `[Bot] 下载图片 ${cdnUrl.slice(0, 60)}`);
         const buf = await fetchBuffer(cdnUrl);
         userText = buf
-          ? `[用户发了一张图片，内容：${await recognizeImage(buf, 'image/jpeg')}]`
-          : '[用户发了一张图片，但下载失败]';
+          ? `[他发了一张图片，内容：${await recognizeImage(buf, 'image/jpeg')}]`
+          : '[他发了一张图片，但下载失败]';
       } else {
-        userText = '[用户发了一张图片]';
+        userText = '[他发了一张图片]';
       }
 
     } else if (msg.msgType === 'voice') {
@@ -539,13 +539,13 @@ export async function handleMessage(rawMsg, botContext = {}) {
         if (voiceMeta.tone) meta.push(`语气：${voiceMeta.tone}`);
         if (voiceMeta.energy) meta.push(`声音强度：${voiceMeta.energy}`);
         const metaStr = meta.length ? `（${meta.join('，')}）` : '';
-        userText = `[用户发了一段 ${playtimeSec || '?'} 秒语音${metaStr}，内容：${voiceMeta.transcript}]`;
+        userText = `[他发了一段 ${playtimeSec || '?'} 秒语音${metaStr}，内容：${voiceMeta.transcript}]`;
       } else if (fallbackTranscript) {
-        userText = `[用户发了一段 ${playtimeSec || '?'} 秒语音，内容：${fallbackTranscript}]`;
+        userText = `[他发了一段 ${playtimeSec || '?'} 秒语音，内容：${fallbackTranscript}]`;
         log('info', `[Bot] 入站语音 fallback text=${fallbackTranscript.slice(0, 80)}`);
       } else {
         log('warn', `[Bot] 入站语音两条路径都没拿到内容 voiceItem keys=${Object.keys(msg.voiceItem || {}).join(',')}`);
-        userText = '[系统提示：用户发了一段语音，但内容为空或无法识别；请用自然口吻问用户说了什么]';
+        userText = '[系统提示：他发了一段语音，但内容为空或无法识别；请用自然口吻问他说了什么]';
       }
 
     } else {
@@ -783,7 +783,7 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       const examples = intimacyOver.kind === 'address'
         ? '「诶？你怎么这样叫我」「我们才认识没多久…」「等熟一点再说嘛」「脸红」'
         : '「等等」「我们还没那么熟啦」「先慢慢来」「这样我会害羞的」';
-      systemPrompt += `\n\n【★ 用户用了过早的亲密词/动作】
+      systemPrompt += `\n\n【★ 他用了过早的亲密词/动作】
 对方刚刚用了亲密称呼或肢体亲密词，但你们才${stageNow}阶段，关系还没到那程度。
 你要：
 - **害羞但不冷漠**地委婉回避，**绝对不能破坏感情**
@@ -800,11 +800,11 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     if (userConfessed && !companion.user_confessed_at) {
       if (stageNow === '恋人' || stageNow === '深爱') {
         // 已经在一起：当甜蜜话接住，无门槛、不升级
-        systemPrompt += `\n\n【★ 用户又对你说喜欢/爱你】\n你们已经是恋人了，自然回应这份甜蜜：撒娇"嗯～我也爱你呀" / "你怎么突然这样" / "笨蛋"，别冷淡别装严肃。`;
+        systemPrompt += `\n\n【★ 他又对你说喜欢/爱你】\n你们已经是恋人了，自然回应这份甜蜜：撒娇"嗯～我也爱你呀" / "你怎么突然这样" / "笨蛋"，别冷淡别装严肃。`;
         try { markUserConfessed(companion.id); } catch {}
       } else if (canAcceptConfession(companion)) {
         // 够格 → 接住升恋人（markUserConfessed 让 sync 解锁，不再硬跳分数）
-        systemPrompt += `\n\n【★★ 用户向你告白，而且你愿意接受！】
+        systemPrompt += `\n\n【★★ 他向你告白，而且你愿意接受！】
 他终于开口表白，你认识够久、感情也够了，内心是高兴的：
 - 用害羞但开心的语气接住："我等你这句话好久了" / "我也是" / "嗯…我愿意"
 - 可以小撒娇："你怎么才说" / "傻瓜，早就该说了"
@@ -817,7 +817,7 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       } else {
         // 不够格（认识太短 / 好感不够）→ 端着婉拒，关系不升级、不标记（之后可再表白）
         const reason = daysSinceMeet(companion) < DAYS_TO_LOVER ? '你们认识时间还短' : '感情还没到那一步';
-        systemPrompt += `\n\n【★ 用户向你告白，但你想慢一点（这次先不答应）】
+        systemPrompt += `\n\n【★ 他向你告白，但你想慢一点（这次先不答应）】
 他刚表白，你觉得${reason}——不是不心动，是想慢慢来。回复要"端着"：
 - **不要直接答应**，也别冷漠拒绝：用"这么突然呀" / "我们……要不要再多了解了解" / "你确定不是一时冲动？" 这种
 - 可以流露"我对你也不是没感觉"，但**绝不能说"我愿意""我也喜欢你""在一起吧"这类答应的话**

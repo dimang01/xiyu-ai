@@ -380,7 +380,7 @@ export async function llmInferUserPersona(accountId) {
   }
   const sample = msgs.map((m, i) => `${i + 1}. ${m}`).join('\n').slice(0, 6000);
 
-  const sys = `你是用户画像分析助手。基于用户给 AI 女友发的真实消息样本，推断 2 个维度。
+  const sys = `你是聊天画像分析助手。基于他给 AI 女友发的真实消息样本，推断 2 个维度。
 必须输出 JSON，结构严格如下，不输出任何其他文字：
 
 {
@@ -397,7 +397,7 @@ export async function llmInferUserPersona(accountId) {
 
 不要编造，看不出就 unknown / 中间值 / 低 confidence。不要推断消费能力、不要推断付出索取关系。`;
 
-  const userContent = `以下是用户最近 ${msgs.length} 条消息（按时间正序）：\n\n${sample}\n\n请输出 JSON。`;
+  const userContent = `以下是他最近 ${msgs.length} 条消息（按时间正序）：\n\n${sample}\n\n请输出 JSON。`;
 
   try {
     const raw = await extractStructuredInfo(sys, userContent, { maxTokens: 250, temperature: 0.2 });

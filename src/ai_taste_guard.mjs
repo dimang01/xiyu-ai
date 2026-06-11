@@ -68,6 +68,7 @@ const WEIGHTS = {
   particle_overuse: 16,      // 语气词过量
   too_long_soft: 6,
   too_long_hard: 16,
+  user_wording_leak: 30,     // v1.21.3: 台词里出现"用户"= 人设穿帮（最重的一类）
 };
 
 /**
@@ -126,6 +127,12 @@ export function detectAiTaste(text) {
         weight: WEIGHTS.particle_overuse,
       });
     }
+  }
+
+  // 7. v1.21.3 称呼泄漏：她的台词里说"用户"等于承认对面是"产品的用户"。
+  //    "用户名/用户协议"是表单/法律词组，对话里出现同样穿帮，不豁免。
+  if (t.includes('用户')) {
+    hits.push({ type: 'user_wording_leak', text: '用户', weight: WEIGHTS.user_wording_leak });
   }
 
   // 6. length（按中文字符数粗算 = t.length，因为大多场景纯中文）

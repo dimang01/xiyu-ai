@@ -238,7 +238,7 @@ export async function webSearch(query, { maxResults = 5, timeoutMs = 8000 } = {}
  */
 export function formatSearchContext(query, results, { maxChars = 1500 } = {}) {
   if (!results || results.length === 0) return '';
-  let body = `## 联网搜索辅助信息\n用户提到时效相关话题。系统刚抓了一次搜索结果，供你参考（不是必须用）。\n查询：${query}\n\n`;
+  let body = `## 联网搜索辅助信息\n他提到了时效相关话题。系统刚抓了一次搜索结果，供你参考（不是必须用）。\n查询：${query}\n\n`;
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     const block = `[${i+1}] ${r.title}\n${r.snippet}\n${r.url ? '来源：' + r.url + '\n' : ''}\n`;

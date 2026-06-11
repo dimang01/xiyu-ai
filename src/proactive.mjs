@@ -1180,21 +1180,21 @@ function buildTimeContext(userProfile, dueReminders = [], now = new Date()) {
   for (const item of fixedHolidays(md)) special.push(item);
 
   if (userProfile?.user_birthday && userProfile.user_birthday.slice(5) === md) {
-    special.push('用户生日');
+    special.push('他的生日');
   }
 
   for (const item of userProfile?.important_dates || []) {
     const date = String(item.date || '');
     if (date === dateKey || date.slice(5) === md) {
-      special.push(item.label ? `用户纪念日：${item.label}` : '用户纪念日');
+      special.push(item.label ? `你们的纪念日：${item.label}` : '你们的纪念日');
     }
   }
 
   for (const reminder of dueReminders) {
     const label = reminder.reminder_type === 'birthday'
-      ? `用户生日：${reminder.title}`
+      ? `他的生日：${reminder.title}`
       : reminder.reminder_type === 'anniversary'
-        ? `用户纪念日：${reminder.title}`
+        ? `你们的纪念日：${reminder.title}`
         : `${reminder.title}`;
     special.push(label);
   }
