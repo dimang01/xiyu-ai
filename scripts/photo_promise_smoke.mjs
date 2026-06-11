@@ -45,7 +45,6 @@ ok(db.prepare('SELECT status FROM companion_open_loops WHERE id=?').get(id1).sta
 // ── 静态断言：承诺前可行性闸门（核心根因修复）──
 const bot = readFileSync(new URL('../src/bot.mjs', import.meta.url), 'utf8');
 // 调用方：strong 路径不再在 firePhotoTask 前发 ackText
-const callerBlock = bot.slice(bot.indexOf('inflightPhoto.add(companion.id);\n      firePhotoTask'));
 ok(bot.includes('ack 不再在此无条件发') && bot.includes('ack/婉拒/图/兜底全由 firePhotoTask 统一发'),
    '调用方 ack 已移除（不再 ack-before-feasibility）');
 // firePhotoTask：planner 通过才发 ack
