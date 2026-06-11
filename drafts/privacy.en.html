@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!-- DRAFT (drafted with v1.21.4; pending maintainer line-by-line review)
+     Every claim maps to a code fact — see drafts/FACT_CHECK.md. -->
+<html lang="en">
+<head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#FFB6D9" />
+  <title>Privacy Policy · Xiyu AI</title>
+  <link rel="icon" href="/logo.png?v=2" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/app/theme.js" defer></script>
+</head>
+<body class="bg-[#FFF5F9] text-[#1D1D1F] font-sans antialiased">
+  <main class="max-w-3xl mx-auto px-6 py-12">
+    <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← Home</a>
+
+    <h1 class="mt-6 text-3xl font-bold tracking-tight">Privacy Policy</h1>
+    <p class="mt-2 text-sm text-[#86868B]">Effective date: __________ | <a href="/app/privacy.html" class="underline">中文版</a></p>
+
+    <article class="mt-8 space-y-6 leading-7 text-[15px]">
+
+      <section>
+        <h2 class="text-xl font-bold">1. What We Collect</h2>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li><b>Account data</b>: username, email, password (stored as a salted hash — we cannot see the original), and the date of birth provided at registration (used solely for adult verification);</li>
+          <li><b>Chat content</b>: your text conversations with the AI companion;</li>
+          <li><b>WeChat binding identifier</b>: if you bind WeChat, the user identifier WeChat assigns (used for message routing; it does not include your WeChat password or contacts);</li>
+          <li><b>Recognition results of voice and images</b>: voice messages are transcribed to text and images are converted to text descriptions before entering the conversation record. <b>The original audio and image files are not retained</b> — audio exists only in memory and a temp directory during transcoding and is deleted immediately; images are recognised in memory and discarded;</li>
+          <li><b>Derived data</b>: memory entries, emotional state and relationship progress the AI distils from conversations (generated to make "she remembers you" work).</li>
+        </ul>
+        <p class="mt-2">We do <b>not</b> collect contacts, geolocation, device fingerprints, browsing history, or anything else unrelated to the Service.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">2. How We Use It</h2>
+        <p>The data above serves exactly three purposes: <b>generating replies</b> (sending conversation context to LLMs), the <b>memory system</b> (so she remembers what you've told her), and <b>troubleshooting</b> (the operator touches data only when strictly necessary, e.g. diagnosing faults).</p>
+        <p class="mt-2">We promise: <b>we never sell your data, never use it to train models of our own, and show no ads.</b></p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">3. Third-Party Processing</h2>
+        <p>To generate replies, conversation content is sent to third-party LLM providers, subject to their respective terms. Providers currently in use, by function (the lineup may change as the Service evolves):</p>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>Chat generation: DeepSeek;</li>
+          <li>Image generation: 302.AI (an API relay service);</li>
+          <li>Speech transcription and image recognition: Alibaba Cloud Qwen;</li>
+          <li>Speech synthesis: MiniMax;</li>
+          <li>Web search (when your question involves current events): Tavily — only distilled search keywords are sent;</li>
+          <li>Email (verification codes, notices): Resend — only your email address and the message content are sent.</li>
+        </ul>
+        <p class="mt-2">We share your data with no third parties beyond these, except where required by law.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">4. Storage and Retention</h2>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>Data is stored on the operator's server; all transport is HTTPS-encrypted. <b>The database is not currently encrypted at rest</b> (i.e. the operator can technically access raw data at the server level) — we state this plainly;</li>
+          <li><b>Raw chat logs are auto-purged after 60 days</b>; per companion, only the most recent ~100 conversation turns are kept — older content is condensed into memory summaries and the originals deleted;</li>
+          <li><b>Memory summaries</b> (e.g. "he has a cat") are kept long-term until you delete them or your account;</li>
+          <li>Daily automatic backups, rolling over after 7 days.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">5. Sensitive-Information Filtering</h2>
+        <p>A built-in filter processes data before it can enter long-term memory:</p>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>Passwords, API keys, government ID numbers, bank card numbers and other credentials — <b>rejected outright from long-term memory</b>;</li>
+          <li>Phone numbers, street addresses, school-and-class combinations — <b>redacted before storage</b>.</li>
+        </ul>
+        <p class="mt-2">The filter applies to long-term memory and derived data; raw chat logs within the 60-day window are not filtered (they expire automatically). Please avoid sending credentials in chat.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">6. Your Rights</h2>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li><b>View</b>: the Memory Management page shows everything she remembers; persona and core memories can be exported as JSON in one click;</li>
+          <li><b>Delete memories</b>: remove single entries or everything from the Memory Management page, effective immediately;</li>
+          <li><b>Delete a companion</b>: remove an AI companion and all its associated data from the management page;</li>
+          <li><b>Delete your account</b>: there is currently no self-service account deletion. To fully delete your account and data, email <b>[operator contact email — to be filled by maintainer]</b>; we will process it manually and confirm within 15 business days.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">7. Minors</h2>
+        <p>The Service is for adults 18+ only and we do not knowingly collect minors' data. When signals suggest a user may be underage the system automatically enters safe mode (see Terms of Service §2). Guardians who discover a minor using the Service may contact us to delete the related data.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">8. Changes</h2>
+        <p>When this policy changes we update the effective date above; material changes are additionally announced in-site. Continued use constitutes acceptance.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">9. Contact</h2>
+        <p>Privacy questions and data-deletion requests: <b>[operator contact email — to be filled by maintainer]</b></p>
+      </section>
+
+    </article>
+  </main>
+</body>
+</html>
