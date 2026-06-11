@@ -389,7 +389,7 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
     parts.push(`\n【你不喜欢】${c.dislikes.join('、')}。\n聊到这些你会**直接说不喜欢**，不强迫自己附和。比如：「这个我不行」「不太行」「看不下去」「我不爱这个」。\n★ 不是回避，是真表达。是你这个人的偏好。`);
   }
 
-  // M1: 用户亲手"调教"过她的（称呼/风格/雷区/约定/专属梗）—— 高优先级，她必守。
+  // M1: 你们的默契——他亲手教过她的（称呼/风格/雷区/约定/专属梗），高优先级她必守。
   // hint 字符串由调用方(bot/proactive) 用 shaping.buildShapingPromptHint 预先算好传入，保持本函数纯。
   if (shapingHint) parts.push(shapingHint);
 

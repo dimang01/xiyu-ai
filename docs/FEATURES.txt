@@ -187,7 +187,7 @@ TTS (1 家，v1.4.0+)     MiniMax speech-02-turbo（Sprint 3 会加 豆包 /
                          ▸ src/web_search.mjs
 
 定价配置 (P2A)          config/provider_pricing.json（gitignored）
-                         AI 用量面板估算成本，自填不硬编码价格
+                         AI 用量统计 admin-only（v1.21.3 起对用户隐身），自填不硬编码价格
 
 
 【六】v1.4.0 网页语音体系
@@ -252,7 +252,7 @@ context_token 持久化     side-effect of v1.4.0：ilink_context_tokens 表
 控制台 Dashboard        /app/dashboard.html · 头像 mood 圆环 / 好感度 /
                          关系阶段 / 想念度小条 (v1.4.1) / "她现在在做"
                          / 时间轴 / CP 卡片 / 主动找你滑块 / 语音体验 /
-                         今天她想你气泡 (v1.4.1) / 情绪趋势 / AI 用量
+                         今天她想你气泡 (v1.4.1) / 情绪趋势
 
 记忆管理                /app/memories.html · 7 层筛选、增删改查、置顶/
                          锁定/归档

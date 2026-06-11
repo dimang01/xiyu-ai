@@ -161,7 +161,7 @@ import {
   deleteCompanionForAccount,
   getMemoriesV2, patchMemory, softDeleteMemory, archiveMemory, isCompanionOwnedByAccount,
   listPreferences, upsertPreference, deletePreference,  // v1.8.0 #3
-  listShaping,  // 共建留痕（你把她调教成什么样）
+  listShaping,  // 共建留痕（你们的默契）
   upsertEmotionState,
   getEmotionHistoryTrend,
   getDiaryEntries, countDiaryEntries,
@@ -1803,7 +1803,7 @@ router.get('/companions/:id/persona', requireAuth, (req, res) => {
   return ok(res, { companion_id: id, total: facts.length, facts: grouped });
 });
 
-// GET /api/companions/:id/shaping — 你把她"调教"成了什么样（共建留痕）
+// GET /api/companions/:id/shaping — 你们的默契（共建留痕）
 router.get('/companions/:id/shaping', requireAuth, (req, res) => {
   const id = intId(req.params.id); if (!id) return err(res, 'id 无效');
   const c = requireOwnedCompanion(req, res, id); if (!c) return;
@@ -3603,7 +3603,9 @@ router.get('/companions/:id/prompt-debug', requireAuth, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /api/me/ai-usage?days=7
-router.get('/me/ai-usage', requireAuth, (req, res) => {
+// v1.21.3: admin-only——token/成本/provider 是运营数据，对用户隐身（连她的
+// dashboard 也不再展示；普通用户感知里没有"计费的 AI"这回事）
+router.get('/me/ai-usage', requireAdmin, (req, res) => {
   noStore(res);
   const accountId = req.authUser.id;
   const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));

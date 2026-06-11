@@ -195,7 +195,6 @@
       "主动找你": "She reaches out",
       "表情包回复": "Sticker replies",
       "网页语音体验": "Web voice",
-      "AI 用量": "AI usage",
       "时光胶囊": "Time capsule",
       "刷新": "Refresh",
       "补全 3 个月互动史": "Backfill 3 months of history",
@@ -205,7 +204,6 @@
       "小贴士": "Tips",
       "我们的故事": "Our story",
       "近 7 天情绪趋势": "Mood trend (last 7 days)",
-      "AI 用量（近 7 天）": "AI usage (last 7 days)",
       "关系里程碑": "Relationship milestones",
       "角色备份": "Character backup",
       "⚙ 模型设置": "⚙ Model settings",
@@ -287,9 +285,9 @@
       "请打开微信，找到溪语与她聊天；或用上面「网页聊天」": "Open WeChat and find Xiyu to chat with her; or use \"Web chat\" above",
       "记忆管理": "Memory manager",
       "依恋风格": "Attachment style",
-      "你把她调教成了什么样": "How you've shaped her",
+      "你们的默契": "Your shared rituals",
       "你聊天里教过她的、你们共建的默契——只属于你们俩。": "What you've taught her in chat — your shared, one-of-a-kind dynamic.",
-      "决定她被你冷落（很久不回）时的反应方式。": "How she reacts when you neglect her (go a long time without replying).",
+      "决定你们闹别扭和和好时她的样子：受伤多快、别扭多深、和好多慢。": "Shapes how she weathers rough patches: how quickly she gets hurt, how deep she withdraws, how slowly she warms back up.",
       "安全型": "Secure",
       "焦虑型": "Anxious",
       "回避型": "Avoidant",
@@ -786,7 +784,7 @@
             <h3 class="text-[15px] font-bold">依恋风格</h3>
           </div>
           <p class="text-[12px] text-mute font-medium leading-relaxed mt-2 mb-3">
-            决定她被你冷落（很久不回）时的反应方式。
+            决定你们闹别扭和和好时她的样子：受伤多快、别扭多深、和好多慢。
           </p>
           <div class="grid grid-cols-3 gap-2" id="attach-options">
             <button type="button" data-val="secure"   class="attach-opt py-2 text-[12px] font-bold rounded-xl border border-sakura-soft text-mute transition-all">安全型</button>
@@ -807,13 +805,13 @@
           </div>
         </div>
 
-        <!-- M3 共建留痕：你把她调教成了什么样 -->
+        <!-- M3 共建留痕：你们的默契 -->
         <div class="card p-7" id="shaping-card" style="display:none">
           <div class="flex items-center gap-3 mb-1">
             <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
               <i data-lucide="sparkles" class="w-5 h-5 text-sakura-deep"></i>
             </div>
-            <h3 class="text-[15px] font-bold">你把她调教成了什么样</h3>
+            <h3 class="text-[15px] font-bold">你们的默契</h3>
           </div>
           <p class="text-[12px] text-mute font-medium leading-relaxed mt-2 mb-3">
             你聊天里教过她的、你们共建的默契——只属于你们俩。
@@ -864,39 +862,6 @@
           </div>
         </div>
 
-        <!-- v1.9.8: AI 用量自查（per-account 透明度） -->
-        <div class="card p-7" id="ai-usage-card">
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-sakura-soft flex items-center justify-center">
-                <i data-lucide="activity" class="w-5 h-5 text-sakura-deep"></i>
-              </div>
-              <h3 class="text-[15px] font-bold">AI 用量</h3>
-            </div>
-            <select id="usage-days-select" class="text-[11px] font-medium text-mute bg-cloud border border-line rounded-lg px-2 py-1">
-              <option value="7" selected>近 7 天</option>
-              <option value="30">近 30 天</option>
-              <option value="90">近 90 天</option>
-            </select>
-          </div>
-          <div class="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <div class="text-[18px] font-bold text-sakura-deep" id="usage-messages">—</div>
-              <div class="text-[10px] text-mute font-medium mt-0.5">消息数</div>
-            </div>
-            <div>
-              <div class="text-[18px] font-bold text-sakura-deep" id="usage-tokens">—</div>
-              <div class="text-[10px] text-mute font-medium mt-0.5">总 token</div>
-            </div>
-            <div>
-              <div class="text-[18px] font-bold text-sakura-deep" id="usage-cost">—</div>
-              <div class="text-[10px] text-mute font-medium mt-0.5">估算花费</div>
-            </div>
-          </div>
-          <p class="text-[11px] text-mute/80 font-medium mt-3 leading-relaxed">
-            按当前 chat provider 价格估算。<span id="usage-provider"></span>本地 Ollama 走免费路径不计费。
-          </p>
-        </div>
 
         <!-- 时光胶囊（v1.5） -->
         <div class="card p-7">
@@ -1065,7 +1030,7 @@
     </section>
 
     <!-- ─── 情绪趋势 & AI 用量 ───────────────────────────────────────────── -->
-    <section id="trend-section" class="hidden mt-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+    <section id="trend-section" class="hidden mt-6 grid grid-cols-1 gap-5">
 
       <!-- 情绪曲线 -->
       <div class="card p-6">
@@ -1078,43 +1043,14 @@
         </div>
         <div class="mt-3 flex flex-wrap gap-2" id="emotion-legend"></div>
         <p id="emotion-empty" class="hidden text-[12px] text-mute text-center py-6">暂无情绪历史数据，聊几天后再来看看</p>
-      </div>
-
-      <!-- AI 今日用量 -->
-      <div class="card p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-[15px] font-bold">AI 用量（近 7 天）</h3>
-          <span class="text-[11px] text-mute">tokens</span>
-        </div>
-        <div id="usage-body">
-          <div class="space-y-3">
-            <div class="flex items-center justify-between text-[13px]">
-              <span class="text-mute">提示 tokens</span>
-              <span id="usage-prompt" class="font-semibold">—</span>
-            </div>
-            <div class="flex items-center justify-between text-[13px]">
-              <span class="text-mute">回复 tokens</span>
-              <span id="usage-completion" class="font-semibold">—</span>
-            </div>
-            <div class="flex items-center justify-between text-[13px]">
-              <span class="text-mute">消息条数</span>
-              <span id="usage-messages" class="font-semibold">—</span>
-            </div>
-            <div class="flex items-center justify-between text-[13px] pt-3 border-t border-line">
-              <span class="font-bold">合计 tokens</span>
-              <span id="usage-total" class="font-bold text-sakura-deep">—</span>
-            </div>
-          </div>
-          <div id="usage-bar-area" class="mt-4 space-y-1.5"></div>
-        </div>
-        <p id="usage-empty" class="hidden text-[12px] text-mute text-center py-6">暂无用量数据</p>
         <!-- 开发者工具入口 -->
-        <div class="mt-4 pt-4 border-t border-line">
+        <div class="mt-3 pt-3 border-t border-line">
           <a id="link-debug-prompt" href="#" class="text-[12px] text-mute hover:text-sakura-deep transition-colors flex items-center gap-1">
             <i data-lucide="terminal" class="w-3.5 h-3.5"></i> Prompt 调试面板
           </a>
         </div>
       </div>
+
 
     </section>
 
@@ -2158,9 +2094,9 @@
       // v1.14: 依恋风格选择器
       (function initAttach(){
         const DESC = {
-          secure:   '安全型：情绪稳定，不患得患失。想你会直接说，被冷落也不闹，相信你们的关系。',
-          anxious:  '焦虑型：很黏、很在乎。你久不回她会胡思乱想、追着找你、容易委屈；但你一哄就软，和好很快。',
-          avoidant: '回避型：独立高冷，不爱主动示弱。你冷落她，她反而更早把自己收起来、装不在意、用冷淡保护自己。',
+          secure:   '安全型：受了委屈会直说"我有点难过"，不憋着也不闹。别扭来得慢、好得快，哄一句真心的就过去了。',
+          anxious:  '焦虑型：心思重、在乎得快，一点冷落就胡思乱想。但她软得也快，你一句正经道歉就忍不住原谅你。',
+          avoidant: '回避型：受伤不说，先把自己收起来装不在意。冷得久、解冻慢，和好后还会别扭一阵子才真正回暖。',
         };
         const opts = document.querySelectorAll('.attach-opt');
         const descEl = document.getElementById('attach-desc');
@@ -2210,48 +2146,11 @@
       loadP2Section(companionId);
 
       // v1.9.8: AI 用量卡片
-      loadAiUsage(7);
-      const usageSelect = document.getElementById('usage-days-select');
-      if (usageSelect) {
-        usageSelect.addEventListener('change', e => loadAiUsage(Number(e.target.value) || 7));
-      }
 
       // reveal in
       document.querySelectorAll('.reveal').forEach((el, i) => {
         setTimeout(() => el.classList.add('in'), 80 * i);
       });
-    }
-
-    // v1.9.8: 调 /me/ai-usage 填充用量卡片
-    async function loadAiUsage(days) {
-      const elMsg = document.getElementById('usage-messages');
-      const elTok = document.getElementById('usage-tokens');
-      const elCost = document.getElementById('usage-cost');
-      const elProv = document.getElementById('usage-provider');
-      if (!elMsg) return;
-      try {
-        const r = await fetch('/api/me/ai-usage?days=' + encodeURIComponent(days), {
-          headers: { Authorization: 'Bearer ' + token },
-        });
-        const d = await r.json();
-        if (!r.ok || !d.ok) throw new Error(d.message || 'failed');
-        const t = d.data?.totals || {};
-        const fmt = n => (typeof n === 'number' ? n.toLocaleString('en-US') : '—');
-        elMsg.textContent = fmt(t.message_count || 0);
-        elTok.textContent = fmt(t.total_tokens || 0);
-        if (t.estimated_cost == null) {
-          elCost.textContent = '—';
-        } else {
-          const cur = t.currency || 'USD';
-          const symbol = cur === 'CNY' ? '¥' : (cur === 'USD' ? '$' : (cur + ' '));
-          // 显示 4 位小数；过小用科学计数法可读性差
-          elCost.textContent = symbol + Number(t.estimated_cost).toFixed(4);
-        }
-        if (elProv && d.data?.provider) elProv.textContent = `当前: ${d.data.provider}。`;
-      } catch (e) {
-        elMsg.textContent = elTok.textContent = elCost.textContent = '—';
-        console.warn('[ai-usage] load failed', e);
-      }
     }
 
     // ─── 她现在（实时状态）────────────────────────────────────────────
@@ -2546,13 +2445,8 @@
     async function loadTrendSection(companionId) {
       try {
         const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token') || '';
-        const [emotionResp, usageResp] = await Promise.all([
-          fetch(`/api/companions/${companionId}/emotion-trend?days=7`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`/api/me/ai-usage?days=7`, { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
-
+        const emotionResp = await fetch(`/api/companions/${companionId}/emotion-trend?days=7`, { headers: { Authorization: `Bearer ${token}` } });
         const emotionData = emotionResp.ok ? (await emotionResp.json()).data : null;
-        const usageData   = usageResp.ok  ? (await usageResp.json()).data  : null;
 
         document.getElementById('trend-section').classList.remove('hidden');
         document.getElementById('link-debug-prompt').href = `/app/debug-prompt.html?id=${companionId}`;
@@ -2566,20 +2460,6 @@
         } else {
           document.getElementById('emotion-canvas').style.display = 'none';
           document.getElementById('emotion-empty').classList.remove('hidden');
-        }
-
-        // AI Usage
-        if (usageData && (usageData.totals.total_tokens > 0 || usageData.totals.message_count > 0)) {
-          document.getElementById('usage-empty').classList.add('hidden');
-          const t = usageData.totals;
-          document.getElementById('usage-prompt').textContent     = t.prompt_tokens.toLocaleString();
-          document.getElementById('usage-completion').textContent = t.completion_tokens.toLocaleString();
-          document.getElementById('usage-messages').textContent   = t.message_count.toLocaleString() + ' 条';
-          document.getElementById('usage-total').textContent      = t.total_tokens.toLocaleString();
-          renderUsageBars(usageData.by_day || []);
-        } else {
-          document.getElementById('usage-empty').classList.remove('hidden');
-          document.getElementById('usage-body').classList.add('hidden');
         }
       } catch (e) {
         console.warn('[TrendSection]', e.message);
@@ -2632,22 +2512,6 @@
       ).join('');
     }
 
-    function renderUsageBars(byDay) {
-      const area = document.getElementById('usage-bar-area');
-      if (!area || !byDay.length) return;
-      const maxTokens = Math.max(...byDay.map(r => (r.total_tokens || 0)), 1);
-      const recent = byDay.slice(0, 7).reverse();
-      area.innerHTML = recent.map(r => {
-        const pct = Math.round(((r.total_tokens || 0) / maxTokens) * 100);
-        return `<div class="flex items-center gap-2 text-[11px]">
-          <span class="text-mute w-12 flex-shrink-0">${(r.day || '').slice(5)}</span>
-          <div class="flex-1 bg-line rounded-full h-2 overflow-hidden">
-            <div class="h-full rounded-full bg-gradient-to-r from-sakura to-sakura-deep" style="width:${pct}%"></div>
-          </div>
-          <span class="text-mute w-14 text-right">${(r.total_tokens || 0).toLocaleString()}</span>
-        </div>`;
-      }).join('');
-    }
 
     function formatDateShort(s) {
       if (!s) return '';

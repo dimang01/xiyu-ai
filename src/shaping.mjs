@@ -82,7 +82,7 @@ export function buildShapingConfirmHint(taught = []) {
     if (t.kind === 'fact')     return `他告诉你关于他：「${t.content}」`;
     return `「${t.content}」`;
   });
-  return `\n【★ 他正在"调教"你 —— 本条最高优先级】\n他这条在教你 / 定规矩：\n- ${lines.join('\n- ')}\n你要**自然地答应、表示记住了**（用你的语气，别像机器人确认，可以小傲娇 / 小调皮），并从现在起真的照做。这是你们俩独有的默契。`;
+  return `\n【★ 他正在跟你定属于你们俩的默契 —— 本条最高优先级】\n他这条在教你 / 定规矩：\n- ${lines.join('\n- ')}\n你要**自然地答应、表示记住了**（用你的语气，别像机器人确认，可以小傲娇 / 小调皮），并从现在起真的照做。这是你们俩独有的默契。`;
 }
 
 /** 注入人设：把"他教过你的"作为高优先级规则带进每次回复。shapingList = listShaping(companionId)。 */
@@ -98,5 +98,5 @@ export function buildShapingPromptHint(shapingList = []) {
   if (byKind.fact?.length)     parts.push(`- 记得关于他：${byKind.fact.join('；')}`);
   if (byKind.lexicon?.length)  parts.push(`- 你们的专属梗（可自然复用）：${byKind.lexicon.join('、')}`);
   if (!parts.length) return '';
-  return `\n【★ 他亲手"调教"过你的（你们俩独有的默契，优先级高于通用人设）】\n${parts.join('\n')}`;
+  return `\n【★ 你们俩的默契（他亲手教过你的，优先级高于通用人设）】\n${parts.join('\n')}`;
 }
