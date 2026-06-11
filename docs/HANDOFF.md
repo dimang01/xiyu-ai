@@ -1,4 +1,4 @@
-# 新对话交接提示词（2026-06-11 刷新，对应 v1.21.4）
+# 新对话交接提示词（2026-06-12 刷新，对应 v1.21.5）
 
 > 把下面整段复制给新对话作为第一条消息。它包含让新执行者立刻能干活所需的
 > 全部上下文，不依赖任何前面的对话。
@@ -14,6 +14,7 @@
 | 2026-06-11 | #279 修复方案：根因修 prompt 组装重复 + 入站二级查重纵深（键=sender+内容+微信侧 create_time，退化 60s 窗）；issue 模板加官方托管选项；gh 只读、对外发言由维护者本人 | ✅ 已执行 |
 | 2026-06-11 | #281 取 A（出口护栏 scrubPhotoImpersonation）+ B（sticker prompt 禁令），C（过去式 promise→真生成场景照）拆入 v1.21.4「她的世界的视觉一致性」 | ✅ 本次执行 |
 | 2026-06-11 | v1.21.4 前置：好/坏样本标注工具（admin 页+annotation_corpus 表+JSONL 导出）——微调语料生产线，纯只读消费 turns 零运行时风险 | ✅ 本次执行 |
+| 2026-06-12 | 照片承诺兑现链修复（patch v1.21.5）：PR-A 取证(开环根因)→PR-B 承诺前可行性闸门+超时兜底+her_promise 改期履约+时序修复→PR-C 月相锚定(纯数学杜绝凭空满月)；顺手补 bot.log logrotate | ✅ 已执行 |
 
 ---
 
@@ -26,7 +27,7 @@
 - **生产克隆：`/opt/xiyu-ai-new`**（main HEAD = 生产 HEAD，发版后 `git pull` + 重启）
 - GitHub：`https://github.com/dimang01/xiyu-ai`
 - 默认分支：`main`
-- **当前版本：v1.21.4**（package.json 与 git tag 已同步，发版时一起升）
+- **当前版本：v1.21.5**（package.json 与 git tag 已同步，发版时一起升）
 - 规模：58 个 `src/**.mjs`（含 providers/security 子目录）· 17 个 `public/app/*.html` · 87 个 `scripts/` · 100+ releases
 
 功能全景：README「它能做什么」最新最准；`docs/FEATURES.txt` 详述的是

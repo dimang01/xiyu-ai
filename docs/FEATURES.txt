@@ -38,6 +38,9 @@
   · v1.21.2 静默失败变响：ESLint 进 CI / digest 错误签名段(首杀
             Reflection 8 天断供) / proactive 死人开关(心跳+邮件) /
             照片比例修复(机位路由 3:4 竖屏+落库防回归)
+  · v1.21.5 照片承诺兑现链：承诺前可行性闸门(planner 前移,通过才答应)/
+            gen 超时兜底+her_promise 改期补发(proactive 到点"喏 补给你的")/
+            月相锚定 moon_phase.mjs(纯数学,杜绝凭空满月)/bot.log logrotate
   · v1.21.4 标注生产线：/app/annotate.html(admin) 好/坏+tag+备注
             标真实回复,annotation_corpus 表,export-corpus.mjs 出 JSONL
             微调语料;#279 重复消息修复(上下文去重+协议重推查重);
