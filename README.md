@@ -328,7 +328,8 @@ npm run smoke           # release smoke；bash scripts/opensource_check.sh 开�
 - **错误签名日报**：近 24h 的 error 日志按归一化签名归并（计数 / 环比 / 首现），新签名高亮——静默失败第一时间变响
 - **proactive 死人开关**：每小时心跳，活跃用户在但主动消息全断时 CRITICAL + 邮件告警（`ADMIN_ALERT_EMAIL`），纯报警零自愈
 - **emotion-debug 面板**（`/app/emotion-debug.html`，admin）：关系弧状态 / 事件流水 / 每条消息的情绪增量及原因——情绪因果可查，不上线玄学
-- **CI 门禁 25 项**：语法 / lint / 字段漂移对账 / 发布一致性 / 各功能 smoke / 红线护栏——新规则都做过"红色验证"（对坏版本跑必须红）
+- **样本标注工具**（`/app/annotate.html`，admin）：读真实回复时顺手标 好/坏 + tag（AI味/化验单腔调/神来之笔…），`scripts/export-corpus.mjs` 导出 JSONL——微调语料生产线，"读"变成"攒"
+- **CI 门禁 31 项**：语法 / lint / 字段漂移对账 / 发布一致性 / 各功能 smoke / 红线护栏——新规则都做过"红色验证"（对坏版本跑必须红）
 - **运维钳位**：`ARC_MAX_STATE` 可临时封顶冲突状态（生产误伤免回滚的保险丝；与未成年人保护相反——那个是不可关的安全底线）
 
 ---

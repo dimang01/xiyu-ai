@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<!-- v1.21.4: 好/坏样本标注工具（admin 鉴权）——微调语料生产线。
+     每天人工读真实回复时顺手标注：好/坏 + tag + 备注，单条即存。
+     纯只读消费 conversation_turns，绝不回写运行时。导出走 scripts/export-corpus.mjs。
+-->
+<html lang="zh-CN">
+<head>
+  <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>样本标注 · Admin · 溪语AI</title>
+  <link rel="icon" href="/logo.png?v=2" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/glass.css" />
+  <script>
+    tailwind.config = { theme: { extend: { colors: {
+      sakura:'#FFB6D9','sakura-soft':'#FFE8F2','sakura-deep':'#FF8FB8',
+      ink:'#1D1D1F', mute:'#86868B', line:'#F0F0F2', cloud:'#FAFAFA', danger:'#FF4D4F',
+    }}}};
+  </script>
+  <style>
+    body { background:
+      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255,182,217,.25), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 100% 100%, rgba(255,182,217,.15), transparent 60%),
+      #FAFAFA; }
+    .card { background: rgba(255,255,255,.7); backdrop-filter: blur(20px); border: 1px solid #F0F0F2; border-radius: 20px; }
+    .tag-chip { padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid #F0F0F2; cursor: pointer; color: #86868B; background: #fff; }
+    .tag-chip.on { background: #FFE8F2; color: #FF6FA3; border-color: #FFB6D9; }
+    .lbl-btn { padding: 4px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; border: 1px solid #F0F0F2; cursor: pointer; background: #fff; color: #86868B; }
+    .lbl-btn.good.on { background: #E8F8EE; color: #1F9D55; border-color: #1F9D55; }
+    .lbl-btn.bad.on  { background: #FFF1F0; color: #E0596B; border-color: #E0596B; }
+    .mono { font-family: ui-monospace, monospace; font-size: 11.5px; }
+    .ctx { font-size: 12px; color: #86868B; }
+  </style>
+  <script src="/app/theme.js" defer></script>
+</head>
+
+<body class="min-h-screen font-sans text-ink antialiased">
+
+  <header class="border-b border-line bg-white/80 backdrop-blur-xl sticky top-0 z-20">
+    <div class="mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2" style="max-width:1080px;">
+      <a href="/app/admin.html" class="flex items-center gap-2 flex-shrink-0">
+        <img src="/logo-256.webp?v=2" alt="" class="w-7 h-7 rounded-lg" />
+        <span class="text-[15px] font-semibold whitespace-nowrap">溪语AI · 样本标注</span>
+      </a>
+      <div class="flex items-center gap-3 text-[12.5px] text-mute">
+        <span>今日 <b id="st-today" class="text-ink">—</b></span>
+        <span>good <b id="st-good" class="text-[#1F9D55]">—</b></span>
+        <span>bad <b id="st-bad" class="text-[#E0596B]">—</b></span>
+        <a href="/app/admin.html" class="font-medium hover:text-ink">← Admin</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto p-4 sm:p-6 space-y-4" style="max-width:1080px;">
+
+    <div class="card p-4 flex items-end gap-3 flex-wrap">
+      <div>
+        <label class="block text-[12px] font-semibold text-mute mb-1.5">Companion ID（空 = 全部）</label>
+        <input id="input-id" type="number" placeholder="全部"
+               class="px-3 py-2 text-[14px] bg-cloud border border-line rounded-xl font-medium w-32" />
+      </div>
+      <div>
+        <label class="block text-[12px] font-semibold text-mute mb-1.5">条数</label>
+        <input id="input-limit" type="number" value="100"
+               class="px-3 py-2 text-[14px] bg-cloud border border-line rounded-xl font-medium w-24" />
+      </div>
+      <button id="btn-load" class="px-5 py-2 text-[14px] font-semibold bg-sakura-deep text-white rounded-xl hover:opacity-90">加载</button>
+      <span id="hint" class="text-[12px] text-mute"></span>
+    </div>
+
+    <div id="list" class="space-y-3"></div>
+
+  </main>
+
+  <script>
+    const token = localStorage.getItem('xiyu_admin_token') || '';
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    let TAGS = [];
+
+    async function api(path, opts = {}) {
+      const r = await fetch(path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, ...(opts.headers || {}) },
+      });
+      if (r.status === 401) { localStorage.removeItem('xiyu_admin_token'); location.href = '/app/admin.html'; return null; }
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || d.message || ('HTTP ' + r.status));
+      return d.data ?? d;
+    }
+
+    async function loadStats() {
+      try {
+        const s = await api('/api/admin/annotate/stats');
+        if (!s) return;
+        $('st-today').textContent = s.today; $('st-good').textContent = s.good; $('st-bad').textContent = s.bad;
+      } catch (e) { /* 计数失败不挡标注 */ }
+    }
+
+    function renderItem(t) {
+      const ann = t.annotation;
+      const annTags = ann ? JSON.parse(ann.tags || '[]') : [];
+      const ctxHtml = (t.context || []).map(c =>
+        `<div class="ctx">${c.role === 'user' ? '👤' : '🌸'} ${esc(c.content).slice(0, 200)}</div>`).join('');
+      const tagsHtml = TAGS.map(tg =>
+        `<span class="tag-chip${annTags.includes(tg) ? ' on' : ''}" data-tag="${esc(tg)}">${esc(tg)}</span>`).join('');
+      const el = document.createElement('div');
+      el.className = 'card p-4';
+      el.dataset.turn = t.id;
+      el.innerHTML = `
+        <div class="flex items-start justify-between gap-3 mb-2">
+          <div class="text-[11.5px] text-mute">#${t.companion_id}(${esc(t.companion_name)}) · turn ${t.id} · ${esc(t.created_at)} · arc=${esc(t.arc_state)}</div>
+          <span class="saved-mark text-[11px] font-semibold ${ann ? 'text-[#1F9D55]' : 'text-mute'}">${ann ? '已标 ' + ann.label : '未标'}</span>
+        </div>
+        <details class="mb-2"${(t.context || []).length ? '' : ' style="display:none"'}>
+          <summary class="text-[11.5px] text-mute cursor-pointer">前 ${(t.context || []).length} 条上下文</summary>
+          <div class="mt-1 space-y-0.5 pl-2 border-l-2 border-line">${ctxHtml}</div>
+        </details>
+        <div class="text-[14px] leading-relaxed mb-3 whitespace-pre-wrap">${esc(t.content)}</div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button class="lbl-btn good${ann?.label === 'good' ? ' on' : ''}" data-label="good">好</button>
+          <button class="lbl-btn bad${ann?.label === 'bad' ? ' on' : ''}" data-label="bad">坏</button>
+          <div class="flex gap-1.5 flex-wrap">${tagsHtml}</div>
+          <input class="note-input px-2 py-1 text-[12px] bg-cloud border border-line rounded-lg flex-1 min-w-[140px]"
+                 placeholder="备注（可选）" maxlength="200" value="${esc(ann?.note || '')}" />
+        </div>`;
+
+      const save = async (label) => {
+        const tags = [...el.querySelectorAll('.tag-chip.on')].map(x => x.dataset.tag);
+        const note = el.querySelector('.note-input').value.trim() || null;
+        const mark = el.querySelector('.saved-mark');
+        try {
+          await api('/api/admin/annotate', {
+            method: 'POST',
+            body: JSON.stringify({ turn_id: t.id, companion_id: t.companion_id, label, tags, note }),
+          });
+          el.querySelectorAll('.lbl-btn').forEach(b => b.classList.toggle('on', b.dataset.label === label));
+          mark.textContent = '已标 ' + label; mark.className = 'saved-mark text-[11px] font-semibold text-[#1F9D55]';
+          loadStats();
+        } catch (e) { mark.textContent = '保存失败：' + e.message; mark.className = 'saved-mark text-[11px] font-semibold text-danger'; }
+      };
+      el.querySelectorAll('.lbl-btn').forEach(b => b.addEventListener('click', () => save(b.dataset.label)));
+      el.querySelectorAll('.tag-chip').forEach(c => c.addEventListener('click', () => {
+        c.classList.toggle('on');
+        // tag 改动后若已有 label，立即按当前 label 重存（覆盖更新）
+        const cur = el.querySelector('.lbl-btn.on');
+        if (cur) save(cur.dataset.label);
+      }));
+      return el;
+    }
+
+    async function load() {
+      $('hint').textContent = '加载中…';
+      try {
+        if (!TAGS.length) TAGS = (await api('/api/admin/annotate/tags'))?.tags || [];
+        const id = Number($('input-id').value) || '';
+        const limit = Number($('input-limit').value) || 100;
+        const rows = await api(`/api/admin/annotate/turns?companion=${id}&limit=${limit}`);
+        if (!rows) return;
+        const list = $('list');
+        list.innerHTML = '';
+        rows.forEach(t => list.appendChild(renderItem(t)));
+        $('hint').textContent = `${rows.length} 条`;
+        // digest 跳转支持：?companion=N 预填
+      } catch (e) { $('hint').textContent = '加载失败：' + e.message; }
+    }
+
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('companion')) $('input-id').value = qs.get('companion');
+    $('btn-load').addEventListener('click', load);
+    loadStats(); load();
+  </script>
+
+</body>
+</html>

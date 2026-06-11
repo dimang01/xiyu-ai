@@ -334,6 +334,100 @@ export function getRecentProactiveTexts(companionId, { days = 7, limit = 10 } = 
   } catch { return []; }
 }
 
+// ─── v1.21.4: annotation_corpus 标注语料（admin 标注工具，微调语料生产线）──
+// 纯只读消费 conversation_turns（关联 turn_id），绝不回写、不触发运行时逻辑。
+// 同 turn 重复标注 = 覆盖更新（一条回复只有一个最新判定）。
+function migrateAnnotationCorpus() {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS annotation_corpus (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      turn_id INTEGER NOT NULL UNIQUE,
+      companion_id INTEGER NOT NULL,
+      label TEXT NOT NULL CHECK(label IN ('good','bad')),
+      tags TEXT NOT NULL DEFAULT '[]',
+      note TEXT,
+      annotated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_annotation_companion
+      ON annotation_corpus(companion_id, annotated_at DESC);
+  `);
+}
+
+/** 标注 upsert（turn_id 唯一，重复标注覆盖） */
+export function upsertAnnotation({ turnId, companionId, label, tags = [], note = null }) {
+  if (!turnId || !companionId) throw new Error('upsertAnnotation: turnId/companionId 必填');
+  if (!['good', 'bad'].includes(label)) throw new Error('upsertAnnotation: label 必须是 good|bad');
+  migrateAnnotationCorpus();
+  getDb().prepare(`
+    INSERT INTO annotation_corpus (turn_id, companion_id, label, tags, note, annotated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(turn_id) DO UPDATE SET
+      label = excluded.label, tags = excluded.tags, note = excluded.note,
+      annotated_at = excluded.annotated_at
+  `).run(turnId, companionId, label,
+    JSON.stringify(Array.isArray(tags) ? tags.map(String).slice(0, 10) : []),
+    note ? String(note).slice(0, 200) : null,
+    new Date().toISOString());
+  return getDb().prepare('SELECT * FROM annotation_corpus WHERE turn_id = ?').get(turnId);
+}
+
+/** 标注列表页数据：最近 N 条 assistant 回复 + 各自前 contextN 条上下文 + 已有标注 */
+export function listAnnotatableTurns({ companionId = null, limit = 100, contextN = 2 } = {}) {
+  migrateAnnotationCorpus();
+  const db = getDb();
+  const turns = db.prepare(`
+    SELECT t.id, t.companion_id, t.content, t.created_at, c.name AS companion_name,
+           COALESCE(c.arc_state, 'normal') AS arc_state
+    FROM companion_conversation_turns t JOIN companions c ON c.id = t.companion_id
+    WHERE t.role = 'assistant' AND COALESCE(t.synthetic, 0) = 0
+      ${companionId ? 'AND t.companion_id = ?' : ''}
+    ORDER BY t.id DESC LIMIT ?
+  `).all(...(companionId ? [companionId, limit] : [limit]));
+  const ctxStmt = db.prepare(`
+    SELECT role, content, created_at FROM companion_conversation_turns
+    WHERE companion_id = ? AND id < ? AND COALESCE(synthetic, 0) = 0
+    ORDER BY id DESC LIMIT ?`);
+  const annStmt = db.prepare('SELECT label, tags, note, annotated_at FROM annotation_corpus WHERE turn_id = ?');
+  return turns.map(t => ({
+    ...t,
+    context: ctxStmt.all(t.companion_id, t.id, contextN).reverse(),
+    annotation: annStmt.get(t.id) || null,
+  }));
+}
+
+/** 标注计数：今日已标 / 累计 good / 累计 bad */
+export function annotationStats() {
+  migrateAnnotationCorpus();
+  const db = getDb();
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    today: db.prepare(`SELECT COUNT(*) n FROM annotation_corpus WHERE annotated_at >= ?`).get(today + 'T00:00:00.000Z')?.n || 0,
+    good: db.prepare(`SELECT COUNT(*) n FROM annotation_corpus WHERE label = 'good'`).get()?.n || 0,
+    bad: db.prepare(`SELECT COUNT(*) n FROM annotation_corpus WHERE label = 'bad'`).get()?.n || 0,
+  };
+}
+
+/** 导出全部标注（export-corpus.mjs 用；含 turn 原文与上下文） */
+export function listAnnotationsForExport({ contextN = 4 } = {}) {
+  migrateAnnotationCorpus();
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT a.*, t.content AS reply FROM annotation_corpus a
+    JOIN companion_conversation_turns t ON t.id = a.turn_id
+    ORDER BY a.id`).all();
+  const ctxStmt = db.prepare(`
+    SELECT role, content FROM companion_conversation_turns
+    WHERE companion_id = ? AND id < ? AND COALESCE(synthetic, 0) = 0
+    ORDER BY id DESC LIMIT ?`);
+  return rows.map(r => ({
+    context: ctxStmt.all(r.companion_id, r.turn_id, contextN).reverse(),
+    reply: r.reply,
+    label: r.label,
+    tags: JSON.parse(r.tags || '[]'),
+    note: r.note || null,
+  }));
+}
+
 /** arc 信号流水读取（debug 面板） */
 export function listArcSignalLog(companionId, limit = 50) {
   return getDb().prepare(`
