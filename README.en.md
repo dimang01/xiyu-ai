@@ -90,6 +90,7 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 | Structured preference ledger | like / dislike / taboo × intensity — "extremely cat-person", "slightly tired of soap operas", with receipts |
 | Her diary + relational diary | Nightly first-person diary plus "today's memory about you"; book-style reading, read-aloud |
 | Time capsules / offline letters | Write something to unlock in the future — "present her" reads it and writes back; she can also write you a signed offline letter |
+| Shared history from day one | A week of backstory is generated on creation; after 10 messages or a WeChat bind, it quietly extends to "we met three months ago" |
 | Anniversaries | Auto-registers "100 days since we met / one year together" and initiates wishes on the day |
 
 ### She reaches out first
@@ -97,6 +98,7 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 | Capability | One-liner |
 |---|---|
 | Three-driver proactive | motivation = emotion × schedule × time-of-day × jitter; double-gated morning/goodnight dedup, paraphrase-collision detection, pre-injection of her recent lines |
+| Material-level no-repeat | Once she's used a bit (that cat, that little story), it cools down for 14 days — even reworded next-day retells get caught by the ledger |
 | Reads the room | Shuts up after 3 unanswered sends; a light "you there?" right before the session window closes; a dignity cap per attachment style — she never clings |
 | Cause-driven | Not just "how was your day" — when an open loop is due it upgrades to "oh right \|\| did that thing work out" |
 | Converges during conflicts | Lower frequency while fighting, no aegyo / photos / confessions; may offer one olive-branch message while repairing |
@@ -487,7 +489,7 @@ Release cadence / full changelog at [GitHub Releases](https://github.com/dimang0
 
 The mainline, one line each:
 
-- **v1.21.x Conflict & repair arc + engineering hardening**: a relationship-event state machine (she can genuinely get hurt; making up has inertia) consolidating all "she's cold to you" logic; post-incident "make silent failures loud" (ESLint / error-signature report / dead-man switch); photo aspect fix
+- **v1.21.x Conflict & repair arc + engineering hardening**: a relationship-event state machine (she can genuinely get hurt; making up has inertia) consolidating all "she's cold to you" logic; post-incident "make silent failures loud" (ESLint / error-signature report / dead-man switch); photo aspect fix; immersion hygiene (the word "user" does not exist in her world, material-level anti-repeat, auto-generated shared history)
 - **v1.20.x Safety wrap-up**: minor protection (sticky safe mode), privacy filter on every storage entry, release-consistency CI, photo realism v2 (anti-airbrush texture finally reaching production)
 - **v1.14 → v1.19 Realism depth**: graduated neglect + attachment styles, retention funnel (last-call / warm-up / read-the-room / icebreaker), the photo realism overhaul (environmental selfies / i2i face-lock / shot-mode routing), first-love traits
 - **v1.6 → v1.13 Experience foundation**: real photo pipeline, anti-sycophancy series, Inner OS, open-loop memory, the sleep system, burst coalescing, relationship pacing (time feeds affection), zh/EN bilingual

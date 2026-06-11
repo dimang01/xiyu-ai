@@ -1,4 +1,4 @@
-# 新对话交接提示词（2026-06-11 刷新，对应 v1.21.2）
+# 新对话交接提示词（2026-06-11 刷新，对应 v1.21.3）
 
 > 把下面整段复制给新对话作为第一条消息。它包含让新执行者立刻能干活所需的
 > 全部上下文，不依赖任何前面的对话。
@@ -15,8 +15,8 @@
 - **生产克隆：`/opt/xiyu-ai-new`**（main HEAD = 生产 HEAD，发版后 `git pull` + 重启）
 - GitHub：`https://github.com/dimang01/xiyu-ai`
 - 默认分支：`main`
-- **当前版本：v1.21.2**（package.json 与 git tag 已同步，发版时一起升）
-- 规模：55 个 `src/**.mjs` · 17 个 `public/app/*.html` · 77 个 `scripts/` · 100+ releases
+- **当前版本：v1.21.3**（package.json 与 git tag 已同步，发版时一起升）
+- 规模：58 个 `src/**.mjs`（含 providers/security 子目录）· 17 个 `public/app/*.html` · 87 个 `scripts/` · 100+ releases
 
 功能全景：README「它能做什么」最新最准；`docs/FEATURES.txt` 详述的是
 v1.4.1 基线 + 增量索引；逐版本细节看 GitHub Releases。
@@ -136,7 +136,12 @@ npm run arc:digest        # 冲突弧观察周日报（只读；生产加 DB_PAT
 | **多角色市场 / Live2D / 群聊** | 跟"微信 1:1 单一伴侣"定位冲突；一个微信号只能绑一个 clawbot |
 | **NSFW 任何形式** | 调性红线 |
 
-## 当前高价值候选（2026-06-10 评估，按优先级）
+## 当前高价值候选（2026-06-11 评估，按优先级）
+
+> v1.21.3 已落地：去"用户"三层防线（含存量清洗脚本 scrub_user_wording，
+> apply 需维护者审 dry-run diff）/ proactive 素材级防复读 / 调教改名默契 /
+> AI 用量 admin-only / 互动历史自动化（创建薄版+水位全量，按钮已撤）。
+> CI 门禁 25→28 项。观察周纪律持续：不动 arc/emotion 阈值。
 
 1. ~~#4b 关系低谷→冷→和好弧~~（v1.21.0 已落地：6 状态事件状态机 + 依恋调制 +
    红线确定性护栏 + emotion-debug 面板，docs/CONFLICT_ARC.md）；
