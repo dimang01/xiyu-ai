@@ -6,6 +6,9 @@
  * 只有 ~0.07，原 0.6 阈值完全拦不住"换两个字的同义复读"。
  * 修：findProactiveCollision 双指标 = trigram 0.6（逐字复读）OR
  * isSemanticallySimilar（bigram 0.25 / LCS≥4，语义复读）。
+ *
+ * 注：曾内置"const 声明 + 同名 +="全 src 扫描（#263 应急产物），2026-06-11
+ * 按决议退役——被 ESLint no-const-assign（编译期、作用域精确）全覆盖。
  */
 import { findProactiveCollision } from '../src/proactive.mjs';
 
@@ -46,36 +49,6 @@ for (const t of FRESH) {
 ok(findProactiveCollision('', RECENT) === null, '空回复 → null');
 ok(findProactiveCollision('好困', RECENT) === null, '超短文本(<6字) → 不检测');
 ok(findProactiveCollision('随便说点什么', []) === null, '空历史 → null');
-
-// ── 源码级防回归：const 声明 + 同函数 += 的静默 TypeError ─────────────────
-// 事故（2026-06-10）：v1.20"事前反复读注入"的 systemPrompt += 撞上 const 声明，
-// TypeError 被 tick 的 catch 吃成 error 日志——进程不崩、冒烟不红，活跃用户的
-// normal 主动消息静默断供半天（665 次失败）才被发现。这里按**函数块**粗扫
-// src/ 全部 .mjs：同一函数内 const X 声明后出现 X += 直接红。
-{
-  const { readFileSync, readdirSync } = await import('node:fs');
-  let hits = 0;
-  for (const f of readdirSync('src').filter(x => x.endsWith('.mjs'))) {
-    const src = readFileSync(`src/${f}`, 'utf8');
-    // 以顶层 function/=> 函数体为粗块：用缩进近似——退而求其次按"两个声明间距 ≤ 函数平均长度"
-    // 的简单可靠版本：逐行扫描，遇 const X = 记录；同名 X += 在其后 300 行内且中间没有
-    // 重新 let/var/const 声明同名 → 视为命中（300 行覆盖本仓最长函数，误报由白名单排）
-    const lines = src.split('\n');
-    const lastConst = new Map();
-    lines.forEach((l, i) => {
-      let m = l.match(/^\s*const\s+(\w+)\s*=[^=]/);
-      if (m) lastConst.set(m[1], i);
-      m = l.match(/^\s*(?:let|var)\s+(\w+)\s*=?/);
-      if (m) lastConst.delete(m[1]);
-      m = l.match(/^\s*(\w+)\s*\+=/);
-      if (m && lastConst.has(m[1]) && i - lastConst.get(m[1]) <= 300) {
-        hits++;
-        console.log(`  ✗ src/${f}:${i + 1} '${m[1]}' += 但最近声明是 const（:${lastConst.get(m[1]) + 1}）——静默 TypeError 风险`);
-      }
-    });
-  }
-  ok(hits === 0, '全 src 无 "const 声明 + 同名 +=" 病灶（systemPrompt 事故防回归）');
-}
 
 console.log(`proactive_dedup_smoke: 通过 ${pass} 失败 ${fail}`);
 process.exit(fail ? 1 : 0);
