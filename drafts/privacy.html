@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<!-- 草稿（v1.21.4 起草，等维护者逐句审定后替换 public/app/privacy.html）
-     每条承诺对照代码事实，证据见 drafts/FACT_CHECK.md。 -->
+<!-- ⚠️ 本政策仅适用于官方托管服务 xiyuai.cc。
+     自托管部署者必须替换为自己的隐私政策并自行承担合规责任。
+     （草稿：等维护者逐句审定；证据见 drafts/FACT_CHECK.md） -->
 <html lang="zh-CN">
 <head>
   <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
@@ -15,10 +16,13 @@
 </head>
 <body class="bg-[#FFF5F9] text-[#1D1D1F] font-sans antialiased">
   <main class="max-w-3xl mx-auto px-6 py-12">
-    <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← 返回首页</a>
+    <div class="flex items-center justify-between">
+      <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← 返回首页</a>
+      <a href="/app/privacy.en.html" class="text-[#FF8FB8] text-sm hover:underline">English</a>
+    </div>
 
     <h1 class="mt-6 text-3xl font-bold tracking-tight">隐私政策</h1>
-    <p class="mt-2 text-sm text-[#86868B]">生效日期：____年__月__日　|　<a href="/app/privacy.html" class="underline">English version</a></p>
+    <p class="mt-2 text-sm text-[#86868B]">生效日期：2026 年 6 月 12 日（本政策适用于官方托管服务 xiyuai.cc）</p>
 
     <article class="mt-8 space-y-6 leading-7 text-[15px]">
 
@@ -45,6 +49,7 @@
         <p>生成回复时，对话内容会发送给第三方大模型服务商处理，受其各自服务条款约束。当前启用的服务商按功能分类如下（具体组合可能随服务调整而变化）：</p>
         <ul class="list-disc pl-6 mt-2 space-y-1">
           <li>对话生成：DeepSeek；</li>
+          <li>记忆向量化：Google Gemini（记忆条目文本在生成检索索引时发送）；</li>
           <li>图片生成：302.AI（API 中转服务）；</li>
           <li>语音转写与图像识别：阿里云通义千问；</li>
           <li>语音合成：MiniMax；</li>
@@ -80,7 +85,7 @@
           <li><b>查看</b>：在「记忆管理」页面可查看她记住的全部内容；人设与核心记忆可一键导出为 JSON 文件；</li>
           <li><b>删除记忆</b>：可在记忆管理页面删除单条或全部记忆，即时生效；</li>
           <li><b>删除角色</b>：可在管理页面删除 AI 角色及其全部关联数据；</li>
-          <li><b>删除账号</b>：目前暂无自助删除账号功能。如需彻底删除账号及全部数据，请发邮件至 <b>［运营者联系邮箱——维护者填写］</b>，我们将在 15 个工作日内人工处理并回复确认。</li>
+          <li><b>删除账号</b>：目前暂无自助删除账号功能。如需彻底删除账号及全部数据，请发邮件至 <b>support@xiyuai.cc</b>，我们将在 15 个工作日内人工处理并回复确认。</li>
         </ul>
       </section>
 
@@ -91,12 +96,12 @@
 
       <section>
         <h2 class="text-xl font-bold">8. 政策变更</h2>
-        <p>政策变更时更新本页顶部生效日期，重大变更另行站内公告。继续使用视为接受变更。</p>
+        <p>政策变更时更新本页顶部生效日期；重大变更将另行发送邮件至你的注册邮箱。继续使用视为接受变更。</p>
       </section>
 
       <section>
         <h2 class="text-xl font-bold">9. 联系我们</h2>
-        <p>隐私相关问题与数据删除申请：<b>［运营者联系邮箱——维护者填写］</b></p>
+        <p>隐私相关问题与数据删除申请：<b>support@xiyuai.cc</b></p>
       </section>
 
     </article>

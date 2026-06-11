@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<!-- DRAFT (drafted with v1.21.4; pending maintainer line-by-line review)
-     Every claim maps to a code fact — see drafts/FACT_CHECK.md. -->
+<!-- ⚠️ This policy applies ONLY to the officially hosted service at xiyuai.cc.
+     Self-hosted deployments MUST replace it with their own policy and bear
+     their own compliance responsibility.
+     (DRAFT pending maintainer review; evidence in drafts/FACT_CHECK.md) -->
 <html lang="en">
 <head>
   <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
@@ -15,10 +17,13 @@
 </head>
 <body class="bg-[#FFF5F9] text-[#1D1D1F] font-sans antialiased">
   <main class="max-w-3xl mx-auto px-6 py-12">
-    <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← Home</a>
+    <div class="flex items-center justify-between">
+      <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← Home</a>
+      <a href="/app/privacy.html" class="text-[#FF8FB8] text-sm hover:underline">中文</a>
+    </div>
 
     <h1 class="mt-6 text-3xl font-bold tracking-tight">Privacy Policy</h1>
-    <p class="mt-2 text-sm text-[#86868B]">Effective date: __________ | <a href="/app/privacy.html" class="underline">中文版</a></p>
+    <p class="mt-2 text-sm text-[#86868B]">Effective date: 12 June 2026 (this policy covers the officially hosted service at xiyuai.cc)</p>
 
     <article class="mt-8 space-y-6 leading-7 text-[15px]">
 
@@ -45,6 +50,7 @@
         <p>To generate replies, conversation content is sent to third-party LLM providers, subject to their respective terms. Providers currently in use, by function (the lineup may change as the Service evolves):</p>
         <ul class="list-disc pl-6 mt-2 space-y-1">
           <li>Chat generation: DeepSeek;</li>
+          <li>Memory vectorisation: Google Gemini (memory-entry text is sent when building the retrieval index);</li>
           <li>Image generation: 302.AI (an API relay service);</li>
           <li>Speech transcription and image recognition: Alibaba Cloud Qwen;</li>
           <li>Speech synthesis: MiniMax;</li>
@@ -80,7 +86,7 @@
           <li><b>View</b>: the Memory Management page shows everything she remembers; persona and core memories can be exported as JSON in one click;</li>
           <li><b>Delete memories</b>: remove single entries or everything from the Memory Management page, effective immediately;</li>
           <li><b>Delete a companion</b>: remove an AI companion and all its associated data from the management page;</li>
-          <li><b>Delete your account</b>: there is currently no self-service account deletion. To fully delete your account and data, email <b>[operator contact email — to be filled by maintainer]</b>; we will process it manually and confirm within 15 business days.</li>
+          <li><b>Delete your account</b>: there is currently no self-service account deletion. To fully delete your account and data, email <b>support@xiyuai.cc</b>; we will process it manually and confirm within 15 business days.</li>
         </ul>
       </section>
 
@@ -91,12 +97,12 @@
 
       <section>
         <h2 class="text-xl font-bold">8. Changes</h2>
-        <p>When this policy changes we update the effective date above; material changes are additionally announced in-site. Continued use constitutes acceptance.</p>
+        <p>When this policy changes we update the effective date above; material changes are additionally notified by email to your registered address. Continued use constitutes acceptance.</p>
       </section>
 
       <section>
         <h2 class="text-xl font-bold">9. Contact</h2>
-        <p>Privacy questions and data-deletion requests: <b>[operator contact email — to be filled by maintainer]</b></p>
+        <p>Privacy questions and data-deletion requests: <b>support@xiyuai.cc</b></p>
       </section>
 
     </article>

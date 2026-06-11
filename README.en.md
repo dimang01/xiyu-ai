@@ -438,6 +438,7 @@ npm run smoke           # release smoke; bash scripts/opensource_check.sh — 6 
 ### Data and Content
 
 - SQLite at `data/bot.db` by default, containing chat history / memories / user profiles. Self-hosted: data is entirely on your machine
+- ⚠️ The bundled Terms of Service / Privacy Policy pages apply only to the officially hosted xiyuai.cc — **self-hosted public deployments must replace them with your own terms** and bear compliance responsibility in your jurisdiction
 - Chat history retained 60 days by default (`runHourlyCleanup`), adjustable; account deletion clears all data for the corresponding companion
 - **Use extra caution for minors / high mental health risk users**, see [Issue #3](https://github.com/dimang01/xiyu-ai/issues/3)
 

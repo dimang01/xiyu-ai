@@ -444,6 +444,7 @@ npm run smoke           # release smoke；bash scripts/opensource_check.sh 开�
 ### 数据与内容
 
 - SQLite 默认 `data/bot.db`，含聊天历史 / 记忆 / 用户画像。自托管时数据完全在你机器上
+- ⚠️ 仓库自带的《用户协议》《隐私政策》页面仅适用于官方托管服务 xiyuai.cc——**自托管对外运营时必须替换为你自己的条款**，并自行承担所在司法辖区的合规责任
 - 对话历史默认保留 60 天 (`runHourlyCleanup`)，可调；删账号清空对应 companion 全部数据
 - **未成年人 / 心理高风险场景请额外谨慎**，见 [Issue #3](https://github.com/dimang01/xiyu-ai/issues/3)
 
