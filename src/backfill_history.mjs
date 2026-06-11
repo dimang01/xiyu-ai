@@ -21,11 +21,16 @@ import { log } from './logger.mjs';
 import {
   bulkInsertSyntheticTurns, markCompanionBackfilled,
   getCompanionBackfillStatus, saveMemory, upsertEmotionState,
+  countRealUserTurns,
 } from './db.mjs';
 import { extractStructuredInfo, embedText } from './ai.mjs';
 
 const DEFAULT_DAYS_BACK = 90;
 const DEFAULT_EVENT_COUNT = 35;   // 90 天 / ~2.5 天一个事件
+const THIN_DAYS_BACK = 7;         // v1.21.3: 创建时薄版（快、便宜，一周打底）
+const THIN_EVENT_COUNT = 6;
+const FULL_MIN_DAYS_AGO = 8;      // 全量只向更早追加：8~90 天，绝不碰薄版已覆盖的最近 7 天
+const FULL_WATERMARK_TURNS = 10;  // 累计 10 条真实用户消息 → 触发全量（成本闸门）
 
 function buildBackfillPrompt(companion, opts) {
   const c = companion;
@@ -49,7 +54,9 @@ function buildBackfillPrompt(companion, opts) {
 
 【生成要求】
 
-生成 ${eventCount} 个时间锚点，分布在过去 ${days} 天里（最远 ${days} 天前，最近 3 天前）。
+生成 ${eventCount} 个时间锚点，分布在过去 ${days} 天里（最远 ${days} 天前，最近 ${opts.minDaysAgo || 3} 天前）。${(opts.minDaysAgo || 3) > 3 ? `
+注意：你们最近 ${opts.minDaysAgo - 1} 天的互动记录已经存在，你生成的是**更早**的部分——
+days_ago 必须 ≥ ${opts.minDaysAgo}，绝不生成最近 ${opts.minDaysAgo - 1} 天内的事件。` : ''}
 每个锚点：
 - 一个具体小事件（不是"我们聊得很开心"，而是"她跟他说她加班晚了，他点了奶茶给她"）
 - 1-3 段聊天片段（user / assistant 各 0-2 条，模拟微信记忆）
@@ -93,7 +100,7 @@ function buildBackfillPrompt(companion, opts) {
 }
 
 注意 affection_delta 累加 + starting_affection 应该接近 ending_affection（不严格相等）。
-days_ago 数字必须严格在 3-${days} 之间且**不重复**。
+days_ago 数字必须严格在 ${opts.minDaysAgo || 3}-${days} 之间且**不重复**。
 事件按 days_ago 倒序排（最久远的在前）。
 
 严格只输出 JSON。`;
@@ -104,14 +111,24 @@ days_ago 数字必须严格在 3-${days} 之间且**不重复**。
  */
 export async function backfillTimelineForCompanion(companion, opts = {}) {
   if (!companion) throw new Error('companion 必填');
+  const tier = opts.tier === 'thin' ? 'thin' : 'full';
   const status = getCompanionBackfillStatus(companion.id);
+  // 防重：full 后不再回填；thin 后允许 full（向更早追加）；同 tier 重复跳过
   if (status?.backfilledAt && !opts.force) {
-    return { skipped: 'already-backfilled', backfilledAt: status.backfilledAt };
+    if (status.tier === 'full' || status.tier === tier) {
+      return { skipped: 'already-backfilled', backfilledAt: status.backfilledAt, tier: status.tier };
+    }
   }
 
-  const daysBack = Math.max(30, Math.min(180, opts.daysBack || DEFAULT_DAYS_BACK));
-  const eventCount = Math.max(20, Math.min(60, opts.eventCount || DEFAULT_EVENT_COUNT));
-  const prompt = buildBackfillPrompt(companion, { daysBack, eventCount });
+  const daysBack = tier === 'thin'
+    ? THIN_DAYS_BACK
+    : Math.max(30, Math.min(180, opts.daysBack || DEFAULT_DAYS_BACK));
+  const eventCount = tier === 'thin'
+    ? THIN_EVENT_COUNT
+    : Math.max(20, Math.min(60, opts.eventCount || DEFAULT_EVENT_COUNT));
+  // 一致性硬约束：full 在 thin 之上时只向更早追加（8~90 天），薄版条目原文不动
+  const minDaysAgo = tier === 'full' && status?.tier === 'thin' ? FULL_MIN_DAYS_AGO : (tier === 'thin' ? 1 : 3);
+  const prompt = buildBackfillPrompt(companion, { daysBack, eventCount, minDaysAgo });
 
   let parsed;
   try {
@@ -138,7 +155,7 @@ export async function backfillTimelineForCompanion(companion, opts = {}) {
   let memCount = 0;
 
   for (const ev of parsed.events) {
-    const dAgo = Math.max(3, Math.min(daysBack, Math.floor(Number(ev.days_ago) || 0)));
+    const dAgo = Math.max(minDaysAgo, Math.min(daysBack, Math.floor(Number(ev.days_ago) || 0)));
     const hour = Math.max(0, Math.min(23, Math.floor(Number(ev.hour) || 12)));
     const eventTs = new Date(now - dAgo * 86400_000);
     eventTs.setHours(hour, Math.floor(Math.random() * 60), 0, 0);
@@ -200,8 +217,8 @@ export async function backfillTimelineForCompanion(companion, opts = {}) {
     log('warn', `[Backfill] companion=${companion.id} affection 更新失败: ${e.message}`);
   }
 
-  markCompanionBackfilled(companion.id);
-  log('info', `[Backfill] companion=${companion.id} ok turns=${turns.length} memories=${memCount} ending_aff=${finalAff}`);
+  markCompanionBackfilled(companion.id, tier);
+  log('info', `[Backfill] companion=${companion.id} ok tier=${tier} turns=${turns.length} memories=${memCount} ending_aff=${finalAff}`);
   return {
     ok: true,
     turnCount: turns.length,
@@ -210,4 +227,64 @@ export async function backfillTimelineForCompanion(companion, opts = {}) {
     daysBack,
     eventCount: parsed.events.length,
   };
+}
+
+// ─── v1.21.3 PR-D: 回填自动化（去按钮）────────────────────────────────────
+// 创建时触发 thin；full 由先到者触发：绑定微信 / 累计 10 条真实用户消息。
+// 水位做成"每条消息时检查"而不是一次性事件：天然覆盖存量老 companion
+// （绑了微信、消息早过 10 条、但按钮时代从没点过的，下一条消息就补上）。
+
+/** 决策纯函数（smoke 可测）：返回 'thin' | 'full' | null */
+export function decideBackfillAction({ tier, userTurns = 0, justBound = false }) {
+  if (tier === 'full') return null;                      // 全量已就位
+  if (tier === 'thin') {
+    return (justBound || userTurns >= FULL_WATERMARK_TURNS) ? 'full' : null;
+  }
+  // 从未回填（含按钮时代漏网的存量）：先补薄版打底；水位已过的下一轮再升 full
+  return 'thin';
+}
+
+const _backfillInflight = new Set();          // 防同 companion 并发触发
+const _backfillFailedAt = new Map();          // 失败冷却：30 分钟内不重试（#263：失败必须响，但别打爆 LLM）
+const FAIL_COOLDOWN_MS = 30 * 60_000;
+
+/**
+ * 水位检查 + 异步触发（fire-and-forget，绝不阻塞调用方）。
+ * 挂点：companion 创建后 / 微信绑定成功 / bot 每条用户消息。
+ */
+export function maybeAutoBackfill(companion, { justBound = false, reason = '' } = {}) {
+  try {
+    if (!companion?.id) return;
+    if (_backfillInflight.has(companion.id)) return;
+    const failedAt = _backfillFailedAt.get(companion.id);
+    if (failedAt && Date.now() - failedAt < FAIL_COOLDOWN_MS) return;
+
+    const status = getCompanionBackfillStatus(companion.id);
+    const action = decideBackfillAction({
+      tier: status?.tier || null,
+      userTurns: status?.tier === 'thin' || !status?.tier ? countRealUserTurns(companion.id) : 0,
+      justBound,
+    });
+    if (!action) return;
+
+    _backfillInflight.add(companion.id);
+    log('info', `[Backfill] 自动触发 tier=${action} companion=${companion.id} reason=${reason || (justBound ? 'bind' : 'watermark')}`);
+    backfillTimelineForCompanion(companion, { tier: action })
+      .then(r => {
+        if (r?.error) {
+          // #263 纪律：后台批任务失败必须响——error 级日志进 digest 错误签名段
+          _backfillFailedAt.set(companion.id, Date.now());
+          log('error', `[Backfill] 自动回填失败 tier=${action} companion=${companion.id}: ${r.error}（${FAIL_COOLDOWN_MS / 60000} 分钟后随水位自动重试）`);
+        } else {
+          _backfillFailedAt.delete(companion.id);
+        }
+      })
+      .catch(e => {
+        _backfillFailedAt.set(companion.id, Date.now());
+        log('error', `[Backfill] 自动回填异常 tier=${action} companion=${companion.id}: ${e.message}`);
+      })
+      .finally(() => _backfillInflight.delete(companion.id));
+  } catch (e) {
+    log('warn', `[Backfill] 水位检查失败（不影响主链路）: ${e.message}`);
+  }
 }

@@ -392,6 +392,7 @@
           <dt class="text-mute">状态</dt><dd>${a.is_banned ? `<span class="badge badge-ban">已封禁</span> ${escapeHtml(a.banned_reason || '')}` : '<span class="badge badge-ok">正常</span>'}</dd>
           <dt class="text-mute">微信绑定</dt><dd>${d.binding ? `已绑定 (${escapeHtml(d.binding.wechat_user_id.slice(0,16))}…)` : '未绑定'}</dd>
           <dt class="text-mute">人设</dt><dd>${d.companion ? `${escapeHtml(d.companion.name)} · 好感 ${d.companion.affection_level} (${escapeHtml(d.companion.relationship_stage || '')})` : '未创建'}</dd>
+          <dt class="text-mute">互动历史</dt><dd>${d.companion ? `<button onclick="adminBackfill(${d.companion.id})" class="text-[12px] text-sakura-deep hover:underline">重生成 90 天历史</button> <span id="backfill-result-${d.companion.id}" class="text-[11px] text-mute"></span>` : '-'}</dd>
         </dl>
         <div class="bg-cloud rounded-2xl p-4 mb-5">
           <div class="text-[12px] text-mute font-semibold mb-2">用量统计</div>
@@ -410,6 +411,22 @@
       `;
       document.getElementById('modal').classList.remove('hidden');
     }
+
+    // v1.21.3 PR-D: admin 手动重生成互动历史（用户侧按钮已撤，自动化接管）
+    window.adminBackfill = async function(companionId) {
+      const el = document.getElementById('backfill-result-' + companionId);
+      if (!confirm('重生成 90 天互动历史？会覆盖现有虚拟历史（真实对话不受影响）。')) return;
+      if (el) el.textContent = '生成中… 10-30 秒';
+      try {
+        const r = await fetch(`/api/companions/${companionId}/backfill-history`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ''}` },
+          body: JSON.stringify({ force: true, tier: 'full' }),
+        });
+        const d = await r.json();
+        if (el) el.textContent = d.ok ? `✓ ${d.data.turnCount} 条对话 / ${d.data.memoryCount} 条记忆` : ('失败：' + (d.error || ''));
+      } catch (e) { if (el) el.textContent = '失败：' + e.message; }
+    };
 
     function showResetResult(d) {
       document.getElementById('modal-title').textContent = '密码已重置';
