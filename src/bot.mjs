@@ -573,6 +573,10 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
   inflightUsers.add(fromUser);  // 回复期间占用，防同一用户并发回复（调用前已查 has）
   // v1.16.x: 用户开口了 → 清零"未回连发"计数，主动消息刹车解除
   try { clearProactiveUnanswered(companion.id); } catch {}
+  // v1.21.3 PR-D: 回填水位检查（无历史→补薄版；薄版+真实消息≥10→升全量）。
+  // 做成"每条消息时检查"而非一次性事件：存量老 companion（按钮时代没点过、
+  // 触发事件已成过去时的）下一条消息自然补上。fire-and-forget 零阻塞。
+  import('./backfill_history.mjs').then(m => m.maybeAutoBackfill(companion, { reason: 'watermark' })).catch(() => {});
   try {
     // v1.10.38: regex fast path + LLM 兜底。regex 命中 strong → 直接 strong；
     // 不命中 → LLM 二分类（轻量短 token）兜底，终结 regex 漏识别循环。
@@ -1031,6 +1035,14 @@ async function handleBindCodeMessage(ctx, msg, botId) {
     const text = '绑定成功！现在开始和你的AI女友聊天吧～';
     await sendAndRecord(ctx, msg.fromUser, text, msg.contextToken);
     log('info', `[Bot] bind success user_id=${result.binding.account_id} companion_id=${result.companionId ?? 'null'} old_binding_inactivated=${result.wasRebind ? 1 : 0}`);
+    // v1.21.3 PR-D: 绑定微信 = 全量回填先到者之一（fire-and-forget）
+    if (result.companionId) {
+      import('./backfill_history.mjs').then(async m => {
+        const { getCompanionById } = await import('./db.mjs');
+        const rc = getCompanionById(result.companionId);
+        if (rc) m.maybeAutoBackfill(rc, { justBound: true, reason: 'wx-bind' });
+      }).catch(() => {});
+    }
     return true;
   } catch (e) {
     const text = e.code === 'WECHAT_BOUND'
@@ -1056,6 +1068,14 @@ async function handlePendingBindSessionMessage(ctx, msg, botId) {
     const text = '绑定成功！现在开始和你的AI女友聊天吧～';
     await sendAndRecord(ctx, msg.fromUser, text, msg.contextToken);
     log('info', `[Bot] pending bind success user_id=${result.binding.account_id} companion_id=${result.companionId ?? 'null'} old_binding_inactivated=${result.wasRebind ? 1 : 0}`);
+    // v1.21.3 PR-D: 绑定微信 = 全量回填先到者之一（与上面 bind 同语义）
+    if (result.companionId) {
+      import('./backfill_history.mjs').then(async m => {
+        const { getCompanionById } = await import('./db.mjs');
+        const rc = getCompanionById(result.companionId);
+        if (rc) m.maybeAutoBackfill(rc, { justBound: true, reason: 'wx-pending-bind' });
+      }).catch(() => {});
+    }
     return true;
   } catch (e) {
     const text = e.code === 'WECHAT_BOUND'

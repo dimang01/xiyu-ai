@@ -101,5 +101,8 @@ jobs:
       - name: 称呼泄漏（"用户"零残留 + 写入端护栏）
         run: node scripts/user_wording_guard.mjs
 
+      - name: 互动历史回填自动化（决策表/水位/防重）
+        run: node scripts/backfill_auto_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。

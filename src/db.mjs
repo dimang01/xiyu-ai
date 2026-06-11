@@ -4627,8 +4627,10 @@ function migrateConversationTurnSynthetic() {
 }
 
 // companions 表标记是否已 backfill 过（防重复运行）
+// v1.21.3 PR-D: 两级回填——thin（创建时 7 天薄版）/ full（水位触发 90 天全量）
 function migrateBackfillFlag() {
   addColIfMissing('companions', 'history_backfilled_at', 'INTEGER');
+  addColIfMissing('companions', 'history_backfill_tier', 'TEXT');
 }
 
 /**
@@ -4653,18 +4655,32 @@ export function bulkInsertSyntheticTurns(companionId, turns) {
   return turns.length;
 }
 
-export function markCompanionBackfilled(companionId) {
+export function markCompanionBackfilled(companionId, tier = 'full') {
   const now = Math.floor(Date.now() / 1000);
-  getDb().prepare(`UPDATE companions SET history_backfilled_at = ? WHERE id = ?`).run(now, companionId);
+  getDb().prepare(`UPDATE companions SET history_backfilled_at = ?, history_backfill_tier = ? WHERE id = ?`)
+    .run(now, String(tier), companionId);
 }
 
 export function getCompanionBackfillStatus(companionId) {
   const row = getDb().prepare(`
-    SELECT history_backfilled_at,
+    SELECT history_backfilled_at, history_backfill_tier,
            (SELECT COUNT(*) FROM companion_conversation_turns WHERE companion_id = ? AND synthetic = 1) AS synthetic_count
     FROM companions WHERE id = ?
   `).get(companionId, companionId);
-  return row ? { backfilledAt: row.history_backfilled_at || null, syntheticCount: row.synthetic_count || 0 } : null;
+  return row ? {
+    backfilledAt: row.history_backfilled_at || null,
+    // 存量兼容：老 companion 只有 backfilled_at 没有 tier，视为 full（按钮时代生成的就是 90 天全量）
+    tier: row.history_backfill_tier || (row.history_backfilled_at ? 'full' : null),
+    syntheticCount: row.synthetic_count || 0,
+  } : null;
+}
+
+/** 真实（非 synthetic）用户消息计数——全量回填的水位线（v1.21.3 PR-D） */
+export function countRealUserTurns(companionId) {
+  return getDb().prepare(`
+    SELECT COUNT(*) AS n FROM companion_conversation_turns
+    WHERE companion_id = ? AND role = 'user' AND COALESCE(synthetic, 0) = 0
+  `).get(companionId)?.n || 0;
 }
 
 // ─── v1.10.0 睡眠作息 ────────────────────────────────────────────────────────

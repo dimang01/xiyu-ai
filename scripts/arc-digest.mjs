@@ -216,4 +216,15 @@ if (hasTable('companion_proactive_material_log')) {
   if (!top.length) console.log('  （窗口内无素材引用记录）');
 }
 
+// ── 9. 互动历史回填状态（v1.21.3 PR-D：后台批任务静默死最难发现——#263 教训。
+//      失败的 error 会进上面错误签名段，这里看队列水位）────────────────────
+{
+  const tiers = db.prepare(`
+    SELECT COALESCE(history_backfill_tier, CASE WHEN history_backfilled_at IS NOT NULL THEN 'full(存量)' ELSE '未回填' END) AS t,
+           COUNT(*) AS n
+    FROM companions GROUP BY t ORDER BY n DESC`).all();
+  console.log('\n── 互动历史回填分布（thin=薄版待升全量）──');
+  for (const t of tiers) console.log(`  ${String(t.t).padEnd(12)} ${t.n}`);
+}
+
 console.log('\n════ 报表完（纯只读，无任何回写）════');
