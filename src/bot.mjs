@@ -10,12 +10,13 @@
  */
 
 import { parseMessage, sendTextMessage, sendTyping, sendMessageItem, rememberContextToken, peekSendQuota } from './ilink.mjs';
+import { stripCurrentTurnFromHistory, isProtocolDuplicate } from './inbound_dedup.mjs';   // v1.21.4 #279
 import { generateReply, recognizeImage, embedText } from './ai.mjs';
 import { downloadInboundVoiceToMp3 } from './voice_inbound.mjs';
 import { analyzeVoiceWithQwen } from './voice_emotion.mjs';
 import { dedupSegments } from './text_similarity.mjs';
 import {
-  saveMessage, getRecentHistory, getUserProfile, recallMemories, recallMemoriesSemantic,
+  saveMessage, getRecentHistory, findRecentInboundCandidate, getUserProfile, recallMemories, recallMemoriesSemantic,
   getConversationContext, saveConversationTurn,
   getActiveWechatBinding, getCompanionById, consumePendingBindSessionForWechat,
   isAccountBanned, getDailySchedule, shanghaiDateKey, getRecentSchedules, getPersonaFacts,
@@ -378,7 +379,8 @@ function flushBurst(fromUser) {
   pendingBursts.delete(fromUser);
   const userText = b.parts.length <= 1 ? (b.parts[0] || '') : b.parts.join('\n');
   if (b.parts.length > 1) log('info', `[Bot] coalesce flush: user=${fromUser} 合并 ${b.parts.length} 条 → 一次回复`);
-  _turnRunner({ ...b.turn, userText }).catch(e => log('error', `[Bot] flush 异常: ${e.message}`));
+  // #279: parts 原文随 turn 传下去——回复段要用它把"本轮已在 userText 里的消息"从 history 尾部剔掉
+  _turnRunner({ ...b.turn, userText, userParts: [...b.parts] }).catch(e => log('error', `[Bot] flush 异常: ${e.message}`));
 }
 
 // 防重放：记录已处理的 msgId（内存）
@@ -427,6 +429,22 @@ export async function handleMessage(rawMsg, botContext = {}) {
     try { log('info', `[Bot] RAW_INBOUND=${JSON.stringify(rawMsg).slice(0, 1800)}`); } catch { /* ignore */ }
   }
 
+  // v1.21.4 #279 纵深：协议重推二级查重（msgId 防重对"重推时 ID 不稳定"失明）。
+  // 键 = sender+内容+微信侧 create_time（重推是同一条消息、该时间相同；用户故意
+  // 连发两句"在吗"是两条消息、该时间不同——绝不能吞）。fail-open：查重自身出错=放行。
+  if (msg.msgType === 'text' && msg.text) {
+    try {
+      const _cand = findRecentInboundCandidate(msg.fromUser, botId, msg.text, { windowSec: 300 });
+      if (isProtocolDuplicate(_cand, { wxCreateTime: msg.createTime })) {
+        // #263 纪律：命中必须响——error 级进 digest 错误签名段
+        log('error', `[InboundDedup] 协议重推拦截 from=${msg.fromUser} msgId=${msg.msgId?.slice(0, 20)} 与库内 id=${_cand.id}（msg_id 不同但 sender+内容+wx_create_time 相同）`);
+        return;
+      }
+    } catch (e) {
+      log('warn', `[InboundDedup] 查重异常（放行不阻断）: ${e.message}`);
+    }
+  }
+
   // 入库（即使被合并跳过也要存）
   saveMessage({
     msgId:     msg.msgId,
@@ -435,6 +453,7 @@ export async function handleMessage(rawMsg, botContext = {}) {
     msgType:   msg.msgType,
     content:   msg.text || `[${msg.msgType}]`,
     direction: 'in',
+    wxCreateTime: msg.createTime,
   });
 
   // v1.10.53: 旧的"忙时跳过"式合并已移除，改为下方 enqueueOrRunTurn 的防抖合并。
@@ -568,7 +587,7 @@ export async function handleMessage(rawMsg, botContext = {}) {
 
 // v1.10.53: 单轮回复处理（photo-intent + 文本回复管线）。由 burst flush 合并后调用，
 // COALESCE 关闭时直接调用。msg 为 shim，保留移植代码里的 msg.fromUser/.contextToken 写法。
-async function processUserTurn({ companion, binding, ctx, botId, fromUser, contextToken, userText, _mergeDepth = 0 }) {
+async function processUserTurn({ companion, binding, ctx, botId, fromUser, contextToken, userText, userParts = null, _mergeDepth = 0 }) {
   const msg = { fromUser, contextToken };
   inflightUsers.add(fromUser);  // 回复期间占用，防同一用户并发回复（调用前已查 has）
   // v1.16.x: 用户开口了 → 清零"未回连发"计数，主动消息刹车解除
@@ -718,7 +737,14 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     emotionState = updateEmotionFromUserMessage(companion.id, emotionState, userText, { companion, repeatLevel: esc.level });
 
     // ── v1.21 冲突弧前置链：history → 危机检测 → inner OS（同趟产结构化字段）→ arc tick ──
-    const history = getRecentHistory(msg.fromUser, botId, 20);
+    // #279 根因修复：接收段已把本轮消息落库，getRecentHistory 会再把它拉回来——
+    // 同一句话出现在 history 尾部 + generateReply 的 userMessage，LLM 看到两遍
+    // （单条轮"你这句话说了两遍诶"；coalesce 合并轮每条 part 各两遍="复读机"）。
+    // 组装前剔掉 history 尾部属于本轮的入站行（三重限定防误删，见 inbound_dedup.mjs）。
+    const history = stripCurrentTurnFromHistory(
+      getRecentHistory(msg.fromUser, botId, 20),
+      userParts || [userText],
+    );
     // 危机检测前置：危机优先级最高，arc 冷淡表达在危机下必须挂起（红线 #5）
     const _recentUserTexts = (recentTurns || []).filter(t => t && t.role === 'user').slice(-3).map(t => t.content || '');
     const _crisisLevel = detectCrisisLevel(userText, _recentUserTexts);

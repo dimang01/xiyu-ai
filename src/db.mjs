@@ -4171,18 +4171,40 @@ export function cleanupProcessedMessages(days = 7) {
   catch { return 0; }
 }
 
-export function saveMessage({ msgId, fromUser, toUser, msgType, content, mediaUrl, mediaMime, direction }) {
+// v1.21.4 #279: wx_create_time = 微信侧原始发送时间——协议重推的判定主键
+// （重推是同一条消息、该时间相同；用户故意重发是两条消息、该时间不同）
+function migrateWxCreateTime() {
+  addColIfMissing('wechat_messages', 'wx_create_time', 'TEXT');
+}
+
+export function saveMessage({ msgId, fromUser, toUser, msgType, content, mediaUrl, mediaMime, direction, wxCreateTime = null }) {
   const db = getDb();
   try {
+    migrateWxCreateTime();
     db.prepare(`
       INSERT OR IGNORE INTO wechat_messages
-        (msg_id, from_user, to_user, msg_type, content, media_url, media_mime, direction)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (msg_id, from_user, to_user, msg_type, content, media_url, media_mime, direction, wx_create_time)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       msgId || null, fromUser, toUser, msgType,
-      content || null, mediaUrl || null, mediaMime || null, direction
+      content || null, mediaUrl || null, mediaMime || null, direction,
+      wxCreateTime != null && wxCreateTime !== '' ? String(wxCreateTime) : null
     );
   } catch { /* 重复 msg_id，跳过 */ }
+}
+
+/** #279 纵深：取库里最近一条同 sender+content 的入站行（含 wx_create_time），
+ *  供 isProtocolDuplicate 判定。fail-open：查询失败返回 null（= 不拦）。 */
+export function findRecentInboundCandidate(fromUser, botId, content, { windowSec = 300 } = {}) {
+  try {
+    migrateWxCreateTime();
+    return getDb().prepare(`
+      SELECT id, msg_id, wx_create_time, created_at FROM wechat_messages
+      WHERE from_user = ? AND to_user = ? AND direction = 'in' AND content = ?
+        AND created_at >= datetime('now', ?)
+      ORDER BY id DESC LIMIT 1
+    `).get(fromUser, botId, content, `-${Math.max(1, windowSec | 0)} seconds`) || null;
+  } catch { return null; }
 }
 
 export function getRecentHistory(wechatUserId, botId, limit = 20) {

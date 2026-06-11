@@ -216,6 +216,21 @@ if (hasTable('companion_proactive_material_log')) {
   if (!top.length) console.log('  （窗口内无素材引用记录）');
 }
 
+// ── 8.5 入站二级查重命中（#279 纵深：协议重推拦截统计——命中本身走 [ERROR]
+//      进上面签名段，这里给个独立计数好看趋势）────────────────────────────
+if (existsSync(LOG_FILE)) {
+  const _dedupSinceMs = Date.now() - DAYS * 86400e3;
+  let dedupHits = 0;
+  const rl2 = createInterface({ input: createReadStream(LOG_FILE, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const line of rl2) {
+    if (!line.includes('[InboundDedup] 协议重推拦截')) continue;
+    const tm = line.match(/^\[([^\]]+)\]/);
+    const ts = tm ? new Date(tm[1]).getTime() : NaN;
+    if (Number.isFinite(ts) && ts >= _dedupSinceMs) dedupHits++;
+  }
+  console.log(`\n── 入站二级查重：窗口内协议重推拦截 ${dedupHits} 次${dedupHits ? '（iLink 在重推，关注频率）' : ''} ──`);
+}
+
 // ── 9. 互动历史回填状态（v1.21.3 PR-D：后台批任务静默死最难发现——#263 教训。
 //      失败的 error 会进上面错误签名段，这里看队列水位）────────────────────
 {
