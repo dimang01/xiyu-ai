@@ -25,6 +25,7 @@ import {
   upsertShaping, listShaping,
   claimMessage, clearProactiveUnanswered,
   getOpenRelationshipEvent,
+  saveOpenLoop,   // v1.21.5: 照片承诺改期写 her_promise open_loop
 } from './db.mjs';
 import { buildSystemPrompt, buildFirstTurnHint } from './companion.mjs';
 import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach, canAcceptConfession, daysSinceMeet, DAYS_TO_LOVER } from './memory.mjs';
@@ -74,6 +75,44 @@ const PHOTO_BUSY_REPLIES = [
 ];
 const UNSAFE_PHOTO_REPLY = '这个不行啦，换个正常点的给你看';
 
+// ── v1.21.5 照片承诺生命周期（PR-B）─────────────────────────────────────────
+// 改期兜底语料池（gen 失败/超时后用——多句轮换，禁单一罐头；接 v1.21.1 近期注入防复读）。
+// 与 PHOTO_REQUEST_FALLBACKS（"刚才没拍好"）区别：这些明确指向"改天补"，不假装拍过。
+const PHOTO_DEFER_OPTIONS = [
+  '欸现在拍出来效果不行 等明天光好了拍给你',
+  '这会儿拍不好看 我明早拍了发你',
+  '等下 现在条件不太行 回头补给你哈',
+  '先欠着 改天给你拍个好看的',
+];
+function pickPhotoDefer() { return PHOTO_DEFER_OPTIONS[Math.floor(Math.random() * PHOTO_DEFER_OPTIONS.length)]; }
+const PHOTO_GEN_TIMEOUT_MS = Number(process.env.PHOTO_GEN_TIMEOUT_MS) || 90_000;  // 兑现超时
+// 次日白天履约时点（上海 10:00 → UTC 02:00）
+function nextMorningIso() {
+  const now = new Date();
+  const sh = new Date(now.getTime() + 8 * 3600_000);
+  sh.setUTCHours(2, 0, 0, 0);                 // 上海 10:00
+  if (sh.getTime() <= now.getTime()) sh.setUTCDate(sh.getUTCDate() + 1);
+  return sh.toISOString();
+}
+// her_promise 落账：承诺拍但当下没兑现 → 记 open_loop，proactive 到点补发
+function recordPhotoPromise(companionId, { userText, scene, reason }) {
+  try {
+    saveOpenLoop({
+      companionId,
+      title: '答应给他拍张照片（还没发）',
+      dueAt: nextMorningIso(),
+      emotionalWeight: 6,
+      expectedFollowup: '补拍补发那张照片',
+      loopKind: 'her_promise',
+      promisePayload: JSON.stringify({ userText: String(userText || '').slice(0, 200), scene: scene || '', reason: reason || '', promisedAt: new Date().toISOString() }),
+    });
+    log('info', `[Bot] 照片承诺写入 her_promise open_loop companion=${companionId} reason=${reason || ''}`);
+  } catch (e) {
+    // #263 纪律：承诺落账失败必须响（不然又成"说了不做"且无痕）
+    log('error', `[PhotoPromise] her_promise 落账失败 companion=${companionId}: ${e.message}`);
+  }
+}
+
 function pickPhotoRequestFallback() {
   return PHOTO_REQUEST_FALLBACKS[Math.floor(Math.random() * PHOTO_REQUEST_FALLBACKS.length)];
 }
@@ -89,22 +128,36 @@ function pickPhotoBusyReply() {
 // v1.10.40: 异步生图防并发锁 — companion_id 在 inflight 时拒绝再触发
 const inflightPhoto = new Set();
 
-// v1.19.5 (issue #237 #1): 异步发图任务，从 strong_photo_request 路径提炼，
-// 让"她答应发图"出口检测也能复用同一条链路。
-// 调用方负责先 inflightPhoto.add()；本函数 fire-and-forget，finally 里删锁。
-// silentOnDecline=true（promise 路径）：planner 拒绝/生图失败时**静默**只记日志——
-// 她不是被用户直接索图，补一条"拍不了"反而突兀；下轮聊到再自然圆。
+// v1.21.5 (PR-B, 照片承诺兑现链)：重构为「承诺前可行性闸门」结构。
+// 根因（生产案 A/B）：旧版调用方先无条件发 ack「这就拍」，firePhotoTask 内 planner
+// 才判可行性、拒绝就发罐头「刚才没拍好」——答应在判断之前，于是自打脸且无超时/无补发。
+// 新版：planner 先跑（可行性闸门），**通过才发 ack 并承诺**；拒绝发人设婉拒句（planner
+// 自己给的 declineCaption，非罐头）；gen 超时/失败 → 改期兜底语 + her_promise open_loop
+// （proactive 到点补拍补发）。silentOnDecline（promise 桥接路径）：她已在回复里答应过，
+// 不补发额外 ack，但拒绝/失败若可改期同样写 her_promise，把"说了不做"变成"改天补"。
+// 调用方负责先 inflightPhoto.add()；fire-and-forget，finally 删锁。
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timeout ${ms}ms`)), ms)),
+  ]);
+}
+
 function firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, companion, gate, silentOnDecline = false }) {
   const photoTaskCtx = { ctx, msg, botId, photoCompanion, binding, userText, companion };
+  const cid = photoTaskCtx.companion.id;
+  const sendLine = async (text) => {
+    if (!text) return;
+    await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, text, photoTaskCtx.msg.contextToken);
+    saveConversationTurn(cid, 'assistant', text, photoTaskCtx.companion.chat_mode_active);
+  };
   (async () => {
     const recentForPlanner = getRecentHistory(photoTaskCtx.msg.fromUser, photoTaskCtx.botId, 10);
     let photoEmotionState = null;
+    try { photoEmotionState = getEmotionStateWithDefaults(cid); }
+    catch (e) { log('warn', `[Bot] async photo emotion state unavailable: ${e.message}`); }
     try {
-      photoEmotionState = getEmotionStateWithDefaults(photoTaskCtx.companion.id);
-    } catch (e) {
-      log('warn', `[Bot] async photo emotion state unavailable: ${e.message}`);
-    }
-    try {
+      // ── 可行性闸门：planner 先判此刻此场景拍不拍得出来（在任何承诺之前）──
       const plan = await planPhotoMessage({
         companion: photoTaskCtx.photoCompanion,
         user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
@@ -116,8 +169,24 @@ function firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, com
         imageProviderAvailable: gate.imageProviderAvailable,
         emotionState: photoEmotionState,
       });
-      if (plan.shouldSendPhoto) {
-        const result = await sendCompanionPhoto({
+
+      if (!plan.shouldSendPhoto) {
+        // ── 不可行：人设婉拒句（非罐头）；可改期则写 her_promise 到点补 ──
+        log('info', `[Bot] photo 不可行 companion=${cid} reason=${plan.reason} canRetake=${plan.canRetakeLater} silent=${silentOnDecline}`);
+        if (!silentOnDecline) await sendLine(plan.declineCaption || pickPhotoDefer());
+        if (plan.canRetakeLater) {
+          recordPhotoPromise(cid, { userText: photoTaskCtx.userText, scene: photoTaskCtx.companion.current_scene, reason: `planner_decline:${plan.reason}` });
+        }
+        return;
+      }
+
+      // ── 可行：现在才承诺（ack 移到这里——这是与旧版的关键区别）──
+      if (!silentOnDecline) await sendLine(pickPhotoAck());
+
+      // gen 是慢环（60-180s）：超时包裹，超时/失败 → 改期兜底 + her_promise
+      let result;
+      try {
+        result = await withTimeout(sendCompanionPhoto({
           companion: photoTaskCtx.photoCompanion,
           user: { ...photoTaskCtx.binding, wechat_user_id: photoTaskCtx.msg.fromUser },
           context: photoTaskCtx.ctx,
@@ -131,51 +200,47 @@ function firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, com
           aspect: plan.aspect,
           shotMode: plan.shotMode,
           maintainIdentity: plan.maintainIdentity !== false,
-        });
-        if (result.ok) {
-          let captionText = result.caption || plan.caption;
-          if (captionText) {
-            await sleep(plan.delayCaptionMs || randInt(700, 1400));
-            // v1.20.1: caption 尽力而为——一轮"连发+ack+图"常把 6 条/5min 的 iLink 配额
-            // 吃满，caption 作为第 7 条会进 30s-drain 队列、3 分钟后才到（生产实测
-            // 13:02 图 → 13:05 文），上下文早走了。配额不够直接放弃，图自己会说话。
-            if (peekSendQuota(photoTaskCtx.botId)) {
-              await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, captionText, photoTaskCtx.msg.contextToken);
-            } else {
-              log('info', `[Bot] photo caption 撞限速 → 放弃不排队 companion=${photoTaskCtx.companion.id}`);
-              captionText = '';
-            }
-          }
-          saveConversationTurn(photoTaskCtx.companion.id, 'assistant', captionText || '[photo]', photoTaskCtx.companion.chat_mode_active);
-          log('info', `[Bot] async photo sent companion=${photoTaskCtx.companion.id}`);
-          return;
-        }
-        log('warn', `[Bot] async photo send failed companion=${photoTaskCtx.companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
-      } else {
-        log('debug', `[Bot] async photo planner declined companion=${photoTaskCtx.companion.id} reason=${plan.reason}`);
-      }
-      if (silentOnDecline) {
-        log('info', `[Bot] photo promise path declined/failed silently companion=${photoTaskCtx.companion.id}`);
+        }), PHOTO_GEN_TIMEOUT_MS, 'photo gen');
+      } catch (genErr) {
+        // #263 纪律：兑现失败必须响（进错误签名段）
+        log('error', `[PhotoPromise] 兑现失败 companion=${cid}: ${genErr.message} → 改期兜底 + her_promise`);
+        await sendLine(pickPhotoDefer());
+        recordPhotoPromise(cid, { userText: photoTaskCtx.userText, scene: photoTaskCtx.companion.current_scene, reason: 'gen_failed' });
         return;
       }
-      // 生不出来 / 拒绝 / send 失败：给一个 fallback 文字
-      const fallback = pickPhotoRequestFallback();
-      await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, fallback, photoTaskCtx.msg.contextToken);
-      saveConversationTurn(photoTaskCtx.companion.id, 'assistant', fallback, photoTaskCtx.companion.chat_mode_active);
-    } catch (e) {
-      log('warn', `[Bot] async photo gen error companion=${photoTaskCtx.companion.id}: ${e.message}`);
-      if (!silentOnDecline) {
-        try {
-          await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, '光线不好 等下再发哈', photoTaskCtx.msg.contextToken);
-        } catch (e2) {
-          log('warn', `[Bot] async photo fallback send also failed: ${e2.message}`);
+
+      if (result.ok) {
+        let captionText = result.caption || plan.caption;
+        if (captionText) {
+          await sleep(plan.delayCaptionMs || randInt(700, 1400));
+          // v1.20.1: caption 尽力而为——配额不够直接放弃，图自己会说话。
+          if (peekSendQuota(photoTaskCtx.botId)) {
+            await sendAndRecord(photoTaskCtx.ctx, photoTaskCtx.msg.fromUser, captionText, photoTaskCtx.msg.contextToken);
+          } else {
+            log('info', `[Bot] photo caption 撞限速 → 放弃不排队 companion=${cid}`);
+            captionText = '';
+          }
         }
+        saveConversationTurn(cid, 'assistant', captionText || '[photo]', photoTaskCtx.companion.chat_mode_active);
+        log('info', `[Bot] async photo sent companion=${cid}`);
+        return;
+      }
+
+      // send 失败（已承诺过 ack）→ 改期兜底 + her_promise（#263：必须响）
+      log('error', `[PhotoPromise] send 失败 companion=${cid} code=${result.code || 'unknown'} error=${result.error || ''} → 改期兜底`);
+      await sendLine(pickPhotoDefer());
+      recordPhotoPromise(cid, { userText: photoTaskCtx.userText, scene: photoTaskCtx.companion.current_scene, reason: `send_failed:${result.code || 'unknown'}` });
+    } catch (e) {
+      log('error', `[PhotoPromise] async photo task error companion=${cid}: ${e.message}`);
+      if (!silentOnDecline) {
+        try { await sendLine(pickPhotoDefer()); } catch (e2) { log('warn', `[Bot] photo defer send also failed: ${e2.message}`); }
+        recordPhotoPromise(cid, { userText: photoTaskCtx.userText, scene: photoTaskCtx.companion.current_scene, reason: 'task_error' });
       }
     } finally {
-      inflightPhoto.delete(photoTaskCtx.companion.id);
+      inflightPhoto.delete(cid);
     }
   })().catch(e => {
-    log('error', `[Bot] async photo task unhandled: ${e.message}`);
+    log('error', `[PhotoPromise] async photo task unhandled companion=${companion.id}: ${e.message}`);
     inflightPhoto.delete(companion.id);
   });
 }
@@ -644,13 +709,10 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
         return;
       }
 
-      // v1.10.40: 立即回应 + 后台异步生图。handleMessage 不再被 60-180s 的
-      // image gen 阻塞，bot polling 立即恢复，用户能继续对话。
-      const ackText = pickPhotoAck();
-      await sendAndRecord(ctx, msg.fromUser, ackText, msg.contextToken);
+      // v1.21.5 (PR-B)：ack 不再在此无条件发——移入 firePhotoTask，planner 判可行
+      // 才承诺"这就拍"，拒绝则发人设婉拒句（修案 A/B：答应在可行性判断之前自打脸）。
+      // 这里只记用户那条消息 + 占锁；ack/婉拒/图/兜底全由 firePhotoTask 统一发。
       saveConversationTurn(companion.id, 'user', userText, companion.chat_mode_active);
-      saveConversationTurn(companion.id, 'assistant', ackText, companion.chat_mode_active);
-
       inflightPhoto.add(companion.id);
       firePhotoTask({ ctx, msg, botId, photoCompanion, binding, userText, companion, gate });
 

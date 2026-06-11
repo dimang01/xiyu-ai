@@ -551,6 +551,8 @@ export function applyArcEventOp(companionId, openEvent, eventOp, { stateBefore, 
 // "他说明天去招聘会" → 第二天她主动问"面试怎么样"
 // 真人陪伴感最强的瞬间之一：她记得用户说过的事
 function migrateOpenLoops() {
+  // v1.21.5: loop_kind 区分"他说的事"(user_said) 与"她答应的事"(her_promise)——
+  // her_promise 由 proactive 到点补拍补发（照片承诺改期履约）。addColIfMissing 见下。
   db.exec(`
     CREATE TABLE IF NOT EXISTS companion_open_loops (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -571,6 +573,9 @@ function migrateOpenLoops() {
     CREATE INDEX IF NOT EXISTS idx_loops_companion_status_due
       ON companion_open_loops(companion_id, status, due_at);
   `);
+  addColIfMissing('companion_open_loops', 'loop_kind', "TEXT DEFAULT 'user_said'");
+  // promise_payload: her_promise 专用——记承诺的内容与生图参数（JSON），到点补发用
+  addColIfMissing('companion_open_loops', 'promise_payload', 'TEXT');
 }
 
 // ─── v1.8.0 #3: companion_preferences 结构化偏好账本 ───────────────────────
@@ -3239,7 +3244,7 @@ export function deleteShaping(companionId, id) {
 }
 
 // ─── v1.8.0 #4: companion_open_loops CRUD ──────────────────────────────────
-export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight = 5, expectedFollowup = null, sourceMessageId = null }) {
+export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight = 5, expectedFollowup = null, sourceMessageId = null, loopKind = 'user_said', promisePayload = null }) {
   if (!companionId || !title) throw new Error('saveOpenLoop: missing required fields');
   // v1.20 隐私过滤（她记得的"未完成事"同属长期存储）
   const pf = filterForStorage(title);
@@ -3257,10 +3262,11 @@ export function saveOpenLoop({ companionId, title, dueAt = null, emotionalWeight
   `).get(companionId, title);
   if (existing) return existing.id;
   const info = db.prepare(`
-    INSERT INTO companion_open_loops (companion_id, title, due_at, emotional_weight, expected_followup, source_message_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO companion_open_loops (companion_id, title, due_at, emotional_weight, expected_followup, source_message_id, loop_kind, promise_payload)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(companionId, String(title).slice(0, 200), dueAt, Math.max(0, Math.min(100, emotionalWeight)),
-         expectedFollowup ? String(expectedFollowup).slice(0, 200) : null, sourceMessageId);
+         expectedFollowup ? String(expectedFollowup).slice(0, 200) : null, sourceMessageId,
+         loopKind || 'user_said', promisePayload ? String(promisePayload).slice(0, 2000) : null);
   return info.lastInsertRowid;
 }
 
@@ -3304,6 +3310,31 @@ export function markOpenLoopFollowedUp(loopId) {
 }
 
 // stale: due_at 过期 7+ 天且未 resolve / 没 due_at 但创建 14+ 天的；定期 cron 跑
+// ─── v1.21.5: her_promise（她答应的照片）到点补发 ────────────────────────
+/** 到期且未履约的 her_promise（照片承诺改期）——proactive 补拍补发用 */
+export function listDueHerPromises(companionId, { now = new Date().toISOString() } = {}) {
+  try {
+    migrateOpenLoops();
+    return getDb().prepare(`
+      SELECT * FROM companion_open_loops
+      WHERE companion_id = ? AND loop_kind = 'her_promise' AND status = 'open'
+        AND (due_at IS NULL OR due_at <= ?)
+      ORDER BY created_at ASC LIMIT 3
+    `).all(companionId, now);
+  } catch { return []; }
+}
+
+/** her_promise 履约后标记 resolved（补发成功调用） */
+export function markHerPromiseDelivered(loopId, deliveredText = null) {
+  try {
+    getDb().prepare(`
+      UPDATE companion_open_loops
+      SET status = 'resolved', resolved_at = ?, resolved_text = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(new Date().toISOString(), deliveredText ? String(deliveredText).slice(0, 200) : null, loopId);
+  } catch { /* 履约标记失败不致命 */ }
+}
+
 export function markStaleOpenLoops(companionId = null) {
   const db = getDb();
   const where = companionId ? 'AND companion_id = ?' : '';

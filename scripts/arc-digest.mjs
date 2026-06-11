@@ -246,6 +246,25 @@ if (existsSync(LOG_FILE)) {
   console.log(`\n── 表情冒充照片：窗口内拦截 ${piHits} 次${piHits > 3 ? '（频繁——查 sticker prompt 是否又被绕过）' : ''} ──`);
 }
 
+// ── 8.7 照片承诺兑现（#PR-B：承诺→兑现/改期，不再"说了不做"）──────────────
+if (existsSync(LOG_FILE)) {
+  const _ppSinceMs = Date.now() - DAYS * 86400e3;
+  let fail = 0;
+  const rl4 = createInterface({ input: createReadStream(LOG_FILE, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const line of rl4) {
+    if (!line.includes('[PhotoPromise]')) continue;
+    const tm = line.match(/^\[([^\]]+)\]/);
+    const ts = tm ? new Date(tm[1]).getTime() : NaN;
+    if (Number.isFinite(ts) && ts >= _ppSinceMs && line.includes('失败')) fail++;
+  }
+  // 当前未履约的 her_promise（欠着的照片债）
+  let owing = 0;
+  if (hasTable('companion_open_loops')) {
+    owing = db.prepare(`SELECT COUNT(*) n FROM companion_open_loops WHERE loop_kind='her_promise' AND status='open'`).get()?.n || 0;
+  }
+  console.log(`\n── 照片承诺：窗口内兑现失败 ${fail} 次 / 当前欠着未补 ${owing} 笔${owing > 5 ? '（积压——查 proactive 补发是否在跑）' : ''} ──`);
+}
+
 // ── 9. 互动历史回填状态（v1.21.3 PR-D：后台批任务静默死最难发现——#263 教训。
 //      失败的 error 会进上面错误签名段，这里看队列水位）────────────────────
 {
