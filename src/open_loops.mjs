@@ -15,17 +15,17 @@ import { saveOpenLoop, listOpenLoops, resolveOpenLoop, markStaleOpenLoops, shang
 import { log } from './logger.mjs';
 
 function buildExtractSystemPrompt(todayKey) {
-  return `你是 open-loop 提取助手。从用户消息中识别"未完成、有未来结果、值得后续询问"的事情。
+  return `你是 open-loop 提取助手。从他（对方）的消息中识别"未完成、有未来结果、值得后续询问"的事情。
 
 今天是 ${todayKey}，时区 Asia/Shanghai。
-用户说"明天/后天/下周/周五/周末/过几天"时，必须**基于今天**换算成具体日期。
+他说"明天/后天/下周/周五/周末/过几天"时，必须**基于今天**换算成具体日期。
 due_at 只能输出 YYYY-MM-DD 或 null，禁止输出相对说法（如"明天"）。
 
 只提取这类事：
-- 用户提到的"将来要做的事"且**还没结果**："明天去面试"、"周五考试"、"周末搬家"、"等下吃完饭"
-- 用户提到的"等结果的事"："送出了简历"、"医院做了检查"、"投了那家公司"
-- 用户提到"想去做但还没做"："想买 XX"、"想去 XX 旅游"（情感权重较低）
-- 用户提到的"短期纠结/烦恼"："最近被工作压得喘不过气"、"在纠结要不要分手"（情感权重高）
+- 他提到的"将来要做的事"且**还没结果**："明天去面试"、"周五考试"、"周末搬家"、"等下吃完饭"
+- 他提到的"等结果的事"："送出了简历"、"医院做了检查"、"投了那家公司"
+- 他提到"想去做但还没做"："想买 XX"、"想去 XX 旅游"（情感权重较低）
+- 他提到的"短期纠结/烦恼"："最近被工作压得喘不过气"、"在纠结要不要分手"（情感权重高）
 
 不要提取：
 - 已经结束的事（"我昨天去过了"、"刚弄完"、"寄了"、"白去了"、"没戏了"）
@@ -40,7 +40,7 @@ due_at 只能输出 YYYY-MM-DD 或 null，禁止输出相对说法（如"明天"
   "expected_followup": "明天晚上问招聘会结果"  // ≤80 字
 }
 
-如果用户消息里没有 open loop，返回空数组 []。
+如果消息里没有 open loop，返回空数组 []。
 
 每次最多输出 2 条。`;
 }
@@ -79,7 +79,7 @@ export async function extractOpenLoops(companionId, userMsg, botReply, sourceMes
   const QUICK_GATE = /(?:明天|后天|下周|周末|过几天|今天|周一|周二|周三|周四|周五|周六|周日|要去|准备|计划|想去|打算|要做|要交|送出|投了|去了|面试|考试|面|考|医院|检查|约|订|预约|发烧|生病|去看|做|赶|搬|结果|后|之后|过完|考完|交完|做完|结束)/;
   if (!QUICK_GATE.test(userMsg)) return 0;
 
-  const userContent = `用户说："${userMsg}"\nAI回复："${(botReply || '').slice(0, 100)}"\n\n请提取 open loops（如果有）。`;
+  const userContent = `他说："${userMsg}"\nAI回复："${(botReply || '').slice(0, 100)}"\n\n请提取 open loops（如果有）。`;
   const systemPrompt = buildExtractSystemPrompt(shanghaiDateKey(new Date()));
 
   try {

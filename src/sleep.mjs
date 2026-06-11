@@ -318,7 +318,7 @@ export function wakeUpByCall(companionId, now = Date.now()) {
 
 function buildWakePromptHint(wokenToday, row) {
   const fragments = [
-    '【场景】用户刚刚打电话把你吵醒了。你正在熟睡。',
+    '【场景】他刚刚打电话把你吵醒了。你正在熟睡。',
     '【你的反应】带睡意 + 不耐烦的真实反应：声音含糊、有起床气、可能抱怨"几点了""你干嘛吵我"，但不要骂人。',
     '【口吻】≤20 字，1-2 条短消息，第二条可以是"…困" "…几点啊" "…让我再睡会儿" 这种。',
     '【禁止】不要立刻热情；不要长段问候；不要"你怎么了？发生什么了？" —— 是你被吵醒不是她。',

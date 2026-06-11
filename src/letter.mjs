@@ -69,7 +69,7 @@ export function verifyLetterSignature({ companionId, issued, body, signature }) 
 function buildLetterPrompt(companion, emotion, missingLevel, stage, hint) {
   const moodLabel = emotion.mood || 'normal';
   const depLabel = emotion.dependency >= 70 ? '很高' : emotion.dependency >= 40 ? '中等' : '一般';
-  const hintLine = hint ? `\n额外提示（用户希望你提到）：${hint}` : '';
+  const hintLine = hint ? `\n额外提示（他希望你提到）：${hint}` : '';
   return `你是 ${companion.name}，正在给「你最在乎的那个人」写一封"离线留言"——
 
 这封信不像日常聊天，是一段会被保存下来、未来任何时候打开都能读到的文字。

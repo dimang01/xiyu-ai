@@ -21,12 +21,12 @@ export function normalizeEntityType(type) {
 
 // Simple rule-based extraction — no LLM required
 const EXTRACTION_RULES = [
-  { pattern: /(?:我|用户)喜欢\s*([^\s，,。！!？?]{2,20})/g,    relation: 'likes',            entityType: 'thing' },
-  { pattern: /(?:我|用户)不喜欢\s*([^\s，,。！!？?]{2,20})/g,  relation: 'dislikes',         entityType: 'thing' },
-  { pattern: /(?:我|用户)去(?:过|了)\s*([^\s，,。！!？?]{2,20})/g, relation: 'visited',      entityType: 'place' },
-  { pattern: /(?:我|用户)提到\s*([^\s，,。！!？?]{2,20})/g,    relation: 'mentioned',        entityType: 'thing' },
-  { pattern: /提醒(?:我|用户)(?:要|去)?\s*([^\s，,。！!？?]{2,20})/g, relation: 'promised_reminder', entityType: 'reminder' },
-  { pattern: /(?:我|用户)有个?(?:朋友|同事|家人)\s*([^\s，,。！!？?]{2,10})/g, relation: 'knows', entityType: 'person' },
+  { pattern: /(?:我|用户|他)喜欢\s*([^\s，,。！!？?]{2,20})/g,    relation: 'likes',            entityType: 'thing' },
+  { pattern: /(?:我|用户|他)不喜欢\s*([^\s，,。！!？?]{2,20})/g,  relation: 'dislikes',         entityType: 'thing' },
+  { pattern: /(?:我|用户|他)去(?:过|了)\s*([^\s，,。！!？?]{2,20})/g, relation: 'visited',      entityType: 'place' },
+  { pattern: /(?:我|用户|他)提到\s*([^\s，,。！!？?]{2,20})/g,    relation: 'mentioned',        entityType: 'thing' },
+  { pattern: /提醒(?:我|用户|他)(?:要|去)?\s*([^\s，,。！!？?]{2,20})/g, relation: 'promised_reminder', entityType: 'reminder' },
+  { pattern: /(?:我|用户|他)有个?(?:朋友|同事|家人)\s*([^\s，,。！!？?]{2,10})/g, relation: 'knows', entityType: 'person' },
 ];
 
 /**
@@ -208,7 +208,7 @@ export function processMemoryForGraph(companionId, memoryText, memoryId = null, 
   // Use a single "user" entity as source for all relations
   let userId;
   try {
-    userId = upsertMemoryEntity(companionId, { entityType: 'person', name: '用户' });
+    userId = upsertMemoryEntity(companionId, { entityType: 'person', name: '他' });
   } catch {
     return;
   }

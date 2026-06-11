@@ -77,7 +77,7 @@
       <button class="tag-btn active" data-layer="">全部</button>
       <button class="tag-btn" data-layer="core_persona">核心人设</button>
       <button class="tag-btn" data-layer="relationship_rule">关系规则</button>
-      <button class="tag-btn" data-layer="user_fact">用户事实</button>
+      <button class="tag-btn" data-layer="user_fact">关于你</button>
       <button class="tag-btn" data-layer="preference">偏好</button>
       <button class="tag-btn" data-layer="event">事件</button>
       <button class="tag-btn" data-layer="emotion">情感</button>
@@ -132,7 +132,7 @@
         <div>
           <label class="text-xs text-mute mb-1 block">类别</label>
           <select id="modalLayer" class="w-full text-sm border border-line rounded-lg px-3 py-2 focus:outline-none focus:border-sakura bg-white">
-            <option value="user_fact">用户事实</option>
+            <option value="user_fact">关于你</option>
             <option value="preference">偏好</option>
             <option value="event" selected>事件</option>
             <option value="emotion">情感</option>
@@ -172,7 +172,7 @@ let editingMemoryId = null;
 
 const LAYER_LABELS = {
   core_persona: '核心人设', relationship_rule: '关系规则',
-  user_fact: '用户事实', preference: '偏好',
+  user_fact: '关于你', preference: '偏好',
   event: '事件', emotion: '情感', summary: '摘要',
 };
 const LAYER_COLORS = {

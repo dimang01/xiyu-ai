@@ -218,7 +218,7 @@
     <section class="panel card p-6 mb-4" data-panel="2">
       <h2 class="text-[16px] font-bold mb-1">Step 2：选择 Chat Provider</h2>
       <p class="text-[13px] text-mute mb-1">选一家模型服务商，粘贴 API Key。保存在本地 SQLite，不写入 <code>.env</code>。</p>
-      <p class="text-[12px] text-mute mb-4">高级用户可在 <code>.env</code> 配置，环境变量优先。</p>
+      <p class="text-[12px] text-mute mb-4">也可直接在 <code>.env</code> 配置，环境变量优先。</p>
 
       <!-- 当前配置状态 -->
       <div id="s2-current" class="mb-4 p-3 rounded-xl bg-cloud text-[13px] hidden">
@@ -308,7 +308,7 @@
               <h3 class="text-[14px] font-bold">🖼️ 图片理解（vision）</h3>
               <span id="s2-vision-state" class="text-[12px] text-mute">未配置</span>
             </div>
-            <p class="text-[12px] text-mute mb-3">让 AI 看懂用户发来的图片。不配也行，发图时会回一句"看不到图"。</p>
+            <p class="text-[12px] text-mute mb-3">让 AI 看懂你发来的图片。不配也行，发图时会回一句"看不到图"。</p>
             <div class="mb-2">
               <label class="block text-[12px] font-semibold mb-1">Provider</label>
               <select id="s2-vision-provider" class="input">
@@ -346,7 +346,7 @@
               <h3 class="text-[14px] font-bold">🎙️ 语音识别（asr）</h3>
               <span id="s2-asr-state" class="text-[12px] text-mute">未配置</span>
             </div>
-            <p class="text-[12px] text-mute mb-3">让 AI 听懂用户发来的语音。不配也行，会回一句"听不到声音"。</p>
+            <p class="text-[12px] text-mute mb-3">让 AI 听懂你发来的语音。不配也行，会回一句"听不到声音"。</p>
             <div class="mb-2">
               <label class="block text-[12px] font-semibold mb-1">Provider</label>
               <select id="s2-asr-provider" class="input">
@@ -400,7 +400,7 @@
               <span id="s2-search-state" class="text-[12px] text-mute">未配置</span>
             </div>
             <p class="text-[12px] text-mute mb-3">
-              开启后，遇到「最近 / 今天的 xxx」类问题，系统会悄悄搜一下再回答，对用户透明。不配也行，AI 就只用自己的知识回答。
+              开启后，遇到「最近 / 今天的 xxx」类问题，系统会悄悄搜一下再回答，对你透明。不配也行，AI 就只用自己的知识回答。
             </p>
             <div class="mb-2">
               <label class="block text-[12px] font-semibold mb-1">Provider</label>

@@ -98,5 +98,8 @@ jobs:
       - name: proactive 素材级去重（冷却/归因/作用域钉死）
         run: node scripts/proactive_material_smoke.mjs
 
+      - name: 称呼泄漏（"用户"零残留 + 写入端护栏）
+        run: node scripts/user_wording_guard.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。

@@ -145,20 +145,20 @@ export async function detectPhotoIntentSmart(text, recentMessages = []) {
 async function classifyPhotoIntentWithLLM(text, recentMessages) {
   const recent = (Array.isArray(recentMessages) ? recentMessages : [])
     .slice(-6)
-    .map(m => `${m.direction === 'in' || m.role === 'user' ? '用户' : 'AI'}: ${String(m.content || '').slice(0, 80)}`)
+    .map(m => `${m.direction === 'in' || m.role === 'user' ? '他' : 'AI'}: ${String(m.content || '').slice(0, 80)}`)
     .filter(Boolean)
     .join('\n');
 
   const system = '你是一个简单的二分类器。只输出 yes 或 no（小写），不要任何解释或额外文字。';
-  const userPrompt = `判断用户最新一条消息是否在请求看 AI 女友（虚拟陪伴对象）的照片 / 自拍 / 外貌。
+  const userPrompt = `判断他（对方）最新一条消息是否在请求看 AI 女友（虚拟陪伴对象）的照片 / 自拍 / 外貌。
 
 最近对话上下文：
 ${recent || '(无)'}
 
-用户最新消息: "${String(text).slice(0, 200)}"
+他的最新消息: "${String(text).slice(0, 200)}"
 
 判断标准：
-- yes：用户请求看照片 / 自拍 / 当前样子 / 外貌 / 换个姿势再拍 / 再来一张 / 长什么样
+- yes：他在请求看照片 / 自拍 / 当前样子 / 外貌 / 换个姿势再拍 / 再来一张 / 长什么样
 - no：普通对话、问候、情绪表达、问其它话题
 
 只回 yes 或 no（小写）。`;

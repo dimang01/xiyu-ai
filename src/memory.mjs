@@ -271,12 +271,12 @@ export function consumePendingCelebration(companionId) {
 
 // ─── 图片描述记忆提取（同步规则，不依赖视觉模型）──────────────────────────────
 const PET_PATTERNS = [
-  { word: '橘猫', memory: '用户养了一只橘猫', pet: '橘猫' },
-  { word: '猫', memory: '用户家里有猫', pet: '猫' },
-  { word: '小猫', memory: '用户家里有猫', pet: '小猫' },
-  { word: '狗', memory: '用户家里有狗', pet: '狗' },
-  { word: '小狗', memory: '用户家里有狗', pet: '小狗' },
-  { word: '宠物', memory: '用户家里有宠物', pet: '宠物' },
+  { word: '橘猫', memory: '他养了一只橘猫', pet: '橘猫' },
+  { word: '猫', memory: '他家里有猫', pet: '猫' },
+  { word: '小猫', memory: '他家里有猫', pet: '小猫' },
+  { word: '狗', memory: '他家里有狗', pet: '狗' },
+  { word: '小狗', memory: '他家里有狗', pet: '小狗' },
+  { word: '宠物', memory: '他家里有宠物', pet: '宠物' },
 ];
 
 const FOOD_WORDS = ['饭', '面', '火锅', '烧烤', '甜点', '蛋糕', '奶茶', '咖啡', '披萨', '寿司', '食物', '早餐', '午餐', '晚餐'];
@@ -296,9 +296,9 @@ export function extractImageMemories(imageDescription, userMessage = '') {
   const ownershipHint = /(我家|我的|家里|养了|养的|我养|这是我|我们家)/.test(msg);
   for (const pet of PET_PATTERNS) {
     if (!text.includes(pet.word)) continue;
-    add('image', ownershipHint ? pet.memory : `用户分享过${pet.pet}的照片`, ownershipHint ? 8 : 5);
+    add('image', ownershipHint ? pet.memory : `他分享过${pet.pet}的照片`, ownershipHint ? 8 : 5);
     if (/(拍|照片|看看|分享|发你|给你看)/.test(msg)) {
-      add('preference', `用户喜欢拍${pet.pet}`, 6);
+      add('preference', `他喜欢拍${pet.pet}`, 6);
     }
     break;
   }
@@ -306,21 +306,21 @@ export function extractImageMemories(imageDescription, userMessage = '') {
   const food = FOOD_WORDS.find(w => text.includes(w));
   if (food) {
     if (/(我做|自己做|我煮|我烤|我买|我点|我吃|想吃|爱吃|喜欢)/.test(msg)) {
-      add('preference', `用户对${food}感兴趣`, 5);
+      add('preference', `他对${food}感兴趣`, 5);
     } else {
-      add('image', `用户分享过${food}照片`, 4);
+      add('image', `他分享过${food}照片`, 4);
     }
   }
 
   const room = ROOM_WORDS.find(w => text.includes(w));
   if (room) {
     if (/(我家|我的|家里|房间|卧室|客厅)/.test(text)) {
-      add('image', `用户分享过自己的${room}`, 5);
+      add('image', `他分享过自己的${room}`, 5);
     }
   }
 
   if (/(生日|聚会|旅行|约会|毕业|搬家|纪念日)/.test(text)) {
-    add('event', `用户分享过照片事件：${desc.slice(0, 30)}`, 6);
+    add('event', `他分享过照片事件：${desc.slice(0, 30)}`, 6);
   }
 
   return memories.slice(0, 5);
@@ -341,13 +341,13 @@ export function buildImageReactionText(memories, imageDescription) {
 }
 
 // ─── 记忆提取（异步，调用 AI）────────────────────────────────────────────────
-const MEMORY_SYSTEM_PROMPT = `你是记忆提取助手。分析用户说的话，提取关于用户本人的明确信息。
-只提取用户主动透露的真实信息，不要推测或虚构。
+const MEMORY_SYSTEM_PROMPT = `你是记忆提取助手。分析他（对方）说的话，提取关于他本人的明确信息。
+只提取他主动透露的真实信息，不要推测或虚构。
 
 输出 JSON 数组，每条结构：
 {
   "memory_type": "fact" | "preference" | "event" | "emotion" | "inside_joke",
-  "content": "20字内简洁描述（第三人称：'用户...'）",
+  "content": "20字内简洁描述（第三人称一律用'他'指代对方：'他...'，绝不写'用户'）",
   "importance": 1-10,
   "keywords": ["核心词1","核心词2","核心词3"]
 }
@@ -368,7 +368,7 @@ const MEMORY_MIN_IMPORTANCE = 4;
 export async function extractAndSaveMemories(companionId, userId, userMsg, botReply) {
   if (!userMsg || userMsg.length < 8) return 0;
 
-  const userContent = `用户说："${userMsg}"\nAI回复："${botReply?.slice(0, 100)}"`;
+  const userContent = `他说："${userMsg}"\nAI回复："${botReply?.slice(0, 100)}"`;
 
   try {
     const raw = await extractStructuredInfo(MEMORY_SYSTEM_PROMPT, userContent);
@@ -427,24 +427,24 @@ export async function extractAndSaveMemories(companionId, userId, userMsg, botRe
 }
 
 // ─── 用户画像提取（异步，调用 AI）───────────────────────────────────────────
-const PROFILE_SYSTEM_PROMPT = `你是用户信息提取助手。从用户的发言中提取用户自身的个人信息。
-只提取用户明确说出的信息，不要推测。
+const PROFILE_SYSTEM_PROMPT = `你是信息提取助手。从他（对方）的发言中提取他自身的个人信息。
+只提取他明确说出的信息，不要推测。
 以JSON对象返回（只包含能提取到的字段）：
 {
-  "user_name": "用户名字或昵称（如有）",
+  "user_name": "他的名字或昵称（如有）",
   "user_occupation": "职业或学生身份（如有）",
   "user_birthday": "生日，格式MM-DD或YYYY-MM-DD（如有）",
   "hobbies_to_add": ["新提到的爱好（如有）"],
   "important_date": {"label":"事件名","date":"日期"} 或null,
   "notes": "其他值得记录的重要信息（如有）"
 }
-没有任何用户个人信息时返回{}。只输出JSON，无其他内容。`;
+没有任何个人信息时返回{}。只输出JSON，无其他内容。`;
 
 export async function extractAndUpdateUserProfile(companionId, userId, userMsg) {
   if (!userMsg || userMsg.length < 5) return;
 
   try {
-    const raw  = await extractStructuredInfo(PROFILE_SYSTEM_PROMPT, `用户说："${userMsg}"`);
+    const raw  = await extractStructuredInfo(PROFILE_SYSTEM_PROMPT, `他说："${userMsg}"`);
     const info = safeParseObject(raw);
     if (Object.keys(info).length === 0) return;
 

@@ -30,7 +30,7 @@ export function buildReflectionPrompt(companion, recentTurns, existingMemories) 
   const turnLines = recentTurns
     .slice(-80)
     .map(t => {
-      const role = t.role === 'user' ? '用户' : '她';
+      const role = t.role === 'user' ? '他' : '她';
       return `${role}：${String(t.content).slice(0, 200)}`;
     })
     .join('\n');
@@ -43,7 +43,7 @@ export function buildReflectionPrompt(companion, recentTurns, existingMemories) 
 
   return `你是一个 AI 陪伴系统的记忆提炼引擎，专门分析对话并更新结构化记忆。
 
-你要分析「${c.name}」和用户的最近对话，对照已有记忆，提炼出真正值得长期记录的新知识。
+你要分析「${c.name}」和他（对方）的最近对话，对照已有记忆，提炼出真正值得长期记录的新知识。
 
 【已有记忆摘要（前 20 条）】
 ${existingSnippet || '（暂无）'}
@@ -52,7 +52,7 @@ ${existingSnippet || '（暂无）'}
 ${turnLines || '（无对话）'}
 
 【要求】
-1. 提炼对"用户这个人"的新认识：偏好变化、情绪模式、最近状态、关系进展
+1. 提炼对"他这个人"的新认识：偏好变化、情绪模式、最近状态、关系进展（描述一律用'他'指代对方，绝不写"用户"）
 2. 不要重复已有记忆中已明确记录的内容（除非有重要更新）
 3. 每条新记忆必须有 confidence（0-1），只保留 >= ${CONFIDENCE_MIN} 的
 4. updated_memories 只更新真正有新信息的旧记忆

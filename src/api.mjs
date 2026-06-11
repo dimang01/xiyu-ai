@@ -2907,7 +2907,7 @@ router.post('/companions/:id/sleep/wake', requireAuth, async (req, res) => {
         if (!comp || !comp.wechat_user_id) return;
         const ctx = getBotContextForCompanion(id);
         if (!ctx?.token) return;
-        const sys = `你叫${comp.name || '溪语'}。当前场景：用户刚刚打电话把你从熟睡中吵醒。
+        const sys = `你叫${comp.name || '溪语'}。当前场景：他刚刚打电话把你从熟睡中吵醒。
 你必须以被吵醒的真实反应回复：含糊、不耐烦、抱怨、想再睡，但不骂人。
 ${r.prompt_hint}`;
         let reply = await generateReply(sys, [], '（铃声响起，你被吵醒）', {
