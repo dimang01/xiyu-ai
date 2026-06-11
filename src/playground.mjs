@@ -29,7 +29,7 @@ import {
   detectUserConfession, consumePendingCelebration, extractAndSaveMemories,
   extractAndUpdateUserProfile,
 } from './memory.mjs';
-import { safeOutboundReply, detectSafetyRisk } from './moderation.mjs';
+import { safeOutboundReply, detectSafetyRisk, scrubPhotoImpersonation } from './moderation.mjs';
 import { buildStickerPromptHint, hasStickers, parseStickerMarkers } from './stickers.mjs';
 import {
   getEmotionStateWithDefaults, updateEmotionFromUserMessage,
@@ -206,6 +206,7 @@ export async function playgroundChat(companion, userText) {
     throw err;
   }
   reply = safeOutboundReply(reply);
+  reply = scrubPhotoImpersonation(reply, companion.id);   // #281：playground 无照片链路，同罩
 
   // v1.5.2 PR E: assistant reply 后也走情绪更新（mood drift / energy 恢复等），跟 bot.mjs 对齐
   try {

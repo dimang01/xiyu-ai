@@ -231,6 +231,21 @@ if (existsSync(LOG_FILE)) {
   console.log(`\n── 入站二级查重：窗口内协议重推拦截 ${dedupHits} 次${dedupHits ? '（iLink 在重推，关注频率）' : ''} ──`);
 }
 
+// ── 8.6 表情冒充照片拦截（#281 出口护栏：她自称"刚拍的"却没真发图——
+//      命中走 [ERROR] 进上面签名段，这里独立计数看趋势）──────────────────
+if (existsSync(LOG_FILE)) {
+  const _piSinceMs = Date.now() - DAYS * 86400e3;
+  let piHits = 0;
+  const rl3 = createInterface({ input: createReadStream(LOG_FILE, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const line of rl3) {
+    if (!line.includes('[PhotoImpersonation] 表情冒充照片拦截')) continue;
+    const tm = line.match(/^\[([^\]]+)\]/);
+    const ts = tm ? new Date(tm[1]).getTime() : NaN;
+    if (Number.isFinite(ts) && ts >= _piSinceMs) piHits++;
+  }
+  console.log(`\n── 表情冒充照片：窗口内拦截 ${piHits} 次${piHits > 3 ? '（频繁——查 sticker prompt 是否又被绕过）' : ''} ──`);
+}
+
 // ── 9. 互动历史回填状态（v1.21.3 PR-D：后台批任务静默死最难发现——#263 教训。
 //      失败的 error 会进上面错误签名段，这里看队列水位）────────────────────
 {

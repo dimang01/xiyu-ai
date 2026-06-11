@@ -36,7 +36,7 @@ import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stic
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
-import { safeOutboundReply } from './moderation.mjs';
+import { safeOutboundReply, scrubPhotoImpersonation } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
 import { buildShapingPromptHint } from './shaping.mjs';
@@ -857,6 +857,8 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     top_p: companion.top_p,
   }, { accountId: proactiveBinding?.account_id || null });
   reply = safeOutboundReply(reply);
+  // #281：文本 proactive 永远没有真实照片（场景照是 kind=photo 独立分支）——表情绝不冒充照片
+  reply = scrubPhotoImpersonation(reply, companion.id);
 
   // ★ 撞车检测：字面（3-gram 0.6）+ 语义（bigram/LCS）双指标，命中重生一次
   const collision = findCollision(reply, recentAssistantTexts);

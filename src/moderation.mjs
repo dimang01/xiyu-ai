@@ -132,6 +132,45 @@ export function scrubConflictRedline(reply, arcState = 'normal', companionId = n
   return kept.join('||');
 }
 
+// ─── #281: 表情包冒充照片出站护栏（确定性，纯 prompt 拦不住）──────────────
+// 生产案例：她说"就刚才拍的 它肚子圆滚滚的"配 [STICKER:ping]——拿表情包
+// 当照片，语义还错配。触发 = 她自称【自己】拍了图（本函数只挂文本回复链；
+// 真实照片链路在 photoTask 分支早已 return，caption 走 photo_sender 不经过
+// 这里——"真发图时说刚拍的"天然豁免）。
+// ※ 人称区分是命门：用户先发图、她说"你刚拍的？"是合法引用，绝不能拦——
+//   lookbehind 排除 你/他/她/谁，只拦第一人称声称。
+const PHOTO_IMPERSONATION_RE = /(?<![你他她谁])就?(?:刚刚?|刚才)拍的|我(?:刚刚?|刚才|自己)?拍的|拍了一?张(?:给你|发你)?|给你拍了|[发给]你看看?我拍/;
+
+export function scrubPhotoImpersonation(reply, companionId = null) {
+  if (typeof reply !== 'string' || !reply) return reply;
+  if (!PHOTO_IMPERSONATION_RE.test(reply)) return reply;   // 快速路径：无声称零开销
+  try {
+    const segs = reply.split('||');
+    const kept = [];
+    let phraseHits = 0;
+    let stickerStripped = 0;
+    for (const raw of segs) {
+      // 动作 1（命中即全回复执行）：剥全部表情标记——表情绝不冒充照片
+      let seg = raw.replace(/\[STICKER:[^\]]*\]/g, () => { stickerStripped++; return ''; });
+      // 动作 2（保守清洗）：只移除声称短语本身，段内其余内容保留
+      while (PHOTO_IMPERSONATION_RE.test(seg)) {
+        seg = seg.replace(PHOTO_IMPERSONATION_RE, '');
+        phraseHits++;
+        if (phraseHits > 20) break;   // 防御性上限
+      }
+      seg = seg.replace(/^[\s，。,.、]+/, '').replace(/[\s，,、]+$/, '').trim();
+      if (seg) kept.push(seg);        // 段清空则丢弃；其他段一字不动
+    }
+    // 命中必须响：error 级进 digest 错误签名段（#263 纪律）
+    log('error', `[PhotoImpersonation] 表情冒充照片拦截 companion=${companionId ?? '?'} phrases=${phraseHits} stickers=${stickerStripped}`);
+    return kept.length ? kept.join('||') : reply.replace(/\[STICKER:[^\]]*\]/g, '').trim();
+  } catch (e) {
+    // fail-open：护栏自身出错绝不阻断回复链路
+    log('warn', `[PhotoImpersonation] 护栏异常（原样放行）: ${e.message}`);
+    return reply;
+  }
+}
+
 export function inboundIsBlocked(text) {
   const m = moderate(text);
   if (!m.ok) {
