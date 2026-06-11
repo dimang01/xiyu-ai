@@ -10,6 +10,7 @@ import { getDb, shanghaiDayBounds } from './db.mjs';
 import { log } from './logger.mjs';
 import { getImageProviderCapabilities } from './providers/image.mjs';
 import { getVisualIdentity, selectReferenceImage } from './visual_identity.mjs';
+import { moonFactLine } from './utils/moon_phase.mjs';   // v1.21.5 PR-C 月相锚定
 
 const DEFAULT_PLAN = Object.freeze({
   shouldSendPhoto: false,
@@ -496,7 +497,14 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - current shanghai time: ${String(h).padStart(2, '0')}:${mm}
 - day part: ${dp.label} (${dp.id})
 - lighting hint: ${dp.light}
-- plausible scenes for this hour: ${dp.scenes}
+- plausible scenes for this hour: ${dp.scenes}${(() => {
+    // v1.21.5 PR-C 月相锚定：夜间 + 夜空类场景才注入真实月相，杜绝凭空"月亮好圆"。
+    const isNight = h >= 19 || h < 5;
+    const skyScene = /月亮|月色|星空|夜空|夜景|天空|月/.test(String(userText || '') + String(companion?.current_scene || '') + String(proactiveContext?.scene || ''));
+    if (!isNight || !skyScene) return '';
+    return `
+- ★ 月相事实（真实天象，不可违背）：${moonFactLine(now)}。**若前半夜不可见，绝不能拍月亮/月色，caption 也不许说"看到月亮/月色好/月亮好圆"**——改拍室内灯光或别的；若可见，按真实照亮比例描述（残月就别说满月）。`;
+  })()}
 
 - trigger: ${trigger}${safeModePhoto ? `
 - ★★ SAFE MODE（最高优先级）：对方可能是未成年人。只允许分享风景/食物/手头事物等**中性照片**（已强制非自拍机位）；imagePrompt 绝不写任何人物/外貌/表情；caption 必须是普通朋友分享的口吻，**绝无**暧昧/撒娇/调情。拿不准就 shouldSendPhoto=false。` : ''}

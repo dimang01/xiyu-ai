@@ -41,6 +41,7 @@ import { sendCompanionPhoto } from './photo_sender.mjs';
 import { safeOutboundReply, scrubPhotoImpersonation } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
+import { moonFactLine } from './utils/moon_phase.mjs';   // v1.21.5 PR-C 月相锚定
 import { buildShapingPromptHint } from './shaping.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
 import { getArcProactivePolicy, getArcExpressionContext, buildOliveBranchHint, markOliveBranchSent } from './relationship_arc_runtime.mjs';
@@ -714,6 +715,14 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   let systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}${arcHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
+
+  // v1.21.5 PR-C 月相锚定：夜间给真实月相事实，杜绝凭空"月亮好圆"（生产案 A 根因之一）。
+  {
+    const _shHour = ((new Date().getUTCHours() + 8) % 24);
+    if (_shHour >= 19 || _shHour < 5) {
+      systemPrompt += `\n\n【★ 真实天象】${moonFactLine(new Date())}。**绝不要凭空说"月亮好圆/月色真美"——若前半夜不可见就根本看不到月亮**，别编。`;
+    }
+  }
 
   // ── 检查是否触发"AI 主动表白" ──
   // 条件：normal 时段 + 好感度>=50 + 双方都没表白过 + 认识>=5 天
