@@ -335,6 +335,10 @@ function normalizePlan(raw, { trigger, gate }) {
       ...plan,
       shouldSendPhoto: false,
       mode: 'text_only',
+      // v1.21.5: 保留人设婉拒句（拒绝时也给一句自然的"现在拍不了/改天拍"，
+      // 替代 bot.mjs 罐头拖延池）+ 改期可行性（夜里拍不出≠永远拍不出）
+      declineCaption: sanitizePhotoCaption(raw.caption) || '',
+      canRetakeLater: raw.canRetakeLater === true,
       reason: safeText(raw.reason || 'planner declined', 160),
     };
   }
@@ -564,8 +568,9 @@ caption：
   "reason": "日志用原因"
 }
 
-如果不适合发图，返回：
-{"shouldSendPhoto":false,"mode":"text_only","trigger":"${trigger}","photoType":"other","realism":"realistic_daily","imagePrompt":"","caption":"","delayImageMs":0,"delayCaptionMs":0,"reason":"原因"}`;
+如果不适合发图，返回（caption 用她的语气说一句此刻拍不了的自然话，别用罐头"刚才没拍好"；
+canRetakeLater：若只是此刻条件不行、换个时间能拍 = true，若根本拍不出该物 = false）：
+{"shouldSendPhoto":false,"mode":"text_only","trigger":"${trigger}","photoType":"other","realism":"realistic_daily","imagePrompt":"","caption":"（此刻拍不了的自然话）","canRetakeLater":true,"delayImageMs":0,"delayCaptionMs":0,"reason":"为什么拍不了"}`;
   return { prompt, shotMode };
 }
 

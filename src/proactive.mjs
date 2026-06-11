@@ -12,6 +12,8 @@ import {
   recordProactiveSentTimestamp, getProactiveLastSent, markWindowLastCallSent, bumpProactiveUnanswered,
   getCompanionPreferencesForPrompt,
   listDueOpenLoops, markOpenLoopFollowedUp,  // v1.8.0 #5
+  listDueHerPromises, markHerPromiseDelivered,  // v1.21.5 照片承诺改期履约
+
   getRecentSafetyRisk,                        // v1.9.0 #1
   listShaping,                                // 共建留痕（教过她的注入主动消息）
   insertProactiveMaterialLog, getRecentlyUsedMaterialIds, getRecentProactiveTexts,  // v1.21.3 素材账本
@@ -191,6 +193,18 @@ async function tick(now = new Date()) {
           }
         } catch (e) {
           log('warn', `[Proactive] lastcall 异常 companion=${companion.id}: ${e.message}`);
+        }
+
+        // v1.21.5 (PR-B item 3) 照片承诺改期履约：到点的 her_promise → 补拍补发"喏 补给你的"。
+        // 把"说了不做"的事故弧收成真人感弧。一 tick 最多补一个；失败留 open 下 tick 重试。
+        try {
+          const duePromises = listDueHerPromises(companion.id);
+          if (duePromises.length) {
+            const ctx = getBotContextForCompanion(companion.id);
+            if (ctx) await deliverPhotoPromiseMakeup(companion, ctx, duePromises[0]);
+          }
+        } catch (e) {
+          log('warn', `[Proactive] her_promise 补发检查异常 companion=${companion.id}: ${e.message}`);
         }
 
         const schedule = ensureTodaySchedule(companion.id, dateKey, minuteNow, window.start, window.end, companion);
@@ -1046,6 +1060,54 @@ export async function sendScenePhotoManually(companion) {
     return;
   }
   return sendScenePhoto(companion, ctx);
+}
+
+// v1.21.5 (PR-B item 3)：her_promise 改期履约——到点补拍补发。她当初答应却没拍成，
+// 现在条件好了真拍一张 + "喏 补给你的"。任一环失败留 open（下 tick 重试）；
+// 成功 markHerPromiseDelivered。绝不无声——失败进 [ERROR]（#263）。
+async function deliverPhotoPromiseMakeup(companion, ctx, promise) {
+  let payload = {};
+  try { payload = JSON.parse(promise.promise_payload || '{}'); } catch {}
+  const gate = getPhotoGateState({ companion, source: 'proactive', trigger: 'promise_makeup' });
+  if (!gate.allowed) {
+    log('info', `[Proactive] her_promise 补发：照片门闩未过 companion=${companion.id} reason=${gate.reasons.join(',')}（留 open 下次重试）`);
+    return;
+  }
+  let photoEmotionState = null;
+  try { photoEmotionState = getEmotionStateWithDefaults(companion.id); } catch {}
+  const plan = await planPhotoMessage({
+    companion,
+    user: { wechat_user_id: companion.wechat_user_id },
+    userText: payload.userText || '',          // 原始索求当上下文，尽量拍他当初想看的
+    recentMessages: getRecentHistory(companion.wechat_user_id, ctx.botId, 10),
+    trigger: 'proactive',
+    context: { accountId: companion.user_id || null },
+    cooldownState: gate,
+    imageProviderAvailable: gate.imageProviderAvailable,
+    proactiveContext: { scene: payload.scene || companion.current_scene || '', schedule: 'promise_makeup' },
+    emotionState: photoEmotionState,
+  });
+  if (!plan.shouldSendPhoto) {
+    log('info', `[Proactive] her_promise 补发：planner 仍判不可行 companion=${companion.id} reason=${plan.reason}（留 open）`);
+    return;
+  }
+  const makeupCaption = ['喏 补给你的', '欸 上次答应你的 拍好了', '给你补上 上次没拍成的'][Math.floor(Math.random() * 3)];
+  const result = await sendCompanionPhoto({
+    companion, context: ctx,
+    imagePrompt: plan.imagePrompt,
+    caption: makeupCaption,
+    trigger: 'proactive', source: 'promise_makeup',
+    emotionState: photoEmotionState,
+    aspect: plan.aspect, shotMode: plan.shotMode,
+    maintainIdentity: plan.maintainIdentity !== false,
+    recordTurn: true,
+  });
+  if (!result.ok) {
+    log('error', `[PhotoPromise] her_promise 补发失败 companion=${companion.id} code=${result.code || 'unknown'}（留 open 下 tick 重试）`);
+    return;
+  }
+  markHerPromiseDelivered(promise.id, makeupCaption);
+  log('info', `[Proactive] ★ her_promise 履约：补发照片 companion=${companion.id} loop=${promise.id}`);
 }
 
 async function sendScenePhoto(companion, ctx) {
