@@ -32,7 +32,7 @@ import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
 import { uploadFile, readMediaBuffer } from './media.mjs';
-import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubConflictRedline } from './moderation.mjs';
+import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubPhotoImpersonation, scrubConflictRedline } from './moderation.mjs';
 import { runArcSignalTick } from './relationship_arc_runtime.mjs';
 import { applyCrisisOverride, userRaisedMemoryTopic } from './relationship_arc.mjs';
 import { log } from './logger.mjs';
@@ -923,6 +923,8 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // v1.21 红线 #1/#2：冲突态绝不说威胁性告别/愧疚操控/索要补偿（确定性出站扫描；
     // 命中埋点在函数内部单一卡口，fail-open）
     reply = scrubConflictRedline(reply, arcCtx.arcState, companion.id);
+    // #281：表情包冒充照片护栏——文本回复链上本轮必无真实照片（photo 分支早已 return）
+    reply = scrubPhotoImpersonation(reply, companion.id);
 
     // ── Persona Guard ─────────────────────────────────────────────────────────
     try {

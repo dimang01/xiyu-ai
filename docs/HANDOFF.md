@@ -12,6 +12,7 @@
 |---|---|---|
 | 2026-06-10 | 自研 const+= 扫描退役（被 ESLint no-const-assign 全覆盖且原生更准） | ✅ 2026-06-11 本次执行 |
 | 2026-06-11 | #279 修复方案：根因修 prompt 组装重复 + 入站二级查重纵深（键=sender+内容+微信侧 create_time，退化 60s 窗）；issue 模板加官方托管选项；gh 只读、对外发言由维护者本人 | ✅ 已执行 |
+| 2026-06-11 | #281 取 A（出口护栏 scrubPhotoImpersonation）+ B（sticker prompt 禁令），C（过去式 promise→真生成场景照）拆入 v1.21.4「她的世界的视觉一致性」 | ✅ 本次执行 |
 
 ---
 
