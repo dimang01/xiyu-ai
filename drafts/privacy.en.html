@@ -34,7 +34,8 @@
           <li><b>Chat content</b>: your text conversations with the AI companion;</li>
           <li><b>WeChat binding identifier</b>: if you bind WeChat, the user identifier WeChat assigns (used for message routing; it does not include your WeChat password or contacts);</li>
           <li><b>Recognition results of voice and images</b>: voice messages are transcribed to text and images are converted to text descriptions before entering the conversation record. <b>The original audio and image files are not retained</b> — audio exists only in memory and a temp directory during transcoding and is deleted immediately; images are recognised in memory and discarded;</li>
-          <li><b>Derived data</b>: memory entries, emotional state and relationship progress the AI distils from conversations (generated to make "she remembers you" work).</li>
+          <li><b>Derived data</b>: memory entries, emotional state and relationship progress the AI distils from conversations (generated to make "she remembers you" work);</li>
+          <li><b>Server access and runtime logs</b>: IP address and access time, used for security protection and troubleshooting, rotated and purged on a schedule.</li>
         </ul>
         <p class="mt-2">We do <b>not</b> collect contacts, geolocation, device fingerprints, browsing history, or anything else unrelated to the Service.</p>
       </section>
@@ -88,6 +89,7 @@
           <li><b>Delete a companion</b>: remove an AI companion and all its associated data from the management page;</li>
           <li><b>Delete your account</b>: there is currently no self-service account deletion. To fully delete your account and data, email <b>xiyuai@proton.me</b>; we will process it manually and confirm within 15 business days.</li>
         </ul>
+        <p class="mt-2 text-[13px] text-[#86868B]">Note: the deletions above take effect immediately in the primary database; deleted data may persist in daily backups for up to 7 days before being permanently cleared as backups roll over.</p>
       </section>
 
       <section>

@@ -5,7 +5,8 @@
 > **正式上线前建议过一次专业法律审阅。** 审表方式：逐行看「承诺 ↔ 证据」，
 > 证据撑不住的句子直接删。
 
-> 待维护者填写的占位（共 3 处 ×中英两版）：生效日期、运营者联系邮箱（terms §10 / privacy §6、§9）。
+> 占位已全部填妥：生效日期 2026-06-12、联系邮箱 xiyuai@proton.me。
+> ⚠️ 上线前动作：xiyuai@proton.me 收件需可用 + 实测发一封邮件确认进箱（验证协议承诺的"邮件通知"链路）。
 
 ## 用户协议（terms.html）
 
@@ -42,6 +43,7 @@
 | 1.4 | "图片原图不留存" | bot.mjs:531-533：fetchBuffer 内存识别（recognizeImage）后 buf 丢弃，无任何 writeFile；wechat_messages 只存 '[image]' 占位与识别文字 |
 | 1.5 | "记忆/情绪等衍生数据" | companion_memories / emotion_state / relationship 系列表 |
 | 1.6 | "不收集通讯录/位置/设备指纹/浏览历史" | 全仓无相关采集代码（grep geolocation/contacts/fingerprint 零命中） |
+| 1.7 | "服务器访问与运行日志（IP/时间，定期轮转清理）" | nginx access.log（含公网 IP，/etc/logrotate.d/nginx daily/rotate 14）+ logger.mjs bot.log（实测含公网 IP）。**FACT_CHECK 抓修**：bot.log 原由 createWriteStream(append) 无轮转、9 天涨 31MB——本 PR 补 scripts/logrotate-xiyu.conf（copytruncate，生产装+强制轮转实测 fd 不断），"定期轮转清理"方对 bot.log 成真；journald 走默认 10% 磁盘自动 vacuum |
 | 2.1 | "三个目的：生成回复/记忆/排查" | 与落地页诚实化文案（v1.21.1，index.html:772）一致 |
 | 2.2 | "不出售、不自训、无广告" | 落地页现行承诺原文（"不出售你的数据，也不用于我们自有的模型训练"）+ 全站无广告代码 |
 | 3.1 | 服务商清单七项 | 生产 .env 实测（2026-06-11/12 两次核对）：CHAT=DeepSeek / **EMBEDDING=Google Gemini（已按拍板列入：记忆文本外发生成向量，"用户原文出了服务器"判定成立）** / IMAGE=302.AI / ASR+视觉=Qwen / TTS=MiniMax / SEARCH=Tavily / EMAIL=Resend |
@@ -60,6 +62,7 @@
 | 6.3 | "删除单条/全部记忆" | DELETE /api/companions/:id/memories[/:mid]（api.mjs:38-39） |
 | 6.4 | "删除角色及关联数据" | deleteCompanionForAccount（级联清理含 user_profiles 等） |
 | 6.5 | "无自助删号，邮件申请 15 个工作日人工处理" | **全仓无 DELETE /me 端点（已核实）**——如实写人工路径；15 工作日数字请维护者确认接受 |
+| 6.6 | "删除即时生效，但备份中最多保留 7 天后随滚动覆盖清除" | 消解"删除即时"vs"备份 7 天"表面矛盾：主库删除即时（API），备份按 backup-db.sh 7 天滚动覆盖——较真的读者不会觉得两句打架 |
 | 7.1 | 未成年人条款 | 同 terms 2.2/2.3 |
 
 ## 留白拍板结果（2026-06-12 全部落实）
@@ -70,3 +73,11 @@
 4. ✅ 生效日期 2026-06-12；邮箱 xiyuai@proton.me（×3 处，**维护者需在邮件服务商侧配置该收件地址**）
 5. ✅ 中英平级文件（terms.html / terms.en.html），顶部右上角语言切换
 6. ✅ 正文只服务 xiyuai.cc（§1 适用范围句）+ 四份源码头注释"自托管必须替换并自行承担合规责任" + README 自托管节同步一句
+
+## 二审补强（2026-06-12，用户逐句过第二遍）
+
+- ✅ 隐私 §1 补"服务器访问与运行日志"行（PIPL 下 IP 是个人信息，原 §1"收集什么都列了"口径漏了它）——并补 logrotate 让"定期轮转清理"成真（见 1.7）
+- ✅ 隐私 §6 补备份删除互动半句（见 6.6）
+- ✅ terms §1 去号码化时意外重复的热线句删一句（首句"暂停角色扮演并提供求助渠道信息"已含义，尾句删）
+- ✅ 发版 checklist 加"动 .env provider 必须同步隐私 §3"（PRODUCTION.md，新漂移面 check:release 管不到）
+- ⏳ 上线前：实测发一封邮件进 xiyuai@proton.me 确认链路

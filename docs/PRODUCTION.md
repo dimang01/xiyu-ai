@@ -445,6 +445,8 @@ journalctl -u xiyu-ai -f
 # 等到看到 "polling started" 之类的启动日志再关
 ```
 
+> ⚠️ **发版 checklist（隐私合规漂移面）**：若本次发版改动了 `.env` 的任何 provider（CHAT / EMBEDDING / IMAGE / ASR / TTS / SEARCH / EMAIL），**必须同步更新隐私政策 §3「第三方处理」清单**——这条 check:release 管不到（它只对账版本号与功能表），漏改即隐私政策与实际数据流向不符。
+
 DB schema 迁移是**自动**的（`src/db.mjs::initSchema()` + 各 `migrateXxx()` 在启动时跑）。不需要手动 `alembic upgrade` 之类的命令。
 
 **回滚**：
