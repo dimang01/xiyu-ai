@@ -17,7 +17,7 @@ import { unlinkSync, readFileSync } from 'node:fs';
 for (const suf of ['', '-wal', '-shm']) { try { unlinkSync(process.env.DB_PATH + suf); } catch {} }
 
 const { stripCurrentTurnFromHistory, isProtocolDuplicate } = await import('../src/inbound_dedup.mjs');
-const { saveMessage, findRecentInboundCandidate, getRecentHistory, getDb } = await import('../src/db.mjs');
+const { saveMessage, findRecentInboundCandidate, getDb } = await import('../src/db.mjs');
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { if (cond) { pass++; } else { fail++; console.log('  ✗', name); } };
