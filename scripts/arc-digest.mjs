@@ -10,6 +10,7 @@
 import Database from 'better-sqlite3';
 import { existsSync, createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { isReportableErrorLine, normalizeErrorSignature } from './error_signature.mjs';
@@ -337,6 +338,29 @@ if (hasTable('companion_current_works')) {
     console.log('   （数据存在但用户看不见——按警报给它们加回 memories.html 的 chip）');
   } else {
     console.log(`\n✅ 记忆 chip 对账：${layersWithData.size} 个有数据 layer 全有 chip（无隐藏抽屉）`);
+  }
+}
+
+// ── 部署漂移（"fix 进仓库 ≠ 进生产"的系统解：让漂移每早自报数）──
+// reflection slice 修复 6-02 进仓库、6-11 还在生产报错——本机部署的 commit vs main tip 一对比
+// 就能一眼看见"已合未部署"积压。纯只读：git fetch 只动 .git refs，不碰工作树/DB。最佳努力，失败不阻断。
+{
+  const repoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const git = (args) => execSync(`git ${args}`, { cwd: repoDir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  try {
+    const head = git('rev-parse --short HEAD');
+    try { git('fetch origin main --quiet'); } catch { /* 无网/无权限：用本地已知 origin/main（可能偏旧）*/ }
+    const behind = Number(git('rev-list --count HEAD..origin/main') || 0);
+    if (behind === 0) {
+      console.log(`\n✅ 部署漂移：本机已是 main tip（${head}），无已合未部署 commit`);
+    } else {
+      const oldestIso = git('log HEAD..origin/main --reverse --format=%cI -1');
+      const ageH = oldestIso ? Math.floor((Date.now() - new Date(oldestIso).getTime()) / 3600e3) : '?';
+      const flag = ageH !== '?' && ageH >= 24 ? '🔴' : '🟡';
+      console.log(`\n${flag} 部署漂移：本机(${head}) 落后 origin/main ${behind} 个 commit——最老一笔已合并 ${ageH}h 未部署（部署=pull+restart）`);
+    }
+  } catch (e) {
+    console.log(`\n部署漂移：无法判定（${String(e.message).split('\n')[0]}）`);
   }
 }
 
