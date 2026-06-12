@@ -24,8 +24,9 @@
 | 2026-06-12 | **封面临时护栏**（搭 PR-C 车）：planner prompt 加一行——真实出版物类(书/专辑/杂志/教材)只拍摊开内页或边角局部，不拍完整封面正面；反误伤断言：她自己的笔记本/手账封面不受限(非出版物)。**标注：V1214 正式解之前的临时规矩，正式解落地后此行撤销** | 🔄 搭 PR-C |
 | 2026-06-12 | **通电冒烟测试**（立项 backlog，PR-D 顺路或单独 patch）：stub provider 拉起应用，真跑一次 proactive tick + 一次 photo plan 到发送层，断言全链通电(只验电流走通,不验内容质量)；红验：对 buildPlannerPrompt 对象 bug 坏版本必须红。完成后 HANDOFF 记一行"接线类 bug(const+=/migratePhotoLog/buildPlannerPrompt 三案)系统解已上线" | 📋 已立项 |
 | 2026-06-12 | **《用户协议》《隐私政策》正式上线生效**（仅官方托管 xiyuai.cc）：四份正文(中英)从 drafts 落 public/app/{terms,privacy}{,.en}.html——中文替换占位模板+英文新增；注册页 auth.html 两链接 href(/app/terms.html、/app/privacy.html)一致可达。**未直接合并 #284**：它捎带的老 HANDOFF 会回退账本、且 drafts 非线上路径——改走干净 PR，#284 待关闭。opensource_check 加协议 xiyuai.cc 排除(官方域名按法律须写明,公开信息) | ✅ 已上线 |
-| 2026-06-12 | **死人开关告警出口接线（P1）**：proactive_deadman 出口因 ADMIN_ALERT_EMAIL 未配置而哑火(取址空→只打日志不发)——本次照片断供期为 #263 形态准备的两道报警都没响(digest 盲区 #292 + 此条出口空)。修：抽 emitDeadmanAlert 从 env 取址、sendOpsAlertEmail 返回 message-id 作投递凭据、空收件人改显式 WARN「报警器自己哑了」、加 deadman_test_alert 端到端入口(收件人从 env 读、不写死)。**ADMIN_ALERT_EMAIL 明文只入生产 .env 一处，仓库/PR/账本一律以 ADMIN_ALERT_EMAIL 指代、不写明文** | 🔄 代码已合，待维护者配 .env |
+| 2026-06-12 | **死人开关告警出口接线（P1）**：proactive_deadman 出口因 ADMIN_ALERT_EMAIL 未配置而哑火(取址空→只打日志不发)——本次照片断供期为 #263 形态准备的两道报警都没响(digest 盲区 #292 + 此条出口空)。修：抽 emitDeadmanAlert 从 env 取址、sendOpsAlertEmail 返回 message-id 作投递凭据、空收件人改显式 WARN「报警器自己哑了」、加 deadman_test_alert 端到端入口(收件人从 env 读、不写死)。**ADMIN_ALERT_EMAIL 明文只入生产 .env 一处，仓库/PR/账本一律以 ADMIN_ALERT_EMAIL 指代、不写明文** | ✅ 端到端闭环(维护者已配 .env) |
 | 2026-06-12 | 规矩：**对外地址与告警地址分离**——proton(对外门面/协议联系)与 ADMIN_ALERT_EMAIL(私人邮箱/运维告警)永不混用；**生产 .env 配置变更=运营者亲手，代码变更=Claude Code 走 PR**(本次 .env 配置由维护者本人执行，Claude 只给精确命令) | ✅ 已记 |
+| 2026-06-12 | **死人开关端到端闭环**：deadman_test_alert 真实取址+真发，message-id 凭据进 Gmail **收件箱**(非垃圾箱，发件域 auth.xiyuai.cc SPF/DKIM 正常)。**为 #263 静默断供形态准备的三道防线首次全员在岗**：①错误签名段(#292 扫描扩到高信号 WARN) ②死人开关出口(ADMIN_ALERT_EMAIL 已配+返回 id+空收件人显式 WARN) ③部署后人工 grep error | ✅ 闭环 |
 
 ---
 
