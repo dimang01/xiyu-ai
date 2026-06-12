@@ -27,6 +27,7 @@
 | 2026-06-12 | **死人开关告警出口接线（P1）**：proactive_deadman 出口因 ADMIN_ALERT_EMAIL 未配置而哑火(取址空→只打日志不发)——本次照片断供期为 #263 形态准备的两道报警都没响(digest 盲区 #292 + 此条出口空)。修：抽 emitDeadmanAlert 从 env 取址、sendOpsAlertEmail 返回 message-id 作投递凭据、空收件人改显式 WARN「报警器自己哑了」、加 deadman_test_alert 端到端入口(收件人从 env 读、不写死)。**ADMIN_ALERT_EMAIL 明文只入生产 .env 一处，仓库/PR/账本一律以 ADMIN_ALERT_EMAIL 指代、不写明文** | ✅ 端到端闭环(维护者已配 .env) |
 | 2026-06-12 | 规矩：**对外地址与告警地址分离**——proton(对外门面/协议联系)与 ADMIN_ALERT_EMAIL(私人邮箱/运维告警)永不混用；**生产 .env 配置变更=运营者亲手，代码变更=Claude Code 走 PR**(本次 .env 配置由维护者本人执行，Claude 只给精确命令) | ✅ 已记 |
 | 2026-06-12 | **死人开关端到端闭环**：deadman_test_alert 真实取址+真发，message-id 凭据进 Gmail **收件箱**(非垃圾箱，发件域 auth.xiyuai.cc SPF/DKIM 正常)。**为 #263 静默断供形态准备的三道防线首次全员在岗**：①错误签名段(#292 扫描扩到高信号 WARN) ②死人开关出口(ADMIN_ALERT_EMAIL 已配+返回 id+空收件人显式 WARN) ③部署后人工 grep error | ✅ 闭环 |
+| 2026-06-12 | 照片品类校准（patch 版 4 PR）：①先审计后改配比(#263)——审计实锤：proactive 主动分享 lifetime 仅 1 张(16 张里 15 张 user 索图)，通道近乎休眠，非"配比失衡"而是从零建通道 ②品类权重外置配置文件(默认 sampling 关,保持现状,切换值我拍板再切) ③新增"看到这个想到你"品类(preference/梗源,过指纹去重,taboo/隐私硬排除) ④食物一等公民+天空 sun_times 锚定(雨雪极端天气禁用至天气锚定建成)+caption/互拍升级 ⑤candid 实验 flag 默认关待 20 张评估我定默认值。观察周零 arc/emotion 改动；两停板点（权重切换值 / candid 默认值）我定 | 🔄 执行中 |
 
 ---
 

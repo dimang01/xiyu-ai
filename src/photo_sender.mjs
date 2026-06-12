@@ -362,6 +362,7 @@ export async function sendCompanionPhoto({
   recordTurn = false,
   aspect = '3:4',           // v1.21.2: planner 按机位路由（aspectForShot）
   shotMode = '',            // 落库/digest 比例分布用
+  category = '',            // v1.21.6 PR-A: proactive 加权采样命中的品类 id（user 索图为空），落库观察配比
 } = {}) {
   aspect = normalizeAspect(aspect);
   if (!envFlag('PHOTO_SEND_ENABLED', true)) {
@@ -448,7 +449,7 @@ export async function sendCompanionPhoto({
     // v1.21.2: 尺寸落库（比例防回归数据源；arc-digest 出分布）
     try {
       const meta = await sharp(converted.outPath).metadata();
-      insertPhotoLog(companion.id, { file: converted.outName, shotMode, aspect, width: meta.width, height: meta.height });
+      insertPhotoLog(companion.id, { file: converted.outName, shotMode, aspect, width: meta.width, height: meta.height, category });
     } catch { /* 流水失败不阻塞发图 */ }
     try { saveGeneratedPhoto(companion.id, converted.outPath); } catch (e) {
       log('warn', `[Photo] save generated photo skipped companion=${companion.id}: ${e.message}`);
