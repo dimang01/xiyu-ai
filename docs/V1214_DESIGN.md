@@ -71,12 +71,277 @@ current_works 是"她的世界要经得起现实查证"这族问题的一员，�
 
 ---
 
-## 第二部分 · 设计稿主体（待负责会话补全）
+## 第二部分 · 设计稿主体（2026-06-12 补全，待维护者评审）
 
-> 要求覆盖：数据模型（current_works 表/字段/与 persona_facts 的关系）、
-> 生命周期（开始/进行中/完结/换新 的触发与节奏）、表达层接线
-> （prompt 注入点/proactive 话题供给/photo POV 场景）、与「她的世界的
-> 视觉一致性」物件 registry 的衔接、CI 门禁与红色验证方案。
-> 每节需注明如何满足第一部分对应约束。
+> 覆盖：数据模型 / 生命周期 / 表达层接线 / 物件 registry 衔接 / CI 与红验。
+> 每节标注满足第一部分哪条约束。**评审前自检已做**：默认值全部带理由（§13）、
+> 依赖顺序覆盖全部追加条目（§11）、成本按生产实数重算（§12）、
+> 与既有系统冲突自查（§10）。
 
-（待补）
+---
+
+### 评审导读（给评审者的第一页）
+
+**三个子系统一句话定位：**
+
+**① current_works 档案**——把"她手头在看/在做的事"从 LLM 即兴收成一张表。
+现状是同一件事散在四处：日程 `schedule_json` 每天重新生成（书名每天可以不一样
+——书名漂移的根因）、`hobbies` 静态标签、`persona_facts` 静态史实、对话里
+LLM 现编（虚构书名的出处）。收编后 `companion_current_works` 是唯一事实来源，
+她的台词只许说档案里的作品名；作品类条目入档前过 webSearch 真实性验证
+（约束 1），搜不到宁可降级"泛读状态"绝不带虚构名入档。
+
+**② reality facts 现实事实注入层**——"她的世界经得起现实查证"的统一地基
+（约束 4）。月相（已上线）、日落窗口（照片品类 PR-C 在做，收编进家族）、
+节气、节日全部纯数学/查表零成本；天气默认不接、接口留位。统一纪律：
+**prompt 引用事实层，事实拿不到就降级为"不提"，绝不让 LLM 补位瞎编**——
+current_works 的作品验证本质上是这一层的"作品存在性"成员。
+
+**③ 物件 registry「她的物」**——她的猫/马克杯/手账要跨照片长一样（视觉一致性，
+#281 拆出）。本稿只定衔接接口不做完整设计：works 的实体物（那本书作为物理对象）
+登记进 registry，photo promise 过去式补拍从 registry 取物件描述。关键结构事实：
+物件照几乎全是无脸 POV（走 t2i 无参考图），所以物件一致性**只能靠文字描述锚定**，
+与 i2i 裁脸链天然分轨（§10 对三）。封面双坑（约束 2）的正式解也落这里，
+落地后撤销品类 PR-C 的临时护栏行。
+
+**最不确定、最希望维护者重点看的 3 个决策点：**
+
+1. **验证判定的强度（§6 verify 流程）**：现设计是字符串级判定——snippet 同时
+   含作品名+作者即 verified。误拒（译名/笔名写法不同）无害（重新生成换一部）；
+   **误放是有的**（同名不同书、网文盗版站把假书收录进搜索结果）。要不要加一道
+   LLM 判定（"这个搜索结果能证明该书真实存在吗"）？我推荐先字符串跑起来
+   （保守方向的错误无害），但这是真实性地基的强度选择，请拍板。
+   连带一个安全口子：kind 由生成 LLM 自报，报成 craft 即免验——已加确定性兜底
+   "title 含书名号《》→ 强制按作品类验证"，兜底规则是否足够请一并看。
+2. **提及冷却 48h + 每 work 周上限 3（§8）**：这是"存在感 vs 复读感"的手感参数，
+   主动分享通道本身休眠（PHOTO_CATEGORIES 审计 lifetime 仅 1 张），**没有数据
+   支撑，纯推理值**。方向确定（必须远短于梗的 14 天，否则两周生命周期的书
+   只露脸一次，档案白建），具体值请按手感裁。
+3. **works 是否随人设导出（§5）**：现设计**不导出**（跟随 affection/mood/arc_state
+   运行时状态先例，导入后重新生成）。但"她在看的书"也可以被理解为人设的延伸
+   （hobbies 的具象化）。语义之争，请拍板。
+
+---
+
+### 5. 数据模型（PR-W1；满足约束 1 的落库形态）
+
+```sql
+CREATE TABLE IF NOT EXISTS companion_current_works (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  companion_id   INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+  kind           TEXT NOT NULL,       -- book|series|anime|game|craft
+  title          TEXT NOT NULL,       -- 作品名（craft 为自由文本："给外婆织围巾"）
+  creator        TEXT,                -- 作者/出品方（验证锚；craft 为 null）
+  verify_status  TEXT NOT NULL,       -- verified|generic|skip
+                                      --   verified=搜索验证通过
+                                      --   generic=降级泛读态（"最近在看一本推理小说"，无具体名）
+                                      --   skip=craft 类免验
+  verify_evidence TEXT,               -- 命中 snippet 截断存证（≤300 字，审计用）
+  progress_note  TEXT,                -- 进度一句话（"看到第三章，节奏有点慢"），表达层唯一引用源
+  status         TEXT NOT NULL DEFAULT 'active',  -- active|finished|dropped
+  started_at     TEXT NOT NULL,
+  last_mentioned_at TEXT,             -- 主动提及冷却的判定依据
+  finished_at    TEXT
+);
+CREATE INDEX idx_current_works_comp ON companion_current_works(companion_id, status);
+```
+
+**与 persona_facts 的关系**：`companion_persona_facts` 是静态人生史实（注册时
+生成、不变），current_works 是**滚动现在时**。单向取料：换档生成时从
+`hobbies` + persona_facts 的兴趣类条目取题材偏好（爱看推理的换书优先推理），
+**绝不回写** persona_facts。完结时归档一条记忆（layer=event，"6 月看完了
+《xxx》，她觉得结尾仓促"）进 memory——对话里"你之前看的那本"靠记忆召回接住。
+
+**字段四件套对账（v1.19.4 教训，照 arc_state 范式）**：
+- 表**不进 ALLOWED_FIELDS**、不开通用 PATCH——档案由生命周期任务独占写入，
+  防 dashboard 一拨就"换书"绕过验证；
+- `companionSummary` 返回 active works（dashboard 展示"她最近在看"）；
+- **人设导出不带**（运行时状态先例；评审决策点 3）；
+- `progress_note` / `verify_evidence` 入库过 `filterForStorage`
+  （隐私过滤全口子承诺不破例——progress 由 LLM 生成可能引用对话内容）。
+
+### 6. 真实性验证管线（PR-W1；约束 1 的实现设计）
+
+```
+生成候选 {kind,title,creator}
+  → kind 兜底：title 含《》/明显作品形态 → 强制按作品类走验证（防 LLM 自报 craft 绕过）
+  → craft 类 → skip 入档
+  → 查缓存：任意 companion 已有 (title,creator) verified 记录 → 直接 verified（免重搜）
+  → webSearch("《title》 creator", {maxResults:5})
+      ├─ ok:false（provider 故障）→ 本周期降级 generic + [CurrentWorks] warn 响
+      │   （provider 挂了 ≠ 书是假的：既不入档具体名、也不计作品失败）
+      ├─ ok:true 且某 result 的 title+snippet 同时含作品名与 creator → verified 入档
+      └─ ok:true 无证据 → 丢弃该候选，LLM 重新生成换一部（≤2 次）
+           → 仍无 → 降级 generic（"最近在看一本推理小说"）
+```
+
+- **验证缓存永不过期**：作品存在性是单调事实（存在过就不会变不存在），
+  (title,creator) 已 verified 即全局免验——缓存就是表本身，不另建表。
+- **全局验证日上限** `WORKS_VERIFY_DAILY_CAP=50`：防异常循环烧 Tavily 配额
+  （13 个 companion 正常日用 <10 次）；到顶一律降级 generic + warn。
+- 连续 N 天全部 ok:false → 这是 search provider 死了，#292 扩容后的
+  digest 错误签名段可见（[CurrentWorks] 前缀就是签名锚）。
+
+### 7. 生命周期（PR-W1 状态 + PR-W2 推进；约束 3 的退场路径在此闭环）
+
+| 阶段 | 触发 | 动作 |
+|---|---|---|
+| 开始/换新 | 每日 00:30 日程任务顺路检查：active 作品类条目 < 槽位数 | 生成候选 → §6 验证 → 入档；**搭 `runDailySchedules` 便车，不新增定时器**（plan_tasks `runOnce` 先例） |
+| 进行中 | 日程生成时把 active works 喂进 continuityHint（v1.12.0 现成机制） | 日程里自然出现"睡前看了两章"；progress_note 随之更新（日程生成同一趟 LLM 输出，零新增调用） |
+| 完结 | started_at + 生命周期天数到点（kind 默认见 §13，±随机抖动） | status=finished → 归档记忆 → 下个 00:30 自动换新（"那本看完啦，最近换了本新的"） |
+| 弃坑 | 小概率（~15%）替代完结 | status=dropped，记忆措辞"弃了，看不下去"——真人不是每本都看完 |
+
+**存量虚构作品退场（约束 3 的表达规则，PR-W2）**：
+- 历史对话/记忆里的虚构书名**零清洗**（对话是史实，#279 纪律）；
+- prompt 注入一条表达约束：**用户追问档案外的旧作品名 → 按"看完了/翻完了"
+  语义接，不展开任何内容细节**（展开 = 继续虚构）；新话题只从档案出。
+- 旧虚构名随话题自然沉底；记忆召回若带出旧名，同一条表达约束兜住。
+
+### 8. 表达层接线（PR-W2；约束 2 的 photo 侧 + 约束 3 的退场表达）
+
+- **prompt 注入**：`buildSystemPrompt` 维持纯函数纪律（零 import）——works hint
+  由调用方拼好传入（`shapingHint` 先例）。注入形态一行事实式：
+  `【手头的事】她最近在看《xxx》（看到第三章，觉得节奏有点慢）；手上在给外婆织围巾（快收尾了）`。
+  generic 态注入"最近在看一本推理小说（还没看进去）"——模糊但不虚构。
+- **proactive 话题供给**：active works 进主动消息候选池，素材 ID `work:<id>`
+  落 v1.21.3 指纹账本（`photo_thought` 的 pref:/joke:/mem: 同模式），
+  **冷却窗独立**：`WORK_MENTION_COOLDOWN_HOURS=48` + 每 work 每周主动露脸 ≤3，
+  不是梗的 14 天——语义不同，works 是持续状态需要存在感，梗是一次性的（§10 对二）。
+- **对话召回不挂任何冷却**（proactive_material 铁律原文复用：她主动不提是克制，
+  他聊起来接不住是失忆）——他问"那本书咋样"，她永远接得住。
+- **photo POV（约束 2）**：planner prompt 加确定性约束行（同月相事实注入写法）：
+  真实出版物类场景一律 ACTIVITY-POV 拍摊开内页/书脊一角/压在书上的手，
+  imagePrompt 明令 `partial/cropped title, never full readable cover`；剧/番拍
+  "屏幕一角+沙发毯子"氛围。**复用品类配置（PHOTO_CATEGORIES §五锚点）**：
+  works 场景从 `config/photo_categories.json` 的 activity_pov 品类走 sceneSeed
+  注入，不为 works 另起一套照片配置。
+
+### 9. reality facts 注入层（PR-W3，独立可先行；约束 4）
+
+| 成员 | 状态 | 形态 |
+|---|---|---|
+| 月相 | ✅ v1.21.5 在线 | `utils/moon_phase.mjs` 纯数学 |
+| 日落/晚霞窗口 | 照片品类 PR-C **在做**（`utils/sun_times.mjs`，日落±40min 黄金窗） | 本层**收编不重写**，PR-W3 只统一注入格式 |
+| 节气 | 本 PR 落地 | `utils/solar_terms.mjs`，2026-2030 五年查表（~120 行常量） |
+| 节日 | 本 PR 落地 | 公历查表 + 农历（春节/中秋）五年对照；与 reminders 的 holiday 类对齐复用 |
+| 天气 | **默认不接**，接口留位 | 未配 key 降级"不提"；接时按**她的人设城市**（sun_times 的 PHOTO_CITY 同源），1h 缓存 |
+| 作品存在性 | §6 | webSearch 验证，同属"经得起查证"家族 |
+
+- 注入格式统一：`【★ 真实世界】今天：{节气}{，节日}；今晚月相：{相名}`，
+  注入口 = proactive + photo_planner 两处（月相已踩好的位置），相关场景才注入
+  （白天零开销原则沿用）。
+- utils 家族纪律：纯函数、零 API（天气除外）、零依赖、各配 smoke。
+
+### 10. 与既有系统的冲突自查（每对一句"如何不打架"+机制）
+
+**对一 · 日程槽 vs 睡眠系统时段**——
+**不打架的一句话：works 不发明第二张时间表。**
+works 只作为素材喂给既有日程生成（00:30 任务的 continuityHint），落进
+schedule_json 的 07:00-23:30 硬区间（生成 prompt 写死），而睡眠默认
+00:30-07:30（jitter±30）在区间之外；用户自定义就寝提前到 23:00 时，
+23:00-23:30 槽是**既有缝隙**（不是 works 引入），且表达出口处 sleep 静默闸门
+层级高于日程内容——她真睡着了，日程里写了"在看书"也发不出来。
+
+**对二 · current_works vs 素材指纹账本（v1.21.3）**——
+**不打架的一句话：同一本账，分开的命名空间和冷却窗——账本记的是"主动提及"，
+不是"存在"。**
+works 用 `work:<id>` 进 proactive_material 同一账本（photo_thought 先例），
+但冷却窗独立（48h，不是 `mem:` 的 14 天）：梗是一次性的（"小汤圆"复读即烦），
+works 是持续状态（两周的书 14 天只许提一次 = 档案白建）。两个命名空间共享
+同一条铁律：**只过滤 proactive，对话召回永不过滤**。
+
+**对三 · 她的物（物件 registry）vs 自拍 i2i 裁脸链**——
+**不打架的一句话：管辖互斥——裁脸链只锚脸，registry 只锚物，按 isSceneryScene
+二选一，同一张图永不同时受两个锚。**
+裁脸链（`cropReferenceToFace`）把参考图裁成只剩头脸喂 i2i，专治"脸漂移"，
+只在有人脸的 selfie/env-selfie 场景生效；物件照（书/杯子/手账）几乎全是
+无脸 POV，按 `isSceneryScene`/ACTIVITY_POV 路由走 **t2i 不带参考图**
+（v1.19.2 实证：i2i 人脸参考对无脸 POV 是负资产，会把脸硬塞进桌面）。
+所以物件一致性结构上**不可能**靠 i2i 参考图，只能靠 registry 的文字描述
+（"她的马克杯：奶黄色、柄上有只猫"）注入 imagePrompt——文字锚物、参考图锚脸，
+两条链在 shot mode 路由处就分岔了。
+
+### 11. 依赖顺序与 PR 拆分（追加条目全覆盖核对）
+
+```
+PR-W1 数据层+验证管线（表/缓存/日上限/kind 兜底/生命周期状态）→ 红验①②③
+PR-W2 表达层（prompt 注入/proactive 供给+冷却/对话召回/存量退场表达规则）→ 红验④
+PR-W3 reality facts（节气/节日查表 + 统一注入格式收编月相·日落）——独立，可与 W1 并行
+PR-W4 photo 侧正式解（封面 POV 约束行 + 物件 registry 最小版 + sceneSeed 复用）→ 红验⑤
+        ↑ 依赖照片品类 PR-D（sampling 开关激活后"她主动拍书"通道才存在）
+```
+
+**后来追加条目 → 落点映射（自检项，全覆盖）**：
+
+| 追加条目 | 落点 |
+|---|---|
+| 真书验证（约束 1） | PR-W1 §6 管线 + 红验①② |
+| 封面双坑（约束 2） | PR-W4 正式解；**过渡期已由品类 PR-C 临时护栏顶住（2026-06-12 决议），W4 落地时撤销临时行** |
+| 存量虚构退场（约束 3） | PR-W2 §7 表达规则（零清洗 + "看完了"语义 + 红验④） |
+| 照片品类配置复用·不另起炉灶（PHOTO_CATEGORIES §五） | PR-W4 走 `photo_categories.json` 的 activity_pov sceneSeed，works 不建第二套照片配置 |
+| 现实锚定接入点（约束 4） | PR-W3；**sun_times 已被品类 PR-C 先行实现，W3 收编格式不重写** |
+
+顺序约束：W2 依赖 W1（表达引用档案）；W4 依赖 W1 + 品类 PR-D；W3 无依赖。
+建议节奏：W1 → W2 发一版（档案+对话+proactive 文字侧成立）→ W3 → 等品类
+PR-D 部署稳定后 W4（photo 侧收尾 + 撤临时护栏）。
+
+### 12. 成本估算（2026-06-12 生产实数重算）
+
+基数：**13 个绑定活跃 companion**（`wechat_accounts.is_active=1` 日程任务同口径
+——系统跑批按这个数烧钱，测试号也消耗）；剔除测试号后真实活跃 10。
+
+| 项 | 算式 | 月成本 |
+|---|---|---|
+| 验证搜索 | 13 comp × 换档~2 次/周 ×（1+重试均值~0.3）≈ 35 次/周 ≈ **150 次/月** | Tavily free 1000/月的 15%；全员重试打满的封顶 ~390/月 仍 <40%，另有日上限 50 兜底 |
+| 换档生成 LLM | 13 × ~2 次/周 × 4.3 周 ≈ 112 次/月 × ¥0.0046（成本表 chat 均价） | **≈¥0.5** |
+| progress 推进 | 搭日程生成同趟 LLM，输出多 ~30 字 | ≈0（边际 token） |
+| prompt 注入增量 | works hint ~60 字 × 每条消息进 system prompt（deepseek 输入 ¥2/1M tok） | 每千条消息 +¥0.12，**≈¥1/月**量级 |
+| 节气/节日/月相/日落 | 查表+纯数学 | **0** |
+| 天气 | 默认不接 | **0**（接入时：人设城市去重+1h 缓存 ≈24-72 次/天，和风 free 1000/天内） |
+| photo 侧 | 不新增生图调用——works 场景共享品类管线既有日限/冷却（image ¥0.3/张是 chat 65×，**这条是成本红线**：W4 绝不为 works 单开生图预算） | **0 增量** |
+
+合计新增 **≈¥2/月**（13 companion 规模）；规模线性外推 100 companion 时
+≈¥15/月 + Tavily 1150 次/月（需升级 plan 或自建 SearXNG——REGISTRY 已支持，
+到量再切）。
+
+### 13. 参数速查（实现时全部 env 可调；**每个默认值一句理由**）
+
+| 参数 | 默认 | 理由 |
+|---|---|---|
+| `WORKS_MAX_ACTIVE`（同时在档条数） | **2**（1 作品类 + 1 craft） | 真人同时"在追"的就一两件；条数↑稀释每件露脸频率、换档验证成本线性涨 |
+| 书生命周期 | **10-21 天**随机 | 普通人一本书约两周；随机抖动防全员同日换档（13 个 companion 同晨换书很诡异） |
+| 剧/番生命周期 | **7-14 天** | 一季 12 集按每天 1-2 集的真实追剧节奏 |
+| craft 生命周期 | **7-30 天** | 织围巾/拼图这类长线事天然跨度大，下限 7 防"三天织完围巾"穿帮 |
+| 弃坑概率 | **15%** | 真人不是每本都看完；太高显得三分钟热度（与人设"性格"解耦的全局保守值） |
+| `WORK_MENTION_COOLDOWN_HOURS` | **48** | 两周生命周期内主动露脸 3-5 次=有存在感；<24h 像复读，>7 天形同消失（评审决策点 2） |
+| 每 work 周主动上限 | **3** | 与 48h 冷却互为冗余硬顶（photo weeklyCap 同思路：双闸防单闸失效） |
+| 验证重试次数 | **2** | 第 3 个候选还搜不到，说明生成器在出冷门/编造倾向，止损降级；重试=重新生成新候选，不是同名重搜 |
+| 验证缓存时长 | **永不过期** | 作品存在性单调（存在过不会变不存在）；缓存即表本身，零新表 |
+| `WORKS_VERIFY_DAILY_CAP` | **50/天（全局）** | 正常日用 <10（13 comp 口径），5× 余量；异常循环烧不穿 Tavily 月配额 |
+| 换档检查频率 | **每日 1 次（搭 00:30 日程批）** | works 是天级状态，30min 情绪批太频；不新增定时器（plan_tasks runOnce 先例） |
+| generic 降级文案 | 不指名（"一本推理小说"） | 第一部分统一原则：宁可模糊不可虚构 |
+| `verify_evidence` 截断 | **300 字** | 够审计回溯命中依据，不让 snippet 撑爆行宽 |
+
+### 14. CI 门禁与红色验证
+
+新增 smoke（进 opensource_check 门禁）：`scripts/current_works_smoke.mjs`
+（纯函数零真网络：mock webSearch 注入）。
+
+| # | 红验 | 烧坏验证（必须红的版本） |
+|---|---|---|
+| ① | mock 搜索永远查无此书 → 重试 2 次后降级 generic，**档案具体名零虚构** | 注释掉验证直接入档 → 必须红 |
+| ② | mock provider 故障（ok:false）→ 降级 generic + warn，**不把真书判成假书**（不记作品失败） | 把 ok:false 当"无证据"处理 → 必须红 |
+| ③ | LLM 把《xxx》自报成 craft → 书名号兜底强制走验证 | 删掉兜底行 → 必须红 |
+| ④ | 沙箱真 LLM：追问档案外旧虚构名（"你之前说的那本转角呢"）→ "看完了"语义、零内容展开 | 对话片段贴 PR |
+| ⑤ | book 场景 imagePrompt 必含 partial/cropped title 约束行、绝无完整封面正面 | 同 photo planner smoke 16 项的断言模式 |
+
+回归承诺：p0 125 / imports / photo planner smoke 16 全绿是各 PR 合并门槛；
+W2 合并前 proactive_material_smoke 必须扩 `work:` 命名空间用例。
+
+### 15. 验收原则（照 CONFLICT_ARC §0 体例）
+
+**指标只看真实性与自然度，不看提及频率类指标。**
+- 虚构名零入档：档案里每个具体作品名都有 verify_evidence 可回溯
+- 降级态自然：generic 文案听起来是"没聊到"，不是"答不上来"
+- 她的世界经得起搜：用户实搜她提的任何书/剧，必须存在
+- "她多聊她的生活"不构成调参依据——works 是给"在空隙给温柔"供料的，不是拉时长的
