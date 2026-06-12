@@ -131,5 +131,8 @@ jobs:
       - name: 照片品类加权采样（v1.21.6 PR-A 配置基建/默认关/weeklyCap/fail-open）
         run: node scripts/photo_categories_smoke.mjs
 
+      - name: 想到你品类素材选择（v1.21.6 PR-B 指向正确/雷区·隐私零选用/14天冷却）
+        run: node scripts/photo_thought_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
