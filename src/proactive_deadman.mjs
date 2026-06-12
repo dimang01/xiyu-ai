@@ -61,26 +61,10 @@ export async function checkProactiveDeadman({ now = new Date(), sendAlert = send
     setAppSetting(STRIKES_KEY, String(strikes));
 
     if (strikes >= STRIKES_TO_ALERT) {
-      // 告警风暴控制：冷却期内不重复发邮件（CRITICAL 日志照打）
-      const lastAlert = Number(getAppSetting(LAST_ALERT_KEY) || 0);
-      const cooledDown = now.getTime() - lastAlert >= ALERT_COOLDOWN_H * 3600e3;
       log('error', `[Deadman] ★ CRITICAL：近 ${ACTIVE_WINDOW_H}h 有 ${out.active} 个活跃 companion 但 proactive 成功发送 = 0，已连续 ${strikes} 个周期——疑似 #263 形态静默断供，请立即查 error 日志（npm run arc:digest）`);
-      const to = String(process.env.ADMIN_ALERT_EMAIL || '').trim();
-      if (to && cooledDown) {
-        try {
-          await sendAlert(to, 'proactive 疑似静默断供',
-            `近 ${ACTIVE_WINDOW_H} 小时内有 ${out.active} 个活跃 companion，但 proactive 成功发送数为 0，已连续 ${strikes} 个检查周期。\n\n`
-            + `这与 #263 事故形态一致（错误被 catch 吞掉、进程不崩、health 正常）。\n`
-            + `请上服务器跑：npm run arc:digest 看错误签名段；journalctl -u zhaohy-wechat 查日志。\n\n`
-            + `本告警纯报警零自愈：未做任何重启/配置变更。检查时间：${now.toISOString()}`);
-          setAppSetting(LAST_ALERT_KEY, String(now.getTime()));
-          out.alerted = true;
-        } catch (e) {
-          log('warn', `[Deadman] 告警邮件发送失败（CRITICAL 日志已打，不阻塞）: ${e.message}`);
-        }
-      } else if (!to) {
-        log('warn', '[Deadman] ADMIN_ALERT_EMAIL 未配置——只打 CRITICAL 日志，不发邮件');
-      }
+      const r = await emitDeadmanAlert({ active: out.active, strikes, now, sendAlert });
+      out.alerted = r.sent;
+      if (r.id) out.alertId = r.id;
     }
     return out;
   } catch (e) {
@@ -88,5 +72,38 @@ export async function checkProactiveDeadman({ now = new Date(), sendAlert = send
     log('warn', `[Deadman] 心跳检查异常（已忽略）: ${e.message}`);
     out.skipped = true;
     return out;
+  }
+}
+
+/**
+ * 告警出口（v1.21.6）：从 env 读收件人 → 发送 → 返回投递凭据 { sent, id?, reason? }。
+ * 抽出供 scripts/deadman_test_alert.mjs 走「真实取址 + 真实发送」端到端验证——收件人
+ * 一律由代码从 ADMIN_ALERT_EMAIL 读，绝不写死。
+ * 空收件人走显式 WARN：这正是本次 P1 的根因形态（报警器自己哑了），出口得会喊。
+ */
+export async function emitDeadmanAlert({ active = 0, strikes = STRIKES_TO_ALERT, now = new Date(), sendAlert = sendOpsAlertEmail, ignoreCooldown = false } = {}) {
+  const to = String(process.env.ADMIN_ALERT_EMAIL || '').trim();
+  if (!to) {
+    log('warn', '[Deadman] ⚠ ADMIN_ALERT_EMAIL 未配置——告警出口无收件人，CRITICAL 日志打了、邮件没发出去（这正是本次 P1 的根因形态：报警器自己哑了）。请配置生产 .env 的 ADMIN_ALERT_EMAIL。');
+    return { sent: false, reason: 'no_recipient' };
+  }
+  // 告警风暴控制：冷却期内不重复发（CRITICAL 日志照打）。--test 用 ignoreCooldown 绕过。
+  const lastAlert = Number(getAppSetting(LAST_ALERT_KEY) || 0);
+  if (!ignoreCooldown && now.getTime() - lastAlert < ALERT_COOLDOWN_H * 3600e3) {
+    return { sent: false, reason: 'cooldown' };
+  }
+  try {
+    const id = await sendAlert(to, 'proactive 疑似静默断供',
+      `近 ${ACTIVE_WINDOW_H} 小时内有 ${active} 个活跃 companion，但 proactive 成功发送数为 0，已连续 ${strikes} 个检查周期。\n\n`
+      + `这与 #263 事故形态一致（错误被 catch 吞掉、进程不崩、health 正常）。\n`
+      + `请上服务器跑：npm run arc:digest 看错误签名段；journalctl -u zhaohy-wechat 查日志。\n\n`
+      + `本告警纯报警零自愈：未做任何重启/配置变更。检查时间：${now.toISOString()}`);
+    setAppSetting(LAST_ALERT_KEY, String(now.getTime()));
+    if (id) log('info', `[Deadman] 告警邮件已发出 通道=ops(sendOpsAlertEmail) message-id=${id}`);
+    else log('info', '[Deadman] 告警邮件已发出 通道=ops(sendOpsAlertEmail)（dev_stdout 模式，无 message-id）');
+    return { sent: true, id: id || null };
+  } catch (e) {
+    log('warn', `[Deadman] 告警邮件发送失败（CRITICAL 日志已打，不阻塞）: ${e.message}`);
+    return { sent: false, reason: 'send_failed', error: e.message };
   }
 }

@@ -92,6 +92,9 @@ jobs:
       - name: proactive 死人开关心跳
         run: node scripts/proactive_deadman_smoke.mjs
 
+      - name: 死人开关告警出口（v1.21.6 接线：返回 message-id/从 env 取址/空收件人显式 WARN）
+        run: node scripts/deadman_alert_smoke.mjs
+
       - name: 照片比例（机位路由 + 转码卡口）
         run: node scripts/photo_aspect_smoke.mjs
 

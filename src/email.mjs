@@ -60,7 +60,7 @@ export async function sendOpsAlertEmail(to, subject, text) {
   if (mode === 'dev_stdout') {
     console.log(`\n${'═'.repeat(60)}\n🚨  [EMAIL_DEV_MODE] 运维告警（未真发邮件）\n    收件人：${to}\n    主题：${subject}\n    ${String(text).split('\n').join('\n    ')}\n${'═'.repeat(60)}\n`);
     log('warn', `[Email] dev_stdout 运维告警：${subject}`);
-    return;
+    return null;   // dev 模式不真发，无投递凭据
   }
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey || !process.env.RESEND_FROM) throw new Error('RESEND_API_KEY / RESEND_FROM 未配置');
@@ -75,6 +75,9 @@ export async function sendOpsAlertEmail(to, subject, text) {
     }),
   });
   if (!res.ok) throw new Error(`Resend HTTP ${res.status}`);
+  // v1.21.6: 返回 Resend message-id 作投递凭据——死人开关报警可追踪（成功路径此前吞了 id）
+  const body = await res.json().catch(() => ({}));
+  return body.id || null;
 }
 
 export async function sendVerificationEmail(email, code) {
