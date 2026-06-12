@@ -269,4 +269,25 @@ if (existsSync(LOG_FILE)) {
   for (const t of tiers) console.log(`  ${String(t.t).padEnd(12)} ${t.n}`);
 }
 
+// ── current_works 建档流水（v1.21.4 PR-W1：双闸的生产首考要在早报一眼可见）──
+if (hasTable('companion_current_works')) {
+  const works = db.prepare(`
+    SELECT cw.companion_id, cw.kind, cw.title, cw.creator, cw.verify_status, cw.started_at, c.name
+    FROM companion_current_works cw JOIN companions c ON c.id = cw.companion_id
+    WHERE datetime(cw.started_at) >= datetime(?) ORDER BY cw.started_at DESC`).all(sinceIso);
+  const nV = works.filter(w => w.verify_status === 'verified').length;
+  const nG = works.filter(w => w.verify_status === 'generic').length;
+  console.log(`\n── current_works 建档流水：${works.length} 条（近 ${DAYS} 天；verified ${nV} / generic 降级 ${nG}）──`);
+  for (const w of works.slice(0, 20)) {
+    const tag = w.verify_status === 'verified' ? '✅ verified'
+      : w.verify_status === 'generic' ? '⚠ generic（降级泛读：搜不到 / provider 故障 / 日上限）'
+        : 'skip(craft)';
+    console.log(`  ${fmtT(w.started_at)}  ${cname(w.companion_id)}  ${w.kind}「${cut(w.title, 20)}」${w.creator ? '/' + cut(w.creator, 12) : ''}  ${tag}`);
+  }
+  if (!works.length) console.log('  （无——00:30 批未跑或无活跃 companion）');
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  const used = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(`works_verify_${today}`);
+  console.log(`  今日验证搜索：${used?.value || 0} 次 / 上限 ${process.env.WORKS_VERIFY_DAILY_CAP || 50}（异常烧配额的护栏）`);
+}
+
 console.log('\n════ 报表完（纯只读，无任何回写）════');
