@@ -44,6 +44,8 @@
 | 2026-06-12 | **reflection 三根因处置拍板**（A/B/D 实现，C 记账）：**A 批准**——saveMemory 契约对齐，先 grep 全 caller 审计现有默认依赖、再扩签名接 source/layer/weight，任何 caller 行为变化写进 PR 描述。**B 改走「边界映射」不动 CHECK/不开新类型**——reflection 类型词汇在 saveMemory 边界映射到现有枚举(user_fact→fact 等)，**映射表显式+注释、先贴维护者过目再落地(merge gate)**；映射不到的(relationship_rule)→走 rejected 计数显式可见绝不静默丢(插桩已接住)；**relationship_rule 是否成正式记忆类型=产品决策，挂 v1.23 情绪建构包设计一并定**，届时若开 CHECK 迁移+对账方向②+chip 按警报回归(路径已铺，推迟零成本)。**D 批准**——digest 加「部署漂移行」(prod HEAD vs origin/main：未部署 commit 数 + 最老一笔已合并多久)，"fix 进仓库≠进生产"的系统解=漂移每早自报数 | 🔄 A/B/D 实现中 |
 | 2026-06-12 | **C：8 天反思洞(6-02~6-11)补跑——今天不办，有真 deadline**：源 turns **60 天过期(~8 月初)**，挂日历 **7 月中前决定补或弃**；决定时权衡**时代错位风险**(今天的管线给旧对话生成"当时的反思"是温和造假)。过期即永久关窗 | 📋 挂日历，7 月中前定 |
 | 2026-06-12 | **部署编排**：#306/#307 **不今晚上线**，明早维护者例行 SSH 看 digest 时一并 pull+restart。**预期管理**：今晚 02:15 批仍跑旧码、source 错贴照旧、无心跳数据；**明晚(6-13 02:15)起才有 reflection 心跳**。本会话不碰部署(会话间边界，prod 现 b06e7c5=#305 W1/W2 已上线) | 📋 明早部署 |
+| 2026-06-12 | **A/B/D 落地完成**：A(saveMemory 契约对齐,纯加法)+B(layer→type 边界映射) 合 #308；D(digest 部署漂移行) 合 #309。**映射表过目修订**：summary→daily_summary 砍掉改 (null)→显式 reject——给"永不该走的路(reflection 不产 summary)"修有损桥是反模式，会让错类型悄悄贴合法标签绕过 rejected/蒸发可见机制(用正确管道运送错误的货比 reject 更阴)。**门槛原则入 LAYER_TO_LEGACY_TYPE 注释**：映射表只许收录"确认会发生且语义无损"的转换，其余一律显式拒绝，宁可 rejected 跳一下被看见、不要有损降级悄悄过关。reflection_memory_mapping_smoke 13 项(summary 改 reject 红验)进 CI。A caller 审计=六个零变更+唯一行为变化即修复目标本身 | ✅ A/B/D 已合 main |
+| 2026-06-12 | **新规矩：决议记账走独立小提交直入 main，不搭功能 PR 的车**（已入 CLAUDE.md）——本次 A/B 记账误随 #308 提交、#308 被 hold 时账本连坐失踪十余行；第一时间记账的动作对、载体选功能 PR 错。账实分离的风险不值得省一次 commit | ✅ 已立规；本行即按新规独立提交直入 main |
 
 ---
 
