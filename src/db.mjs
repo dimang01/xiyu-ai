@@ -210,7 +210,9 @@ function migrateRelationshipArc() {
 // ─── v1.21.2 PR-D: 照片尺寸流水（比例防回归——'1:1 错了大半个月才被肉眼发现，
 // 下次要自己跳出来'）。arc-digest 读它出各机位比例分布。───────────────────────
 function migratePhotoLog() {
-  db.exec(`
+  // getDb() 而非裸 db：确保模块级 db 已初始化（懒加载 footgun——db 未初始化时裸
+  // db.exec 抛 TypeError，被 insertPhotoLog 的 fail-open 吞掉成静默不落库）。
+  getDb().exec(`
     CREATE TABLE IF NOT EXISTS companion_photo_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       companion_id INTEGER NOT NULL,
@@ -220,18 +222,53 @@ function migratePhotoLog() {
     );
     CREATE INDEX IF NOT EXISTS idx_photo_log ON companion_photo_log(companion_id, created_at DESC);
   `);
+  // v1.21.6 PR-A: 品类落库——proactive 加权采样命中的品类 id（user 索图为 null），
+  // 让"近 7 天品类分布"可观察、配比漂移可监控。
+  addColIfMissing('companion_photo_log', 'category', 'TEXT');
 }
 
 /** 照片尺寸流水写入（fail-open） */
-export function insertPhotoLog(companionId, { file, shotMode, aspect, width, height } = {}) {
+export function insertPhotoLog(companionId, { file, shotMode, aspect, width, height, category } = {}) {
   try {
     migratePhotoLog();
     getDb().prepare(`
-      INSERT INTO companion_photo_log (companion_id, file, shot_mode, aspect, width, height, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO companion_photo_log (companion_id, file, shot_mode, aspect, width, height, category, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(companionId, file || null, shotMode || null, aspect || null,
-      width ?? null, height ?? null, new Date().toISOString());
+      width ?? null, height ?? null, category || null, new Date().toISOString());
   } catch { /* 流水失败不致命 */ }
+}
+
+/**
+ * 近 N 天各品类已发条数（weeklyCap 用，fail-open 失败返回 {}）。
+ * v1.21.6 PR-A: proactive 加权采样按周封顶（如「想到你」每周≤2）。
+ */
+export function getCategorySendCounts(companionId, { days = 7, now = Date.now() } = {}) {
+  try {
+    migratePhotoLog();
+    const sinceIso = new Date(now - days * 86400_000).toISOString();
+    const rows = getDb().prepare(`
+      SELECT category, COUNT(*) AS n FROM companion_photo_log
+      WHERE companion_id = ? AND category IS NOT NULL AND created_at >= ?
+      GROUP BY category
+    `).all(companionId, sinceIso);
+    const out = {};
+    for (const r of rows) out[r.category] = r.n;
+    return out;
+  } catch { return {}; }
+}
+
+/** 近 N 天照片品类分布（digest 用，含 user 索图的未分类桶；fail-open → []） */
+export function getPhotoCategoryDistribution({ days = 7, now = Date.now() } = {}) {
+  try {
+    migratePhotoLog();
+    const sinceIso = new Date(now - days * 86400_000).toISOString();
+    return getDb().prepare(`
+      SELECT COALESCE(category, '(user请求/未分类)') AS category, COUNT(*) AS n
+      FROM companion_photo_log WHERE created_at >= ?
+      GROUP BY category ORDER BY n DESC
+    `).all(sinceIso);
+  } catch { return []; }
 }
 
 /** arc 信号流水写入（静默失败，不阻塞主链路） */

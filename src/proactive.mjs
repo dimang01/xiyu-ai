@@ -17,7 +17,9 @@ import {
   getRecentSafetyRisk,                        // v1.9.0 #1
   listShaping,                                // 共建留痕（教过她的注入主动消息）
   insertProactiveMaterialLog, getRecentlyUsedMaterialIds, getRecentProactiveTexts,  // v1.21.3 素材账本
+  getCategorySendCounts,                      // v1.21.6 PR-A 照片品类 weeklyCap
 } from './db.mjs';
+import { pickProactiveCategory, cappedCategoryIds } from './photo_categories.mjs';  // v1.21.6 PR-A 照片品类加权采样（默认关）
 // v1.21.3 PR-E: 跨天素材级去重（「小汤圆」3 天 3 次）——冷却过滤只挂这条链路，
 // 对话召回（bot.mjs）绝不挂：主动不提是克制，他聊起来接不住是失忆。
 import {
@@ -1136,6 +1138,17 @@ async function sendScenePhoto(companion, ctx) {
   } catch (e) {
     log('warn', `[Proactive] photo emotion state unavailable companion=${companion.id} error=${e.message}`);
   }
+  // v1.21.6 PR-A: 照片品类加权采样（默认关——PHOTO_CATEGORY_SAMPLING_ENABLED）。
+  // 开启后按 config/photo_categories.json 权重选一个品类喂给 planner；本周已达 weeklyCap
+  // 的品类排除（如「想到你」每周≤2）。fail-open：采样异常 = null = 退回现状。
+  let sampledCategory = null;
+  try {
+    const weekCounts = getCategorySendCounts(companion.id, { days: 7 });
+    sampledCategory = pickProactiveCategory({ cappedIds: cappedCategoryIds(weekCounts) });
+  } catch (e) {
+    // 采样异常 → sampledCategory 保持 null（退回现状），不另赋值（eslint no-useless-assignment）
+    log('warn', `[Proactive] 照片品类采样失败，退回现状 companion=${companion.id}: ${e.message}`);
+  }
   const plan = await planPhotoMessage({
     companion,
     user: { wechat_user_id: companion.wechat_user_id },
@@ -1145,7 +1158,10 @@ async function sendScenePhoto(companion, ctx) {
     context: { accountId: companion.user_id || null },
     cooldownState: gate,
     imageProviderAvailable: gate.imageProviderAvailable,
-    proactiveContext: { scene: companion.current_scene || '', schedule: 'daily_candidate' },
+    proactiveContext: {
+      scene: companion.current_scene || '', schedule: 'daily_candidate',
+      ...(sampledCategory ? { category: sampledCategory } : {}),
+    },
     emotionState: photoEmotionState,
   });
   if (!plan.shouldSendPhoto) {
@@ -1165,6 +1181,7 @@ async function sendScenePhoto(companion, ctx) {
     emotionState: photoEmotionState,
     aspect: plan.aspect,
     shotMode: plan.shotMode,
+    category: sampledCategory?.id || '',   // v1.21.6 PR-A: 落库观察品类配比（user 索图路径为空）
     maintainIdentity: plan.maintainIdentity !== false,
     recordTurn: true,
   });
