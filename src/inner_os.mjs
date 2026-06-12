@@ -123,6 +123,16 @@ export function parseInnerStruct(raw) {
  */
 export function buildInnerOsHint(innerThought) {
   if (!innerThought) return '';
+  // 接线护栏：本函数期望 string（即 generateInnerMonologue 返回对象的 .thought）。
+  // 若调用方误传整个 { thought, struct } 对象，过去会在下面 .trim() 处裸抛
+  // "innerThought.trim is not a function" 冒成匿名 500（playground 曾因此断约 2 天）。
+  // 显式抛带函数名的 TypeError，让错误签名段能一眼归因，而不是难追的运行时报错。
+  if (typeof innerThought !== 'string') {
+    throw new TypeError(
+      `buildInnerOsHint 期望 string，收到 ${typeof innerThought}` +
+      `（调用方应传 innerRes.thought，而非整个返回对象）`,
+    );
+  }
   return `
 
 【★ 你此刻的内心 OS（不要发给他，只是你内心真实想法）】
