@@ -122,5 +122,8 @@ jobs:
       - name: 照片 planner prompt 字符串（v1.21.6 P0 静默断图回归锁）
         run: node scripts/photo_planner_prompt_smoke.mjs
 
+      - name: digest 错误扫描范围（v1.21.6 报警盲区：高信号 [WARN] 升格 + 噪声不灌）
+        run: node scripts/digest_error_scan_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。

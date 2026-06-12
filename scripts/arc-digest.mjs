@@ -11,6 +11,7 @@ import Database from 'better-sqlite3';
 import { existsSync, createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
+import { isReportableErrorLine, normalizeErrorSignature } from './error_signature.mjs';
 
 const DB_PATH = process.env.DB_PATH || 'data/bot.db';
 const daysIdx = process.argv.indexOf('--days');
@@ -35,24 +36,16 @@ const hasTable = (t) => !!db.prepare(`SELECT name FROM sqlite_master WHERE type=
 console.log(`════ 冲突弧日报 · 最近 ${DAYS} 天（截至 ${new Date().toLocaleString('zh-CN', { hour12: false })}）════\n`);
 
 // ── 0. 错误签名（v1.21.2，#263 后续：那 665 条同签名错误要在第一行尖叫）────────
-// 归一化：去时间戳、companion=N→#、长数字/hex→#、引号内容→"…"，让同类错误聚成一个签名。
-// 环比 = 对比上一个同长窗口；新签名（上窗口没出现过）置顶高亮。纯读日志文件。
-function normalizeErrorSignature(line) {
-  return line
-    .replace(/^\[[^\]]+\]\s*/, '')                       // 去时间戳前缀
-    .replace(/companion[=\s]#?\d+/gi, 'companion=#')
-    .replace(/\b[0-9a-f]{8,}\b/gi, '#')                  // hex id / clientId
-    .replace(/\b\d{3,}\b/g, '#')                         // 长数字（端口/毫秒/计数）
-    .replace(/"[^"]{0,60}"/g, '"…"').replace(/「[^」]{0,60}」/g, '「…」')
-    .trim().slice(0, 140);
-}
-
+// 归一化 + 上报判定抽到 error_signature.mjs（可单测）。环比 = 对比上一个同长窗口；
+// 新签名（上窗口没出现过）置顶高亮。纯读日志文件。
+// v1.21.6：扫描范围从「只 [ERROR]」扩到「[ERROR] + 高信号 [WARN]」——planner 对象断图
+// 的 400 是 [WARN][ai]，旧扫描漏了它 1.5 天（isReportableErrorLine 已对它回测过）。
 async function collectErrorSignatures(file, sinceMs, untilMs) {
   const sigs = new Map();   // sig -> { count, firstAt, lastAt }
   if (!existsSync(file)) return sigs;
   const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
   for await (const line of rl) {
-    if (!line.includes('[ERROR]')) continue;
+    if (!isReportableErrorLine(line)) continue;
     const tm = line.match(/^\[([^\]]+)\]/);
     const ts = tm ? new Date(tm[1]).getTime() : NaN;
     if (!Number.isFinite(ts) || ts < sinceMs || ts >= untilMs) continue;
@@ -72,7 +65,7 @@ async function collectErrorSignatures(file, sinceMs, untilMs) {
   if (!existsSync(LOG_FILE)) {
     console.log(`（日志文件不存在：${LOG_FILE}——用 --log 或 LOG_DIR 指定）\n`);
   } else if (!cur.size) {
-    console.log(`✅ 错误签名：窗口内零 [ERROR]（${LOG_FILE}）\n`);
+    console.log(`✅ 错误签名：窗口内零 [ERROR] / 零高信号 [WARN]（${LOG_FILE}）\n`);
   } else {
     const rows = [...cur.entries()]
       .map(([sig, e]) => ({ sig, ...e, prevCount: prev.get(sig)?.count || 0, isNew: !prev.has(sig) }))
