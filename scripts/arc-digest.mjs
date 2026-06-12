@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { isReportableErrorLine, normalizeErrorSignature } from './error_signature.mjs';
 import { parseUiLayers, parityOffenders } from './memory_chip_parity_smoke.mjs';
+import { parseReflectionRollup } from '../src/reflection_heartbeat.mjs';
 
 const DB_PATH = process.env.DB_PATH || 'data/bot.db';
 const daysIdx = process.argv.indexOf('--days');
@@ -290,6 +291,34 @@ if (hasTable('companion_current_works')) {
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
   const used = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(`works_verify_${today}`);
   console.log(`  今日验证搜索：${used?.value || 0} 次 / 上限 ${process.env.WORKS_VERIFY_DAILY_CAP || 50}（异常烧配额的护栏）`);
+}
+
+// ── reflection 批产出（正向心跳：没有报错 ≠ 有产出）──
+// 真源是日志里的 `[PlanTasks] *-reflection done ... candidates/inserted/merged/rejected/updated`，
+// 不查 DB 的 memory_source（reflection insert 路径未落 source，DB 计数会骗人）。rejected>0=有记忆在蒸发。
+{
+  const rollups = [];
+  if (existsSync(LOG_FILE)) {
+    const rl = createInterface({ input: createReadStream(LOG_FILE, { encoding: 'utf8' }), crlfDelay: Infinity });
+    const sinceMs = Date.now() - DAYS * 86400e3;
+    for await (const line of rl) {
+      const tm = line.match(/^\[([^\]]+)\]/);
+      const ts = tm ? new Date(tm[1]).getTime() : NaN;
+      if (!Number.isFinite(ts) || ts < sinceMs) continue;
+      const r = parseReflectionRollup(line);
+      if (r) rollups.push({ ts, ...r });
+    }
+  }
+  if (!rollups.length) {
+    console.log(`\n⚠ reflection 批产出：近 ${DAYS} 天日志无 *-reflection done 心跳行（批没跑完 / 日志未含 / 旧版无此行）`);
+  } else {
+    const totRej = rollups.reduce((s, r) => s + r.rejected, 0);
+    console.log(`\n── reflection 批产出：${rollups.length} 批（近 ${DAYS} 天）${totRej ? ` 🔴 共 ${totRej} 条被拒蒸发` : ''} ──`);
+    for (const r of rollups.slice(-7)) {
+      console.log(`  ${fmtT(new Date(r.ts).toISOString())}  ${r.kind} ${r.date}  ran=${r.ran}  提议 ${r.candidates} → 入 ${r.inserted}/并 ${r.merged}/更 ${r.updated}${r.rejected ? `  🔴 拒 ${r.rejected}` : ''}`);
+    }
+    if (totRej) console.log('   拒>0：有记忆产出在静默蒸发（查 [Reflection] insert 失败 的 CHECK/约束原因）');
+  }
 }
 
 // ── 记忆 chip↔layer 对账（方向②夜间报警：有数据却无 chip = 数据藏起来了）──

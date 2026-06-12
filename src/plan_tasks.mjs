@@ -29,6 +29,7 @@ import {
 } from './db.mjs';
 import { applyMemoryDecayBatch } from './memory_v2.mjs';
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
+import { formatReflectionRollup } from './reflection_heartbeat.mjs';
 import { generateDailyDiaryForCompanion, generateWeeklyDiaryForCompanion } from './diary.mjs';
 import { generateDailyThoughtForCompanion } from './thoughts.mjs';
 import { openMaturedCapsulesBatch } from './time_capsule.mjs';
@@ -417,26 +418,33 @@ async function runMemoryDecay() {
 async function runDailyReflections(dateKey) {
   const companions = getAllActiveCompanions();
   log('info', `[PlanTasks] daily-reflection start date=${dateKey} companions=${companions.length}`);
+  const t = { ran: 0, candidates: 0, inserted: 0, merged: 0, rejected: 0, updated: 0 };
   for (const c of companions) {
     try {
-      await runDailyReflectionForCompanion(c.id, { userId: c.user_id });
+      const r = await runDailyReflectionForCompanion(c.id, { userId: c.user_id });
+      if (r) { t.ran++; t.candidates += r.candidates; t.inserted += r.inserted; t.merged += r.merged; t.rejected += r.rejected; t.updated += r.updated; }
     } catch (e) {
       log('warn', `[PlanTasks] daily-reflection 异常 companion=${c.id}: ${e.message}`);
     }
   }
+  // 正向心跳：批跑完必留产出统计行（没有报错 ≠ 有产出）。rejected>0 = 有记忆在静默蒸发。
+  log('info', `[PlanTasks] ${formatReflectionRollup('daily', dateKey, `${t.ran}/${companions.length}`, t)}`);
 }
 
 // ─── 每周反思 ─────────────────────────────────────────────────────────────────
 async function runWeeklyReflections(dateKey) {
   const companions = getAllActiveCompanions();
   log('info', `[PlanTasks] weekly-reflection start date=${dateKey} pro=${companions.length}`);
+  const t = { ran: 0, candidates: 0, inserted: 0, merged: 0, rejected: 0, updated: 0 };
   for (const c of companions) {
     try {
-      await runWeeklyReflectionForCompanion(c.id, { userId: c.user_id });
+      const r = await runWeeklyReflectionForCompanion(c.id, { userId: c.user_id });
+      if (r) { t.ran++; t.candidates += r.candidates; t.inserted += r.inserted; t.merged += r.merged; t.rejected += r.rejected; t.updated += r.updated; }
     } catch (e) {
       log('warn', `[PlanTasks] weekly-reflection 异常 companion=${c.id}: ${e.message}`);
     }
   }
+  log('info', `[PlanTasks] ${formatReflectionRollup('weekly', dateKey, `${t.ran}/${companions.length}`, t)}`);
 }
 
 // ─── 今天她想你（v1.4.1）─────────────────────────────────────────────────────
