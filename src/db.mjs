@@ -3525,15 +3525,18 @@ const MEMORY_TYPE_TO_LAYER = {
 export const memoryLayerOfType = (t) => MEMORY_TYPE_TO_LAYER[t] || 'event';
 
 // 2026-06-12 B 边界映射：memory_layer 词汇 → 旧 memory_type 词表（saveMemory 的 CHECK 只认旧词表）。
-// 是 MEMORY_TYPE_TO_LAYER 的反向。**映射不到的(core_persona/relationship_rule) 返回 null**——
-// 调用方必须显式 reject 计数、绝不静默落库成错类型。relationship_rule 是否开正式类型 = 产品决策，
-// 挂 v1.23 情绪建构包；届时若开 = CHECK 迁移 + chip 按对账方向② 报警回归（路径已铺）。
+// **门槛原则（加映射行前必读）**：本表只许收录「确认会发生 且 语义无损」的转换，其余一律返回 null
+// 走显式 reject。**不许为"永不该走的路"或"有损降级"修桥**——用正确管道运送错误的货比 reject 更阴：
+// 它会把错类型悄悄贴成合法标签安全落库，恰好绕过 rejected 计数 / digest 蒸发可见机制。
+// 宁可 rejected 跳一下被人看见，不要有损降级悄悄过关。映射不到的调用方必须显式 reject 计数。
+// relationship_rule 是否开正式类型 = 产品决策，挂 v1.23 情绪建构包；届时若开 = CHECK 迁移 +
+// chip 按对账方向② 报警回归（路径已铺）。
 const LAYER_TO_LEGACY_TYPE = {
   user_fact:  'fact',
   preference: 'preference',
   event:      'event',
   emotion:    'emotion',
-  summary:    'daily_summary',   // 反向有损(日/周/月归一)，reflection 不产 summary，仅兜底完整性
+  // summary：reflection 不产 summary（永不该走的路）→ 不修有损桥(daily_summary)，留 null 显式 reject
   // core_persona / relationship_rule：旧 CHECK 词表无对应 → null → 调用方 reject
 };
 export const legacyTypeForLayer = (layer) => LAYER_TO_LEGACY_TYPE[layer] || null;

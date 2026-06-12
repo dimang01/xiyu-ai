@@ -23,7 +23,7 @@ ok(legacyTypeForLayer('user_fact') === 'fact', 'user_fact → fact');
 ok(legacyTypeForLayer('preference') === 'preference', 'preference → preference');
 ok(legacyTypeForLayer('event') === 'event', 'event → event');
 ok(legacyTypeForLayer('emotion') === 'emotion', 'emotion → emotion');
-ok(legacyTypeForLayer('summary') === 'daily_summary', 'summary → daily_summary（兜底）');
+ok(legacyTypeForLayer('summary') === null, '红验：summary → null（永不该走的路，不修有损桥，显式 reject）');
 ok(legacyTypeForLayer('relationship_rule') === null, '红验：relationship_rule → null（必 reject，不静默落库）');
 ok(legacyTypeForLayer('core_persona') === null, '红验：core_persona → null');
 
