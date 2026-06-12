@@ -11,6 +11,7 @@ import { log } from './logger.mjs';
 import { getImageProviderCapabilities } from './providers/image.mjs';
 import { getVisualIdentity, selectReferenceImage } from './visual_identity.mjs';
 import { moonFactLine } from './utils/moon_phase.mjs';   // v1.21.5 PR-C 月相锚定
+import { sunsetFactLine } from './utils/sun_times.mjs';  // v1.21.6 PR-C 晚霞窗口锚定
 
 const DEFAULT_PLAN = Object.freeze({
   shouldSendPhoto: false,
@@ -500,6 +501,10 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
   if (safeModePhoto && shotMode !== 'SCENERY' && shotMode !== 'ACTIVITY_POV') {
     shotMode = 'SCENERY';
   }
+  // v1.21.6 PR-C candid 实验（默认关，PHOTO_CANDID_EXPERIMENT）：开时低概率给 imagePrompt
+  // 注入随手抓拍质感词。默认值待 20 张沙箱评估图维护者拍板，本 PR 不做开启决策。
+  const candidExperiment = envFlag('PHOTO_CANDID_EXPERIMENT', false)
+    && Math.random() < numberEnv('PHOTO_CANDID_PROB', 0.25, 0);
 
   const prompt = `请判断是否适合发送一张生活感照片，并只返回 JSON。
 
@@ -510,10 +515,16 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - plausible scenes for this hour: ${dp.scenes}${(() => {
     // v1.21.5 PR-C 月相锚定：夜间 + 夜空类场景才注入真实月相，杜绝凭空"月亮好圆"。
     const isNight = h >= 19 || h < 5;
-    const skyScene = /月亮|月色|星空|夜空|夜景|天空|月/.test(String(userText || '') + String(companion?.current_scene || '') + String(proactiveContext?.scene || ''));
+    const skyScene = /月亮|月色|星空|夜空|夜景|天空|月/.test(String(userText || '') + String(companion?.current_scene || '') + String(proactiveContext?.scene || '') + String(sampledCategory?.sceneSeed || ''));
     if (!isNight || !skyScene) return '';
     return `
 - ★ 月相事实（真实天象，不可违背）：${moonFactLine(now)}。**若前半夜不可见，绝不能拍月亮/月色，caption 也不许说"看到月亮/月色好/月亮好圆"**——改拍室内灯光或别的；若可见，按真实照亮比例描述（残月就别说满月）。`;
+  })()}${(() => {
+    // v1.21.6 PR-C 晚霞锚定：晚霞/夕阳类场景注入真实日落窗口，杜绝正午发晚霞（色温对不上=假）。
+    const sunsetScene = /晚霞|夕阳|日落|余晖|落日|火烧云|黄昏/.test(String(userText || '') + String(companion?.current_scene || '') + String(proactiveContext?.scene || '') + String(sampledCategory?.sceneSeed || ''));
+    if (!sunsetScene) return '';
+    return `
+- ★ 日落事实（真实天象，不可违背）：${sunsetFactLine(now)}`;
   })()}
 
 - trigger: ${trigger}${sampledCategory ? `
@@ -568,9 +579,12 @@ ${recent || '(none)'}
     - 想表达「不要 NSFW/nude/sexual」→ 写 "wholesome, fully clothed, casual everyday attire"
 11. imagePrompt 不要包含隐私、token、手机号、精确地址。
 12. hidden emotion / visual identity context 只作为隐藏参考，不要把内部 JSON 字段或分数写进 imagePrompt 或 caption。
+★ **真实出版物护栏（V1214 正式解前临时规矩）**：若画面涉及真实出版物（书/杂志/专辑/教材/报纸），**只拍摊开内页、或书脊/封面一角的局部，绝不拍完整正面封面**（生成封面=伪造、复刻=版权，两条都死）；POV 俯拍翻开的跨页或文字段落即可。**例外不受限：她自己的笔记本/手账/便签本封面**（私人物品非出版物，可正常拍）。
+★ **天气护栏（真实天气数据接入前）**：**禁止拍雨/雪/雷暴/大雾等天气依赖场景**（无法核实当天真实天气，瞎拍即假）；晴/阴/室内不受限，晚霞/月亮已有专门锚定（见上面日落/月相事实）。${candidExperiment ? `
+★ **随手抓拍质感（实验）**：imagePrompt 末尾补 "casual unstaged candid phone grab, slightly imperfect off-center framing, natural and relaxed, not posed"——更松弛、别摆拍。` : ''}
 
 caption：
-13. caption 是发给他看的微信短句，10 到 35 字，不解释系统逻辑，不说作为 AI，不说生成图片，不说当前情绪状态，不输出 [PHOTO]。caption 内容必须与 day part 一致（深夜不要说"路过咖啡店"等白天动作；夜晚多用"躺床上 / 灯关了一半 / 突然想你"等贴近时间的描述）。
+13. caption 是发给他看的微信短句，10 到 35 字，不解释系统逻辑，不说作为 AI，不说生成图片，不说当前情绪状态，不输出 [PHOTO]。caption 内容必须与 day part 一致（深夜不要说"路过咖啡店"等白天动作；夜晚多用"躺床上 / 灯关了一半 / 突然想你"等贴近时间的描述）。**优先与最近聊天/记忆里的事自然勾连**（他提过累→"看我给你拍的，歇会儿吧"），想不到关联就发自然的当下短句、别硬蹭。${proactiveContext?.inviteBack ? '\n★ **本次额外带一句互拍邀请**（低频）：caption 自然收一句"到你了 / 你那边呢 / 也给我看看你那边"，像情侣互拍的轻邀请，别生硬别像任务。' : ''}
 
 返回 JSON 结构：
 {
