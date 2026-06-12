@@ -8,10 +8,12 @@
  * 不接任何阈值回写——观察周的产出是运营者的人工判断，不是脚本的。
  */
 import Database from 'better-sqlite3';
-import { existsSync, createReadStream } from 'node:fs';
+import { existsSync, createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { isReportableErrorLine, normalizeErrorSignature } from './error_signature.mjs';
+import { parseUiLayers, parityOffenders } from './memory_chip_parity_smoke.mjs';
 
 const DB_PATH = process.env.DB_PATH || 'data/bot.db';
 const daysIdx = process.argv.indexOf('--days');
@@ -288,6 +290,25 @@ if (hasTable('companion_current_works')) {
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
   const used = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(`works_verify_${today}`);
   console.log(`  今日验证搜索：${used?.value || 0} 次 / 上限 ${process.env.WORKS_VERIFY_DAILY_CAP || 50}（异常烧配额的护栏）`);
+}
+
+// ── 记忆 chip↔layer 对账（方向②夜间报警：有数据却无 chip = 数据藏起来了）──
+// 2026-06-12 删 core_persona/relationship_rule 两 chip 后立此哨兵：reflection 若复活
+// 产出 relationship_rule，这里会变红，chip 按警报回归而非凭记忆。纯只读。
+{
+  const layersWithData = new Set(
+    db.prepare("SELECT DISTINCT memory_layer FROM companion_memories WHERE memory_status != 'deleted' AND memory_layer IS NOT NULL")
+      .all().map(r => r.memory_layer),
+  );
+  const htmlPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/app/memories.html');
+  const { chip } = parseUiLayers(readFileSync(htmlPath, 'utf8'));
+  const offenders = parityOffenders(chip, layersWithData);
+  if (offenders.length) {
+    console.log(`\n🔴 记忆 chip 对账：${offenders.length} 个 layer 有数据却无 chip ➜ ${offenders.join(', ')}`);
+    console.log('   （数据存在但用户看不见——按警报给它们加回 memories.html 的 chip）');
+  } else {
+    console.log(`\n✅ 记忆 chip 对账：${layersWithData.size} 个有数据 layer 全有 chip（无隐藏抽屉）`);
+  }
 }
 
 console.log('\n════ 报表完（纯只读，无任何回写）════');

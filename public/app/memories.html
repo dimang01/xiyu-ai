@@ -75,8 +75,10 @@
     <!-- Layer filters -->
     <div class="flex flex-wrap gap-1.5" id="layerFilters">
       <button class="tag-btn active" data-layer="">全部</button>
-      <button class="tag-btn" data-layer="core_persona">核心人设</button>
-      <button class="tag-btn" data-layer="relationship_rule">关系规则</button>
+      <!-- core_persona / relationship_rule chip 已删（2026-06-12）：一份承诺要兑现，兑不了就别开窗口。
+           core_persona 全代码无产出路径＝真死枚举；relationship_rule 唯一路径 reflection insert 从未开火、
+           语义与 companion_shaping(默契卡=nickname/lexicon/taboo) 重叠。后端 MEMORY_LAYERS 仍保留二者，
+           reflection 若复活产出 relationship_rule，由 scripts/memory_chip_parity_smoke 方向② 报警→chip 按警报回归。 -->
       <button class="tag-btn" data-layer="user_fact">关于你</button>
       <button class="tag-btn" data-layer="preference">偏好</button>
       <button class="tag-btn" data-layer="event">事件</button>
@@ -136,8 +138,8 @@
             <option value="preference">偏好</option>
             <option value="event" selected>事件</option>
             <option value="emotion">情感</option>
-            <option value="core_persona">核心人设</option>
-            <option value="relationship_rule">关系规则</option>
+            <!-- core_persona / relationship_rule 选项已删（2026-06-12，同 layer 过滤 chip）：
+                 手动新增也不再造这两类，防 layer↔chip 对账方向② 被人工录入打破。 -->
             <option value="summary">摘要</option>
           </select>
         </div>
@@ -170,14 +172,14 @@ const PAGE_SIZE = 30;
 let totalItems = 0;
 let editingMemoryId = null;
 
+// 2026-06-12：core_persona / relationship_rule 标签随 chip 一并删（活跃产出层才进页面词表）。
+// renderCard 的 `LAYER_LABELS[layer] || layer` / `LAYER_COLORS[layer] || 灰` 兜底保证任何残留/
+// 未来复活的此类行仍可渲染(原始 label + 灰色)而不崩，且会被 chip 对账 smoke 方向② 报警→按警报回归。
 const LAYER_LABELS = {
-  core_persona: '核心人设', relationship_rule: '关系规则',
   user_fact: '关于你', preference: '偏好',
   event: '事件', emotion: '情感', summary: '摘要',
 };
 const LAYER_COLORS = {
-  core_persona: 'bg-purple-100 text-purple-700',
-  relationship_rule: 'bg-blue-100 text-blue-700',
   user_fact: 'bg-green-100 text-green-700',
   preference: 'bg-yellow-100 text-yellow-700',
   event: 'bg-pink-100 text-pink-700',
