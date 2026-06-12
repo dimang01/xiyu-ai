@@ -490,6 +490,11 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
     currentScene: companion?.current_scene,
     trigger,
   });
+  // v1.21.6 PR-A: proactive 加权采样命中的品类（仅主动分享时存在）——用品类默认机位
+  // 覆盖 decideShotMode。放在安全模式钳位之前，安全模式仍最高优先级。
+  const sampledCategory = (trigger === 'proactive' && proactiveContext?.category && typeof proactiveContext.category === 'object')
+    ? proactiveContext.category : null;
+  if (sampledCategory?.shotMode) shotMode = sampledCategory.shotMode;
   // v1.20 安全收尾：安全模式（疑似未成年）强制中性照片——只拍景/物，绝不自拍/人像/flirt
   const safeModePhoto = !!Number(companion?.safe_mode);
   if (safeModePhoto && shotMode !== 'SCENERY' && shotMode !== 'ACTIVITY_POV') {
@@ -511,7 +516,8 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
 - ★ 月相事实（真实天象，不可违背）：${moonFactLine(now)}。**若前半夜不可见，绝不能拍月亮/月色，caption 也不许说"看到月亮/月色好/月亮好圆"**——改拍室内灯光或别的；若可见，按真实照亮比例描述（残月就别说满月）。`;
   })()}
 
-- trigger: ${trigger}${safeModePhoto ? `
+- trigger: ${trigger}${sampledCategory ? `
+- ★ 本次主动分享品类（加权采样命中）：「${safeText(sampledCategory.label, 20)}」—— ${safeText(sampledCategory.sceneSeed, 120)}。优先围绕这个品类决定拍什么；**但若此刻她的时段/场景与该品类实在不自洽（如深夜让拍晚霞、在家却要拍货架），宁可 shouldSendPhoto=false 也不要硬凑**。` : ''}${safeModePhoto ? `
 - ★★ SAFE MODE（最高优先级）：对方可能是未成年人。只允许分享风景/食物/手头事物等**中性照片**（已强制非自拍机位）；imagePrompt 绝不写任何人物/外貌/表情；caption 必须是普通朋友分享的口吻，**绝无**暧昧/撒娇/调情。拿不准就 shouldSendPhoto=false。` : ''}
 - shot mode: ${
   shotMode === 'ACTIVITY_POV' ? 'ACTIVITY-POV（她拍自己正在做的事/手头的东西给对方看，像"你看我在写的作业"。first-person POV 低头看自己的桌面/手头：**主体是那个作业本/电脑屏幕/工作内容/手头的物件**——写满字的笔记本+笔、屏幕上的文档或代码、画了一半的画、做饭的案板等，桌面/物体填满画面；**绝不出现她的脸、不是自拍**，最多一只手或衣袖在画面边缘(握着笔/手放键盘上)；写明当前时段光线如 warm desk lamp at night / soft daylight by the window。规则 4/5/6/9（人物外貌/表情/着装）对它不适用）'

@@ -1,0 +1,59 @@
+{
+  "_comment": "照片品类权重配置（v1.21.6 PR-A）。仅作用于 proactive 主动场景照（她「自己想分享」的那一条管线）——用户显式索图（要自拍/要看手头的事）仍按请求走 decideShotMode，不被此处采样覆盖。【默认不生效】：总开关 PHOTO_CATEGORY_SAMPLING_ENABLED 默认 false，关时 proactive 照片维持现状（decideShotMode 决定机位）。维护者审完审计对照表后把它设 true 才激活加权采样。权重为研究目标初始值，可经 env 热调不发版：PHOTO_CAT_WEIGHT_<ID>（如 PHOTO_CAT_WEIGHT_FOOD=40）覆盖单类权重，PHOTO_CAT_DISABLE=selfie,trophy 临时停用某类。weeklyCap=该类每周封顶次数（0/缺省=不额外限制，仍受全局照片限额约束）。shotMode 是该类默认机位，sceneSeed 是注入 planner 的品类种子（PR-B/PR-C 细化各类素材源）。",
+  "categories": [
+    {
+      "id": "food",
+      "label": "食物",
+      "weight": 30,
+      "shotMode": "ACTIVITY_POV",
+      "sceneSeed": "手边正在吃/刚买的吃食（三餐、奶茶、便利店新品、深夜小食），POV 俯拍桌面食物本身，配吐槽向短句",
+      "enabled": true,
+      "weeklyCap": 0
+    },
+    {
+      "id": "sky",
+      "label": "天空·路遇",
+      "weight": 25,
+      "shotMode": "SCENERY",
+      "sceneSeed": "此刻头顶/眼前的天空（晚霞、怪云、月亮）或路上偶遇的小景，POV「你看这个」，绝不是站在景前的人像",
+      "enabled": true,
+      "weeklyCap": 0
+    },
+    {
+      "id": "activity_pov",
+      "label": "此刻证明照",
+      "weight": 20,
+      "shotMode": "ACTIVITY_POV",
+      "sceneSeed": "她此刻正在做的事/手头的东西（作业、屏幕、画、案板），first-person POV 低头看桌面，不出现脸",
+      "enabled": true,
+      "weeklyCap": 0
+    },
+    {
+      "id": "thought_of_you",
+      "label": "看到这个想到你",
+      "weight": 10,
+      "shotMode": "ACTIVITY_POV",
+      "sceneSeed": "街头/货架/菜单里看到与他兴趣或你们的梗相关之物的 POV 照（无脸），caption 必须点出关联（PR-B 接 preference/梗 素材源）",
+      "enabled": true,
+      "weeklyCap": 2
+    },
+    {
+      "id": "selfie",
+      "label": "自拍",
+      "weight": 10,
+      "shotMode": "SELFIE",
+      "sceneSeed": "随手自拍，近景半身，真实关系里是事件驱动的低频品类——主动分享时别滥发",
+      "enabled": true,
+      "weeklyCap": 0
+    },
+    {
+      "id": "trophy",
+      "label": "战利品等",
+      "weight": 5,
+      "shotMode": "ACTIVITY_POV",
+      "sceneSeed": "今天的小战利品/收获（新买的小物、做好的东西、收到的快递），POV 俯拍那个物件",
+      "enabled": true,
+      "weeklyCap": 0
+    }
+  ]
+}
