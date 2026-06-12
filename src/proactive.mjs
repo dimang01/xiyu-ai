@@ -1182,6 +1182,13 @@ async function sendScenePhoto(companion, ctx) {
       sampledCategory = null; categoryForPlanner = null;
     }
   }
+  // v1.21.6 PR-C 互拍邀请（每周≤1）：近 7 天没发过 invite 指纹 + 低概率 → caption 带"到你了"。
+  // 互拍是邀请不是广播，所以低频；用 invite:photo 指纹做每周封顶。
+  let inviteBack = false;
+  try {
+    const usedWeek = getRecentlyUsedMaterialIds(companion.id, { days: 7 });
+    inviteBack = !usedWeek.has('invite:photo') && Math.random() < 0.3;
+  } catch { /* 查询失败 → 保持 false（本次不邀请） */ }
   const plan = await planPhotoMessage({
     companion,
     user: { wechat_user_id: companion.wechat_user_id },
@@ -1194,6 +1201,7 @@ async function sendScenePhoto(companion, ctx) {
     proactiveContext: {
       scene: companion.current_scene || '', schedule: 'daily_candidate',
       ...(categoryForPlanner ? { category: categoryForPlanner } : {}),
+      ...(inviteBack ? { inviteBack: true } : {}),
     },
     emotionState: photoEmotionState,
   });
@@ -1226,6 +1234,13 @@ async function sendScenePhoto(companion, ctx) {
   if (thoughtMaterialId) {
     insertProactiveMaterialLog(companion.id, {
       materialIds: [thoughtMaterialId], kind: 'photo_thought',
+      scene: companion.current_scene || '', nowIso: new Date().toISOString(),
+    });
+  }
+  // v1.21.6 PR-C: 互拍邀请落指纹 → 每周≤1（getRecentlyUsedMaterialIds days:7 命中即不再邀）
+  if (inviteBack) {
+    insertProactiveMaterialLog(companion.id, {
+      materialIds: ['invite:photo'], kind: 'invite',
       scene: companion.current_scene || '', nowIso: new Date().toISOString(),
     });
   }

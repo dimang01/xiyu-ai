@@ -134,5 +134,11 @@ jobs:
       - name: 想到你品类素材选择（v1.21.6 PR-B 指向正确/雷区·隐私零选用/14天冷却）
         run: node scripts/photo_thought_smoke.mjs
 
+      - name: 日出日落纯数学（v1.21.6 PR-C 晚霞窗口/物理合理性/注入红验）
+        run: node scripts/sun_times_smoke.mjs
+
+      - name: 照片锚定与护栏注入（v1.21.6 PR-C 封面/天气/日落/互拍/candid）
+        run: node scripts/photo_anchor_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
