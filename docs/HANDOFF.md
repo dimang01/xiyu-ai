@@ -31,6 +31,8 @@
 | 2026-06-12 | 品类链发版收口 v1.21.6（今天单独发，与明天 v1.21.4 错开——一次部署一个变量、归因干净）：A→B→C 串行合并 main（#290→#300→#301；原 #294/#298 因 stacked base 随 --delete-branch 自动关闭→重开）；package.json + README/FEATURES/ROADMAP 同步、check:release 绿 | 🔄 代码已合，待开闸部署 |
 | 2026-06-12 | 编排拍板 A：**首次开闸=运营者亲手**——sampling 总开关 PHOTO_CATEGORY_SAMPLING_ENABLED 是生产 .env 变更，按「配置变更运营者亲手」规矩由维护者配，Claude 只给逐段命令（.env 那行用先 grep 查重再 printf 追加的防重复写法） | ✅ 已记 |
 | 2026-06-12 | 长期口径：**env 变更分级**——首次开闸/关闸类 env=运营者亲手；调参类 env=提案后亲手或明确授权；admin 运维配置页上线后调参类整体迁移到页面 | ✅ 已记 |
+| 2026-06-12 | v1.21.4 current_works 设计稿主体过评审（#299 合并）+ **四批注落账**：①验证双闸=字符串级（kind《》兜底 + webSearch 判定，不加 LLM）②48h 冷却/周3/生命周期天数等为观察值、全 env 可调入 config ③works 不随人设导出（运行时状态先例，理由成文）④负结果不缓存（只缓 verified 单调正事实，失败/无证据每次重验） | ✅ 已记 |
+| 2026-06-12 | **PR-W1（current_works 数据层 + 验证双闸）**：companion_current_works 表（不进 ALLOWED_FIELDS，防 dashboard 绕过验证）+ 双闸验证管线（缓存只缓 verified/日上限 50/provider 故障降 generic 不判真书为假/无证据重试 2 换候选）+ 生命周期状态（00:30 日程批搭便车换档，fail-open）+ 红验①②③ + 虚构书《她总在转角处等我》入档被拦降级泛读。current_works_smoke 17 项进 CI。表达层/proactive/退场 = PR-W2 | 🔄 PR 待合 |
 
 ---
 

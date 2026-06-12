@@ -65,6 +65,7 @@ export function getDb() {
     migrateOpenLoops();    // v1.8.0 #4
     migrateSafetyEvents(); // v1.9.0 #1 安全事件记录（高危后暂停普通主动消息）
     migrateRelationshipArc(); // v1.21.0 冲突与和好弧（关系事件状态机）
+    migrateCurrentWorks();    // v1.21.4 PR-W1 current_works 档案（她手头在看/在做的事）
   }
   return db;
 }
@@ -269,6 +270,61 @@ export function getPhotoCategoryDistribution({ days = 7, now = Date.now() } = {}
       GROUP BY category ORDER BY n DESC
     `).all(sinceIso);
   } catch { return []; }
+}
+
+// ─── v1.21.4 PR-W1: current_works 档案（她手头在看/在做的事；设计 docs/V1214_DESIGN.md §5）─
+// 作品类条目入档前过 webSearch 真实性验证（约束 1），搜不到降级 generic 泛读态、绝不带
+// 虚构名入档。档案由生命周期任务独占写入——**故意不进 ALLOWED_FIELDS**，防 dashboard
+// 一拨就"换书"绕过验证（照 arc_state 范式）。progress/evidence 入库过 filterForStorage。
+function migrateCurrentWorks() {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS companion_current_works (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id    INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      kind            TEXT NOT NULL,        -- book|series|anime|game|craft
+      title           TEXT NOT NULL,        -- 作品名（craft 为自由文本）
+      creator         TEXT,                 -- 作者/出品方（验证锚；craft 为 null）
+      verify_status   TEXT NOT NULL,        -- verified|generic|skip
+      verify_evidence TEXT,                 -- 命中 snippet 截断存证（≤300 字，审计用）
+      progress_note   TEXT,                 -- 进度一句话（表达层唯一引用源）
+      status          TEXT NOT NULL DEFAULT 'active',   -- active|finished|dropped
+      started_at      TEXT NOT NULL,
+      last_mentioned_at TEXT,
+      finished_at     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_current_works_comp ON companion_current_works(companion_id, status);
+  `);
+}
+
+/** 插入档案（progress/evidence 过 filterForStorage——隐私全口子承诺不破例） */
+export function insertCurrentWork(companionId, { kind, title, creator, verifyStatus, verifyEvidence, progressNote, startedAt } = {}) {
+  const ev = verifyEvidence ? (filterForStorage(String(verifyEvidence).slice(0, 300)).text || '') : null;
+  const pn = progressNote ? (filterForStorage(String(progressNote)).text || '') : null;
+  return getDb().prepare(`
+    INSERT INTO companion_current_works (companion_id, kind, title, creator, verify_status, verify_evidence, progress_note, status, started_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
+  `).run(companionId, kind, title, creator || null, verifyStatus, ev, pn, startedAt || new Date().toISOString()).lastInsertRowid;
+}
+
+/** active 档案（companionSummary 展示 + 槽位判定） */
+export function getActiveCurrentWorks(companionId) {
+  return getDb().prepare(`SELECT * FROM companion_current_works WHERE companion_id = ? AND status = 'active' ORDER BY started_at`).all(companionId);
+}
+
+/** 换状态（finished/dropped 写 finished_at） */
+export function setCurrentWorkStatus(workId, status) {
+  return getDb().prepare(`
+    UPDATE companion_current_works
+    SET status = ?, finished_at = CASE WHEN ? IN ('finished','dropped') THEN ? ELSE finished_at END
+    WHERE id = ?`).run(status, status, new Date().toISOString(), workId).changes;
+}
+
+/** 验证缓存：任意 companion 已 verified 的 (title,creator) → 免重搜（缓存即表本身，永不过期；只缓正结果） */
+export function findVerifiedWork(title, creator) {
+  return getDb().prepare(`
+    SELECT title, creator, verify_evidence FROM companion_current_works
+    WHERE verify_status = 'verified' AND title = ? AND IFNULL(creator,'') = IFNULL(?, '') LIMIT 1
+  `).get(String(title || ''), creator == null ? null : String(creator));
 }
 
 /** arc 信号流水写入（静默失败，不阻塞主链路） */
