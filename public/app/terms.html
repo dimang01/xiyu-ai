@@ -1,4 +1,7 @@
 <!DOCTYPE html>
+<!-- ⚠️ 本协议仅适用于官方托管服务 xiyuai.cc。
+     自托管部署者必须替换为自己的条款并自行承担合规责任——
+     本仓库作者无法也不会替任何第三方部署作出承诺。 -->
 <html lang="zh-CN">
 <head>
   <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
@@ -13,61 +16,81 @@
 </head>
 <body class="bg-[#FFF5F9] text-[#1D1D1F] font-sans antialiased">
   <main class="max-w-3xl mx-auto px-6 py-12">
-    <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← 返回首页</a>
+    <div class="flex items-center justify-between">
+      <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← 返回首页</a>
+      <a href="/app/terms.en.html" class="text-[#FF8FB8] text-sm hover:underline">English</a>
+    </div>
 
-    <h1 class="mt-6 text-3xl font-bold tracking-tight">用户协议（开源示例版）</h1>
-    <p class="mt-2 text-sm text-[#86868B]">最后更新：2026-05-28</p>
+    <h1 class="mt-6 text-3xl font-bold tracking-tight">用户协议</h1>
+    <p class="mt-2 text-sm text-[#86868B]">生效日期：2026 年 6 月 12 日</p>
 
     <article class="mt-8 space-y-6 leading-7 text-[15px]">
-      <div class="bg-white border border-[#FFE8F2] rounded-2xl p-5">
-        <p class="font-semibold mb-2">⚠️ 这是开源示例占位</p>
-        <p class="text-[#86868B] text-sm">
-          本页面是开源项目 <b>溪语 AI</b> 附带的<b>示例性</b>用户协议模板，仅作为部署后链接可达性的占位。
-          如果你要把此项目用于公开运营，<b>必须</b>由你自己（或法律顾问）撰写并审阅一份符合所在司法辖区的正式协议来替换本文件，
-          本仓库作者不对你使用本协议产生的任何法律后果承担责任。
-        </p>
-      </div>
 
       <section>
-        <h2 class="text-xl font-bold">1. 服务说明</h2>
-        <p>本服务（"<b>服务</b>"）为基于大语言模型的虚拟陪伴软件，输出内容由 AI 生成，不构成事实陈述、专业建议或心理治疗。</p>
+        <h2 class="text-xl font-bold">1. 服务性质</h2>
+        <p>本协议适用于官方托管服务 <b>xiyuai.cc</b>（自托管部署不适用本协议，部署者须自行制定条款）。溪语 AI（"<b>本服务</b>"）是基于大语言模型的 <b>AI 虚拟陪伴服务</b>。你对话的陪伴角色<b>不是真人</b>——她的全部回复、照片、日记、情绪表现均由人工智能生成。AI 输出不构成事实陈述或专业建议。</p>
+        <p class="mt-2"><b>本服务不能替代专业心理咨询或医疗服务。</b>当系统识别到你可能处于心理危机时，会暂停角色扮演并提供专业求助渠道信息，但这只是信息提示，不是干预或治疗。如你正经历心理困扰，请联系专业心理援助机构。</p>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">2. 用户资格</h2>
-        <p>使用本服务必须年满 18 周岁，并具备完全民事行为能力。<strong>本服务包含拟人化的情感陪伴互动，仅面向成年人，未成年人禁止注册或使用</strong>。若你未满 18 周岁，请立即停止使用并退出。运营者一经发现未成年人使用，有权立即终止其账号；未成年人违规使用本服务所产生的一切后果，由其监护人承担。</p>
+        <h2 class="text-xl font-bold">2. 账号与年龄</h2>
+        <p>使用本服务必须<b>年满 18 周岁</b>并具备完全民事行为能力。本服务包含拟人化的情感陪伴互动，仅面向成年人，未成年人禁止注册或使用。</p>
+        <p class="mt-2">本服务设有未成年人识别机制：当对话内容显示使用者可能未成年时，系统会自动进入<b>安全模式</b>（停止亲密向互动、不再主动发送情感类消息），且该模式具有粘性：不会因后续对话内容（包括口头声称已成年）自动解除，仅可通过管理页面提交正式成年声明（显式确认出生年份）解除。提交虚假年龄声明的后果由声明人及其监护人承担。</p>
+        <p class="mt-2">你须妥善保管账号凭据；经由你账号发生的操作视为你本人的行为。</p>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">3. 禁止行为</h2>
-        <ul class="list-disc pl-6 space-y-1">
-          <li>利用本服务生成、传播违法、淫秽、暴力、仇恨、骚扰性内容</li>
-          <li>未经授权进行自动化爬取、批量调用、压力测试</li>
-          <li>逆向、破解、伪造身份、绕过频控或安全机制</li>
+        <h2 class="text-xl font-bold">3. 内测阶段声明</h2>
+        <p>本服务当前处于<b>小范围内测（BETA）阶段</b>：</p>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>服务可能随时中断、调整或下线，功能可能发生变化，恕不逐项另行通知；</li>
+          <li>数据每日自动备份一份（保留最近 7 天）。这意味着在重大故障下，<b>最多可能丢失最近 24 小时内产生的数据</b>，且我们无法承诺超出该备份机制之外的数据恢复能力；</li>
+          <li>内测期间服务按"现状"提供，不对可用性、连续性作任何明示或默示担保。</li>
         </ul>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">4. 责任限制</h2>
-        <p>服务按"现状"提供，不对可用性、准确性或适配性作任何明示或暗示担保。运营者不对 AI 输出造成的任何直接或间接损失负责。</p>
+        <h2 class="text-xl font-bold">4. 用户行为边界</h2>
+        <p>你不得利用本服务从事违法活动，不得尝试攻击、探测或绕过系统的安全与限制机制（包括但不限于绕过频率限制、滥用接口、尝试未授权访问他人数据）。出现上述行为时，运营者有权限制、暂停或终止你的账号；涉嫌违法的将依法处理。</p>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">5. 协议变更</h2>
-        <p>运营者保留随时修改本协议的权利，变更将通过本页面公示。继续使用即视为接受变更。</p>
+        <h2 class="text-xl font-bold">5. 内容与知识产权</h2>
+        <p><b>你输入的内容归你所有。</b>你授权本服务为实现功能所必需的范围内使用这些内容（生成回复、构建记忆、排查故障），详见《隐私政策》。</p>
+        <p class="mt-2"><b>AI 生成内容</b>（角色回复、照片、日记、信件等）供你<b>个人非商业使用</b>；你可以通过服务内的导出功能保存属于你的数据。运营者不对 AI 生成内容的准确性、独创性作担保，也不承诺其不与第三方内容相似。</p>
+        <p class="mt-2">本服务的软件代码以 MIT 协议开源；"溪语 AI"名称与站点视觉素材归运营者所有。</p>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">6. 适用法律</h2>
-        <p>本协议适用运营者所在司法辖区的法律。请部署者根据自身情况补充。</p>
+        <h2 class="text-xl font-bold">6. 费用</h2>
+        <p>内测期间，<b>全部功能对所有用户免费开放</b>。如未来引入收费项目，我们将提前不少于 30 日通过本页面更新及注册邮箱通知，收费仅适用于通知后明确订购的服务；不会出现"先用后追溯收费"。</p>
       </section>
+
+      <section>
+        <h2 class="text-xl font-bold">7. 免责声明</h2>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>AI 输出由模型生成，可能出现错误、不一致或令人不适的内容。我们持续改进过滤与护栏机制，但无法保证逐条完美；</li>
+          <li>在适用法律允许的最大范围内，运营者对因使用或无法使用本服务造成的间接损失不承担责任；</li>
+          <li>本服务依赖第三方模型与基础设施服务商，其故障或政策变化可能影响服务可用性。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">8. 适用法律与争议解决</h2>
+        <p>本协议适用<b>中华人民共和国大陆地区法律</b>。因本协议产生的争议，双方应先友好协商；协商不成的，提交运营者所在地有管辖权的人民法院诉讼解决。</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">9. 协议变更</h2>
+        <p>协议变更时，我们将更新本页面顶部的生效日期；重大变更将另行发送邮件至你的注册邮箱。变更生效后继续使用本服务，视为接受变更后的协议。你可以随时停止使用并申请删除账号数据（方式见《隐私政策》）。</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">10. 联系方式</h2>
+        <p>关于本协议的问题，请联系运营者：<b>xiyuai@proton.me</b></p>
+      </section>
+
     </article>
-
-    <p class="mt-12 text-xs text-[#C0C0C5]">
-      License: MIT · 详见
-      <a href="https://github.com" class="text-[#FF8FB8] hover:underline">项目仓库</a>
-      ACKNOWLEDGMENTS 与 LICENSE。
-    </p>
   </main>
 </body>
 </html>

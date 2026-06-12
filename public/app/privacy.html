@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+<!-- ⚠️ 本政策仅适用于官方托管服务 xiyuai.cc。
+     自托管部署者必须替换为自己的隐私政策并自行承担合规责任。 -->
 <html lang="zh-CN">
 <head>
   <script>(function(){try{var p=localStorage.getItem('xiyu_theme')||'auto';var d=p==='dark'||(p==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();</script>
@@ -13,71 +15,97 @@
 </head>
 <body class="bg-[#FFF5F9] text-[#1D1D1F] font-sans antialiased">
   <main class="max-w-3xl mx-auto px-6 py-12">
-    <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← 返回首页</a>
+    <div class="flex items-center justify-between">
+      <a href="/" class="text-[#FF8FB8] text-sm hover:underline">← 返回首页</a>
+      <a href="/app/privacy.en.html" class="text-[#FF8FB8] text-sm hover:underline">English</a>
+    </div>
 
-    <h1 class="mt-6 text-3xl font-bold tracking-tight">隐私政策（开源示例版）</h1>
-    <p class="mt-2 text-sm text-[#86868B]">最后更新：2026-05-28</p>
+    <h1 class="mt-6 text-3xl font-bold tracking-tight">隐私政策</h1>
+    <p class="mt-2 text-sm text-[#86868B]">生效日期：2026 年 6 月 12 日（本政策适用于官方托管服务 xiyuai.cc）</p>
 
     <article class="mt-8 space-y-6 leading-7 text-[15px]">
-      <div class="bg-white border border-[#FFE8F2] rounded-2xl p-5">
-        <p class="font-semibold mb-2">⚠️ 这是开源示例占位</p>
-        <p class="text-[#86868B] text-sm">
-          本页面是开源项目 <b>溪语 AI</b> 附带的示例性隐私政策模板，仅作部署后链接可达占位。
-          若用于公开运营，请<b>自行</b>撰写符合《个人信息保护法》/ GDPR / 所在司法辖区的正式隐私政策替换本文件。
-        </p>
-      </div>
 
       <section>
-        <h2 class="text-xl font-bold">1. 收集的信息</h2>
-        <ul class="list-disc pl-6 space-y-1">
-          <li><b>账户信息</b>：邮箱、密码哈希（scrypt）、出生日期</li>
-          <li><b>对话内容</b>：用户与 AI 的聊天记录、上传的图片/语音</li>
-          <li><b>派生信息</b>：AI 提取的长期记忆、用户画像、好感度等</li>
-          <li><b>日志</b>：请求时间、IP、错误堆栈（用于排障）</li>
+        <h2 class="text-xl font-bold">1. 我们收集什么</h2>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li><b>账号信息</b>：用户名、邮箱、密码（密码以加盐哈希存储，我们无法看到原文）、注册时填写的出生日期（仅用于成年验证）；</li>
+          <li><b>聊天内容</b>：你与 AI 角色的文字对话；</li>
+          <li><b>微信绑定标识</b>：你选择绑定微信后，微信分配的用户标识（用于消息收发路由，不含你的微信账号密码或好友关系）；</li>
+          <li><b>语音与图片的识别结果</b>：你发送的语音会被转写为文字、图片会被识别为文字描述后进入对话记录。<b>语音与图片的原始文件不会留存</b>——语音仅在内存与临时目录中转码后即删除，图片在内存中识别后即丢弃；</li>
+          <li><b>服务衍生数据</b>：AI 从对话中提炼的记忆条目、情绪状态、关系进展等（这些是为实现"她记得你"功能而生成的摘要）；</li>
+          <li><b>服务器访问与运行日志</b>：IP 地址、访问时间，用于安全防护与故障排查，定期轮转清理。</li>
+        </ul>
+        <p class="mt-2">我们<b>不收集</b>：通讯录、地理位置、设备指纹、浏览历史等与服务无关的信息。</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">2. 我们怎么用</h2>
+        <p>上述数据仅用于三个目的：<b>生成回复</b>（把对话上下文发送给大模型）、<b>记忆系统</b>（让她记得你说过的事）、<b>故障排查</b>（运营者仅在排查问题等必要场景接触数据）。</p>
+        <p class="mt-2">我们承诺：<b>不出售你的数据，不用于我们自有模型的训练，不投放广告。</b></p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">3. 第三方处理</h2>
+        <p>生成回复时，对话内容会发送给第三方大模型服务商处理，受其各自服务条款约束。当前启用的服务商按功能分类如下（具体组合可能随服务调整而变化）：</p>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>对话生成：DeepSeek；</li>
+          <li>记忆向量化：Google Gemini（记忆条目文本在生成检索索引时发送）；</li>
+          <li>图片生成：302.AI（API 中转服务）；</li>
+          <li>语音转写与图像识别：阿里云通义千问；</li>
+          <li>语音合成：MiniMax；</li>
+          <li>联网搜索（当你的提问涉及时效信息时）：Tavily，仅发送提炼后的搜索关键词；</li>
+          <li>邮件发送（验证码、通知）：Resend，仅发送你的邮箱地址与邮件内容。</li>
+        </ul>
+        <p class="mt-2">我们不向上述之外的任何第三方共享你的数据，法律法规另有要求的除外。</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-bold">4. 存储与保留</h2>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>数据存储在运营者的服务器上，传输全程 HTTPS 加密；<b>服务器上的数据库目前未做静态加密</b>（即运营者在服务器层面技术上可接触数据原文），我们如实告知这一点；</li>
+          <li><b>聊天原文保留 60 天后自动清理</b>；对话上下文每个角色仅保留最近约 100 轮，更早的内容会被归纳为记忆摘要后删除原文；</li>
+          <li><b>记忆摘要</b>（如"他养了一只猫"）长期保留，直到你删除它或删除账号；</li>
+          <li>数据每日自动备份，备份保留最近 7 天后滚动覆盖。</li>
         </ul>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">2. 使用方式</h2>
-        <p>个人信息仅用于：</p>
-        <ul class="list-disc pl-6 space-y-1">
-          <li>提供 AI 对话服务（必要时调用第三方大模型 API，详见下条）</li>
-          <li>账户认证、密码找回、付费记录</li>
-          <li>反作弊、内容审核、安全审计</li>
+        <h2 class="text-xl font-bold">5. 敏感信息过滤</h2>
+        <p>系统内置敏感信息过滤器，在数据进入长期记忆前自动处理：</p>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>密码、API 密钥、身份证号、银行卡号等凭据类信息——<b>整条拒绝进入长期记忆</b>；</li>
+          <li>手机号、详细住址、学校班级组合等——<b>脱敏后才存储</b>。</li>
         </ul>
+        <p class="mt-2">该过滤器作用于长期记忆与衍生数据；60 天内的原始聊天记录不经此过滤（到期自动删除）。建议不要在聊天中发送任何凭据类信息。</p>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">3. 第三方共享</h2>
-        <p>本应用通过部署者在 <code>.env</code> 中配置的 AI 服务商（如 DeepSeek、OpenAI、智谱、阿里通义、火山方舟、Moonshot 等）实现 AI 能力。
-          你的聊天文本会被发送到所选 provider 以获得回复。请部署者明确告知用户使用了哪些 provider，并链接其各自的隐私政策。</p>
-      </section>
-
-      <section>
-        <h2 class="text-xl font-bold">4. 数据存储</h2>
-        <p>本应用默认使用 SQLite 本地存储。WAL 文件可能保留至下次启动。如未额外备份，删除账户即删除全部对话与记忆。</p>
-      </section>
-
-      <section>
-        <h2 class="text-xl font-bold">5. 你的权利</h2>
-        <ul class="list-disc pl-6 space-y-1">
-          <li>导出：<code>GET /api/me/export</code></li>
-          <li>删除：<code>DELETE /api/me/account</code>（同时清空 wechat_accounts、companions、记忆、消息历史）</li>
+        <h2 class="text-xl font-bold">6. 你的权利</h2>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li><b>查看</b>：在「记忆管理」页面可查看她记住的全部内容；人设与核心记忆可一键导出为 JSON 文件；</li>
+          <li><b>删除记忆</b>：可在记忆管理页面删除单条或全部记忆，即时生效；</li>
+          <li><b>删除角色</b>：可在管理页面删除 AI 角色及其全部关联数据；</li>
+          <li><b>删除账号</b>：目前暂无自助删除账号功能。如需彻底删除账号及全部数据，请发邮件至 <b>xiyuai@proton.me</b>，我们将在 15 个工作日内人工处理并回复确认。</li>
         </ul>
+        <p class="mt-2 text-[13px] text-[#86868B]">说明：上述删除在主数据库中即时生效；已删除的数据可能在每日备份中最多保留 7 天，随备份滚动覆盖后彻底清除。</p>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">6. 未成年人信息保护</h2>
-        <p>本服务面向成年人，<strong>不面向未成年人，也不会有意收集未满 18 周岁未成年人的任何个人信息</strong>。若运营者发现误收集了未成年人信息，将尽快删除相关数据。监护人如发现未成年人未经同意使用本服务或提交了个人信息，请通过下方方式联系运营者删除。</p>
+        <h2 class="text-xl font-bold">7. 未成年人</h2>
+        <p>本服务仅面向 18 周岁以上成年人，我们不有意收集未成年人信息。系统识别到使用者可能未成年时会自动进入安全模式（详见《用户协议》第 2 条）。监护人若发现未成年人使用本服务，请联系我们删除相关数据。</p>
       </section>
 
       <section>
-        <h2 class="text-xl font-bold">7. 联系方式</h2>
-        <p>开源版本无中央运营方。如你使用的是某个具体部署，请联系该部署的运营者。</p>
+        <h2 class="text-xl font-bold">8. 政策变更</h2>
+        <p>政策变更时更新本页顶部生效日期；重大变更将另行发送邮件至你的注册邮箱。继续使用视为接受变更。</p>
       </section>
+
+      <section>
+        <h2 class="text-xl font-bold">9. 联系我们</h2>
+        <p>隐私相关问题与数据删除申请：<b>xiyuai@proton.me</b></p>
+      </section>
+
     </article>
-
-    <p class="mt-12 text-xs text-[#C0C0C5]">License: MIT · 仅供模板参考，不构成法律建议。</p>
   </main>
 </body>
 </html>

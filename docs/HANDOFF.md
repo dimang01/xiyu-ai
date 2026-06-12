@@ -23,6 +23,7 @@
 | 2026-06-12 | **#292 报警极性反转**（立项下个 patch，不阻塞 PR-B）：白名单→反转为 **WARN 全量进签名聚合 + suppress 名单(外置配置文件,每条须注"为何无害"一句话)管已知良性**(cooldown/daily-count 等)，🆕 新签名/高频涨幅置顶。红验①拿这次的 400 烧旧极性必须漏、烧新极性必须报 ②一条已知良性 WARN 加进 suppress 后必须安静 | 📋 已立项 |
 | 2026-06-12 | **封面临时护栏**（搭 PR-C 车）：planner prompt 加一行——真实出版物类(书/专辑/杂志/教材)只拍摊开内页或边角局部，不拍完整封面正面；反误伤断言：她自己的笔记本/手账封面不受限(非出版物)。**标注：V1214 正式解之前的临时规矩，正式解落地后此行撤销** | 🔄 搭 PR-C |
 | 2026-06-12 | **通电冒烟测试**（立项 backlog，PR-D 顺路或单独 patch）：stub provider 拉起应用，真跑一次 proactive tick + 一次 photo plan 到发送层，断言全链通电(只验电流走通,不验内容质量)；红验：对 buildPlannerPrompt 对象 bug 坏版本必须红。完成后 HANDOFF 记一行"接线类 bug(const+=/migratePhotoLog/buildPlannerPrompt 三案)系统解已上线" | 📋 已立项 |
+| 2026-06-12 | **《用户协议》《隐私政策》正式上线生效**（仅官方托管 xiyuai.cc）：四份正文(中英)从 drafts 落 public/app/{terms,privacy}{,.en}.html——中文替换占位模板+英文新增；注册页 auth.html 两链接 href(/app/terms.html、/app/privacy.html)一致可达。**未直接合并 #284**：它捎带的老 HANDOFF 会回退账本、且 drafts 非线上路径——改走干净 PR，#284 待关闭。opensource_check 加协议 xiyuai.cc 排除(官方域名按法律须写明,公开信息) | ✅ 已上线 |
 
 ---
 
