@@ -298,10 +298,13 @@ export async function generateReply(personaPrompt, history, userMessage, params 
   const messages = [];
   for (const h of history) {
     if (!h.content || h.content === '[图片]' || h.content === '[语音]') continue;
-    messages.push({
-      role: h.direction === 'in' ? 'user' : 'assistant',
-      content: h.content,
-    });
+    // history 条目有两种来源形状：wechat 链路 { direction:'in'|'out' }，
+    // playground / 沙箱 { role:'user'|'assistant' }。优先 direction，回退 role，
+    // 两者皆缺时保持旧行为判 assistant（避免把用户历史发言错当她自己说过的话）。
+    const role = h.direction
+      ? (h.direction === 'in' ? 'user' : 'assistant')
+      : (h.role === 'user' ? 'user' : 'assistant');
+    messages.push({ role, content: h.content });
   }
   messages.push({ role: 'user', content: userMessage });
 
