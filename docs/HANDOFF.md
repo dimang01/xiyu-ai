@@ -1,4 +1,4 @@
-# 新对话交接提示词（2026-06-12 刷新，对应 v1.21.5）
+# 新对话交接提示词（2026-06-12 刷新，对应 v1.21.6）
 
 > 把下面整段复制给新对话作为第一条消息。它包含让新执行者立刻能干活所需的
 > 全部上下文，不依赖任何前面的对话。
@@ -27,7 +27,10 @@
 | 2026-06-12 | **死人开关告警出口接线（P1）**：proactive_deadman 出口因 ADMIN_ALERT_EMAIL 未配置而哑火(取址空→只打日志不发)——本次照片断供期为 #263 形态准备的两道报警都没响(digest 盲区 #292 + 此条出口空)。修：抽 emitDeadmanAlert 从 env 取址、sendOpsAlertEmail 返回 message-id 作投递凭据、空收件人改显式 WARN「报警器自己哑了」、加 deadman_test_alert 端到端入口(收件人从 env 读、不写死)。**ADMIN_ALERT_EMAIL 明文只入生产 .env 一处，仓库/PR/账本一律以 ADMIN_ALERT_EMAIL 指代、不写明文** | ✅ 端到端闭环(维护者已配 .env) |
 | 2026-06-12 | 规矩：**对外地址与告警地址分离**——proton(对外门面/协议联系)与 ADMIN_ALERT_EMAIL(私人邮箱/运维告警)永不混用；**生产 .env 配置变更=运营者亲手，代码变更=Claude Code 走 PR**(本次 .env 配置由维护者本人执行，Claude 只给精确命令) | ✅ 已记 |
 | 2026-06-12 | **死人开关端到端闭环**：deadman_test_alert 真实取址+真发，message-id 凭据进 Gmail **收件箱**(非垃圾箱，发件域 auth.xiyuai.cc SPF/DKIM 正常)。**为 #263 静默断供形态准备的三道防线首次全员在岗**：①错误签名段(#292 扫描扩到高信号 WARN) ②死人开关出口(ADMIN_ALERT_EMAIL 已配+返回 id+空收件人显式 WARN) ③部署后人工 grep error | ✅ 闭环 |
-| 2026-06-12 | 照片品类校准（patch 版 4 PR）：①先审计后改配比(#263)——审计实锤：proactive 主动分享 lifetime 仅 1 张(16 张里 15 张 user 索图)，通道近乎休眠，非"配比失衡"而是从零建通道 ②品类权重外置配置文件(默认 sampling 关,保持现状,切换值我拍板再切) ③新增"看到这个想到你"品类(preference/梗源,过指纹去重,taboo/隐私硬排除) ④食物一等公民+天空 sun_times 锚定(雨雪极端天气禁用至天气锚定建成)+caption/互拍升级 ⑤candid 实验 flag 默认关待 20 张评估我定默认值。观察周零 arc/emotion 改动；两停板点（权重切换值 / candid 默认值）我定 | 🔄 执行中 |
+| 2026-06-12 | 照片品类校准（patch 版 4 PR）：①先审计后改配比(#263)——审计实锤：proactive 主动分享 lifetime 仅 1 张(16 张里 15 张 user 索图)，通道近乎休眠，非"配比失衡"而是从零建通道 ②品类权重外置配置文件(默认 sampling 关,保持现状,切换值我拍板再切) ③新增"看到这个想到你"品类(preference/梗源,过指纹去重,taboo/隐私硬排除) ④食物一等公民+天空 sun_times 锚定(雨雪极端天气禁用至天气锚定建成)+caption/互拍升级 ⑤candid 实验 flag 默认关待 20 张评估我定默认值。观察周零 arc/emotion 改动；两停板点（权重切换值 / candid 默认值）我定 | ✅ 代码已合 v1.21.6，开闸待部署 |
+| 2026-06-12 | 品类链发版收口 v1.21.6（今天单独发，与明天 v1.21.4 错开——一次部署一个变量、归因干净）：A→B→C 串行合并 main（#290→#300→#301；原 #294/#298 因 stacked base 随 --delete-branch 自动关闭→重开）；package.json + README/FEATURES/ROADMAP 同步、check:release 绿 | 🔄 代码已合，待开闸部署 |
+| 2026-06-12 | 编排拍板 A：**首次开闸=运营者亲手**——sampling 总开关 PHOTO_CATEGORY_SAMPLING_ENABLED 是生产 .env 变更，按「配置变更运营者亲手」规矩由维护者配，Claude 只给逐段命令（.env 那行用先 grep 查重再 printf 追加的防重复写法） | ✅ 已记 |
+| 2026-06-12 | 长期口径：**env 变更分级**——首次开闸/关闸类 env=运营者亲手；调参类 env=提案后亲手或明确授权；admin 运维配置页上线后调参类整体迁移到页面 | ✅ 已记 |
 
 ---
 
@@ -40,7 +43,7 @@
 - **生产克隆：`/opt/xiyu-ai-new`**（main HEAD = 生产 HEAD，发版后 `git pull` + 重启）
 - GitHub：`https://github.com/dimang01/xiyu-ai`
 - 默认分支：`main`
-- **当前版本：v1.21.5**（package.json 与 git tag 已同步，发版时一起升）
+- **当前版本：v1.21.6**（package.json 已升；git tag 合并后打 v1.21.6）
 - 规模：58 个 `src/**.mjs`（含 providers/security 子目录）· 17 个 `public/app/*.html` · 87 个 `scripts/` · 100+ releases
 
 功能全景：README「它能做什么」最新最准；`docs/FEATURES.txt` 详述的是

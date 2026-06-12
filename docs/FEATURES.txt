@@ -38,6 +38,13 @@
   · v1.21.2 静默失败变响：ESLint 进 CI / digest 错误签名段(首杀
             Reflection 8 天断供) / proactive 死人开关(心跳+邮件) /
             照片比例修复(机位路由 3:4 竖屏+落库防回归)
+  · v1.21.6 照片品类校准(像真实恋爱发照片)：品类权重外置 config+加权采样
+            (proactive 主动分享,默认关)/食物一等公民+天空 sun_times.mjs 日落
+            窗口锚定/「看到这个想到你」(偏好·梗素材源,雷区·隐私·14天去重)/
+            caption 关联近期+互拍邀请(每周≤1)/真实出版物封面护栏/candid flag(默认关);
+            顺手修 P0 静默断图(planner prompt 对象传 LLM,断 1.5 天)+digest 报警
+            盲区([ERROR]扩到高信号[WARN])+死人开关出口接线(ADMIN_ALERT_EMAIL),
+            为 #263 形态准备的三道防线首次全员在岗
   · v1.21.5 照片承诺兑现链：承诺前可行性闸门(planner 前移,通过才答应)/
             gen 超时兜底+her_promise 改期补发(proactive 到点"喏 补给你的")/
             月相锚定 moon_phase.mjs(纯数学,杜绝凭空满月)/bot.log logrotate
