@@ -17,7 +17,7 @@ import {
   isSensitiveMemoryContent, sanitizeMemoryContent,
   addOrMergeMemory,
 } from './memory_v2.mjs';
-import { saveMemory, getMemoriesV2 } from './db.mjs';
+import { saveMemory, getMemoriesV2, legacyTypeForLayer } from './db.mjs';
 import { processMemoryForGraph } from './event_graph.mjs';
 
 const CONFIDENCE_MIN = 0.7;
@@ -136,15 +136,23 @@ export async function applyReflectionMemoryUpdates(companionId, updates, options
       }, { db });
 
       if (result.action === 'insert') {
+        // B 边界映射：reflection 用 layer 词汇，但 saveMemory 的 memory_type CHECK 只认旧 type 词表。
+        // 映射不到的(relationship_rule 等)绝不静默落库成错类型——显式 rejected 计数(插桩接住，digest 报蒸发)。
+        const legacyType = legacyTypeForLayer(m.memory_layer);
+        if (!legacyType) {
+          rejected++;
+          log('warn', `[Reflection] 跳过无边界映射的层 companion=${companionId} layer=${m.memory_layer}（如 relationship_rule，待 v1.23 情绪建构包决定是否开正式类型）`);
+          continue;
+        }
         saveMemory({
           companionId,
           userId,
-          memoryType: m.memory_layer,
-          content:    m.content,
-          importance: m.memory_weight ?? 3,
-          memoryLayer: m.memory_layer,
+          memoryType:   legacyType,       // CHECK 约束认的旧 type（边界映射后）
+          content:      m.content,
+          importance:   m.memory_weight ?? 3,
+          memoryLayer:  m.memory_layer,   // 真实分类层（页面按此过滤）—— A 契约对齐后才真正落库
           memoryWeight: m.memory_weight,
-          memorySource: 'reflection',
+          memorySource: 'reflection',     // A 契约对齐后才真正落库（不再被签名静默吞成 auto）
         });
         // 轻量事件图谱（静默，不阻塞）
         // 传入 memory_layer 让守卫函数跳过 emotion 层

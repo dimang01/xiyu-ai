@@ -152,5 +152,8 @@ jobs:
       - name: reflection 批产出心跳 emit↔parse 契约（2026-06-12 防"永远无心跳"假警报漂移）
         run: node scripts/reflection_heartbeat_smoke.mjs
 
+      - name: saveMemory 契约对齐 + layer→type 边界映射（2026-06-12 A 纯加法/B 映射不到必 reject）
+        run: node scripts/reflection_memory_mapping_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。

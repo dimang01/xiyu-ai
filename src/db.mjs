@@ -3493,7 +3493,11 @@ function companionUserAlias(companionId) {
   } catch { return '他'; }
 }
 
-export function saveMemory({ companionId, userId, memoryType, content, importance = 5, keywords = null, embedding = null, pinned = null }) {
+// 2026-06-12 A 契约对齐：新增可选 memorySource/memoryLayer/memoryWeight。
+// **纯加法**——未传的列一律不进 INSERT、沿用列默认(source='auto'/layer='event'/weight=NULL)，
+// 故既有 6 个 caller(全不传这三参) 零行为变更。reflection 此前传了 memorySource:'reflection'
+// 等却被旧签名静默丢弃(落库错贴 auto/event)，本次起才真正落库。
+export function saveMemory({ companionId, userId, memoryType, content, importance = 5, keywords = null, embedding = null, pinned = null, memorySource = null, memoryLayer = null, memoryWeight = null }) {
   // v1.20 隐私过滤：密码/key/身份证/银行卡级 → 整条不入长期记忆；手机号/住址/学校班级 → 脱敏
   const pf = filterForStorage(content);
   if (!pf.store) { console.warn(`[PrivacyFilter] saveMemory 拦截敏感内容 companion=${companionId}`); return; }
@@ -3502,10 +3506,13 @@ export function saveMemory({ companionId, userId, memoryType, content, importanc
   const isPinned = pinned !== null ? (pinned ? 1 : 0) : (importance >= 7 ? 1 : 0);
   const kw = Array.isArray(keywords) ? JSON.stringify(keywords) : (keywords || null);
   const emb = embedding ? packEmbedding(embedding) : null;
-  db.prepare(`
-    INSERT INTO companion_memories (companion_id, user_id, memory_type, content, importance, pinned, keywords, embedding)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(companionId, userId, memoryType, content, importance, isPinned, kw, emb);
+  const cols = ['companion_id', 'user_id', 'memory_type', 'content', 'importance', 'pinned', 'keywords', 'embedding'];
+  const vals = [companionId, userId, memoryType, content, importance, isPinned, kw, emb];
+  if (memorySource != null) { cols.push('memory_source'); vals.push(memorySource); }
+  if (memoryLayer  != null) { cols.push('memory_layer');  vals.push(memoryLayer); }
+  if (memoryWeight != null) { cols.push('memory_weight'); vals.push(memoryWeight); }
+  db.prepare(`INSERT INTO companion_memories (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+    .run(...vals);
 }
 
 // v1.x 修(#1)：memory_type → memory_layer 映射（与 memory_v2.mjs LAYER_MAP 一致，
@@ -3516,6 +3523,20 @@ const MEMORY_TYPE_TO_LAYER = {
   image: 'event', daily_summary: 'summary', weekly_summary: 'summary', monthly_summary: 'summary',
 };
 export const memoryLayerOfType = (t) => MEMORY_TYPE_TO_LAYER[t] || 'event';
+
+// 2026-06-12 B 边界映射：memory_layer 词汇 → 旧 memory_type 词表（saveMemory 的 CHECK 只认旧词表）。
+// 是 MEMORY_TYPE_TO_LAYER 的反向。**映射不到的(core_persona/relationship_rule) 返回 null**——
+// 调用方必须显式 reject 计数、绝不静默落库成错类型。relationship_rule 是否开正式类型 = 产品决策，
+// 挂 v1.23 情绪建构包；届时若开 = CHECK 迁移 + chip 按对账方向② 报警回归（路径已铺）。
+const LAYER_TO_LEGACY_TYPE = {
+  user_fact:  'fact',
+  preference: 'preference',
+  event:      'event',
+  emotion:    'emotion',
+  summary:    'daily_summary',   // 反向有损(日/周/月归一)，reflection 不产 summary，仅兜底完整性
+  // core_persona / relationship_rule：旧 CHECK 词表无对应 → null → 调用方 reject
+};
+export const legacyTypeForLayer = (layer) => LAYER_TO_LEGACY_TYPE[layer] || null;
 
 export function saveMemories(memories) {
   const db = getDb();
