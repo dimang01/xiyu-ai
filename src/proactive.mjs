@@ -18,8 +18,11 @@ import {
   listShaping,                                // 共建留痕（教过她的注入主动消息）
   insertProactiveMaterialLog, getRecentlyUsedMaterialIds, getRecentProactiveTexts,  // v1.21.3 素材账本
   getCategorySendCounts,                      // v1.21.6 PR-A 照片品类 weeklyCap
+  listPreferences, getMemories,               // v1.21.6 PR-B 想到你素材源（梗 listShaping 已在上）
 } from './db.mjs';
 import { pickProactiveCategory, cappedCategoryIds } from './photo_categories.mjs';  // v1.21.6 PR-A 照片品类加权采样（默认关）
+import { selectThoughtMaterial, thoughtSceneSeed } from './photo_thought.mjs';      // v1.21.6 PR-B 想到你素材选择
+import { filterForStorage } from './privacy_filter.mjs';                            // v1.21.6 PR-B 隐私命中判定
 // v1.21.3 PR-E: 跨天素材级去重（「小汤圆」3 天 3 次）——冷却过滤只挂这条链路，
 // 对话召回（bot.mjs）绝不挂：主动不提是克制，他聊起来接不住是失忆。
 import {
@@ -1149,6 +1152,36 @@ async function sendScenePhoto(companion, ctx) {
     // 采样异常 → sampledCategory 保持 null（退回现状），不另赋值（eslint no-useless-assignment）
     log('warn', `[Proactive] 照片品类采样失败，退回现状 companion=${companion.id}: ${e.message}`);
   }
+  // v1.21.6 PR-B: 「看到这个想到你」品类——选一个与他兴趣/你们的梗相关的可拍物。
+  // 雷区/隐私命中/14 天内已用过的素材确定性出局；无可用素材则退回普通场景照（不空发）。
+  let categoryForPlanner = sampledCategory;
+  let thoughtMaterialId = '';
+  if (sampledCategory?.id === 'thought_of_you') {
+    try {
+      const pick = selectThoughtMaterial({
+        likes: listPreferences(companion.id, { type: 'like' }),
+        lexicon: listShaping(companion.id, { kind: 'lexicon' }),
+        memories: getMemories(companion.id, companion.wechat_user_id, 20).filter(m => (m.importance ?? 0) >= 7),
+        tabooTerms: [
+          ...listPreferences(companion.id, { type: 'taboo' }).map(p => p.target),
+          ...listShaping(companion.id, { kind: 'taboo' }).map(s => s.content),
+        ],
+        usedIds: getRecentlyUsedMaterialIds(companion.id, { days: materialDedupDays() }),
+        isSensitive: (t) => !filterForStorage(t).store,
+      });
+      if (pick) {
+        thoughtMaterialId = pick.id;
+        categoryForPlanner = { ...sampledCategory, sceneSeed: thoughtSceneSeed(pick) };
+        log('info', `[Proactive] 想到你命中素材 companion=${companion.id} material=${pick.id} source=${pick.source}`);
+      } else {
+        log('info', `[Proactive] 想到你无可用素材(全冷却/雷区/隐私排除)，退回普通场景照 companion=${companion.id}`);
+        sampledCategory = null; categoryForPlanner = null;
+      }
+    } catch (e) {
+      log('warn', `[Proactive] 想到你素材选择失败，退回普通场景照 companion=${companion.id}: ${e.message}`);
+      sampledCategory = null; categoryForPlanner = null;
+    }
+  }
   const plan = await planPhotoMessage({
     companion,
     user: { wechat_user_id: companion.wechat_user_id },
@@ -1160,7 +1193,7 @@ async function sendScenePhoto(companion, ctx) {
     imageProviderAvailable: gate.imageProviderAvailable,
     proactiveContext: {
       scene: companion.current_scene || '', schedule: 'daily_candidate',
-      ...(sampledCategory ? { category: sampledCategory } : {}),
+      ...(categoryForPlanner ? { category: categoryForPlanner } : {}),
     },
     emotionState: photoEmotionState,
   });
@@ -1188,6 +1221,13 @@ async function sendScenePhoto(companion, ctx) {
   if (!result.ok) {
     log('warn', `[Proactive] 场景照未发送 companion=${companion.id} code=${result.code || 'unknown'} error=${result.error || ''}`);
     return;
+  }
+  // v1.21.6 PR-B: 想到你素材落 v1.21.3 指纹账本 → 同素材 14 天冷却（每周≤2 由品类 weeklyCap 管）
+  if (thoughtMaterialId) {
+    insertProactiveMaterialLog(companion.id, {
+      materialIds: [thoughtMaterialId], kind: 'photo_thought',
+      scene: companion.current_scene || '', nowIso: new Date().toISOString(),
+    });
   }
   if (result.caption) {
     await new Promise(r => setTimeout(r, plan.delayCaptionMs || 900));
