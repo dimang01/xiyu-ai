@@ -125,7 +125,7 @@ export function normalizeReflectionResult(raw) {
 export async function applyReflectionMemoryUpdates(companionId, updates, options = {}) {
   const db = options.db ?? getDb();
   const userId = options.userId;
-  let inserted = 0, merged = 0, updated = 0;
+  let inserted = 0, merged = 0, updated = 0, rejected = 0;
 
   // Insert or merge new memories
   for (const m of (updates.new_memories || [])) {
@@ -156,6 +156,7 @@ export async function applyReflectionMemoryUpdates(companionId, updates, options
         merged++;
       }
     } catch (e) {
+      rejected++;   // 心跳计数：insert 被拒(如 memory_type CHECK 约束)不再只埋在 WARN 里
       log('warn', `[Reflection] insert 失败 companion=${companionId}: ${e.message}`);
     }
   }
@@ -182,8 +183,11 @@ export async function applyReflectionMemoryUpdates(companionId, updates, options
     }
   }
 
-  log('info', `[Reflection] companion=${companionId} inserted=${inserted} merged=${merged} updated=${updated}`);
-  return { inserted, merged, updated };
+  // 正向心跳：candidates(LLM 提议) → inserted/merged/updated(落库) + rejected(被拒丢失)，
+  // 五个数缺一就看不清"提了多少、活了多少、丢了多少"。rejected>0 = 有产出在静默蒸发。
+  const candidates = (updates.new_memories || []).length;
+  log('info', `[Reflection] companion=${companionId} candidates=${candidates} inserted=${inserted} merged=${merged} rejected=${rejected} updated=${updated}`);
+  return { candidates, inserted, merged, rejected, updated };
 }
 
 // ─── Per-companion reflection runners ────────────────────────────────────────
@@ -225,9 +229,10 @@ async function runReflectionForCompanion(companionId, userId, turnsRange, kind, 
     }
 
     const updates = normalizeReflectionResult(parsed);
-    await applyReflectionMemoryUpdates(companionId, updates, { userId });
+    const counts = await applyReflectionMemoryUpdates(companionId, updates, { userId });
 
     log('info', `[Reflection] ${kind} companion=${companionId} new=${updates.new_memories.length} updated=${updates.updated_memories.length}`);
+    return counts;   // 上抛给批级 rollup 汇总（正向心跳）；跳过/异常路径返回 undefined
   } catch (e) {
     log('error', `[Reflection] ${kind} companion=${companionId} 异常: ${e.message}`);
   }
@@ -244,7 +249,7 @@ export async function runDailyReflectionForCompanion(companionId, options = {}) 
   const yesterdayKey = addDaysSh(todayKey, -1);
   const { startSql, endSql } = shanghaiBoundsForDateKey(yesterdayKey);
   const userId = options.userId;
-  await runReflectionForCompanion(companionId, userId, { startSql, endSql }, 'daily', options);
+  return runReflectionForCompanion(companionId, userId, { startSql, endSql }, 'daily', options);
 }
 
 export async function runWeeklyReflectionForCompanion(companionId, options = {}) {
@@ -255,5 +260,5 @@ export async function runWeeklyReflectionForCompanion(companionId, options = {})
   const { startSql: startSql0 } = shanghaiBoundsForDateKey(startKey);
   const { endSql: endSql0 } = shanghaiBoundsForDateKey(endKey);
   const userId = options.userId;
-  await runReflectionForCompanion(companionId, userId, { startSql: startSql0, endSql: endSql0 }, 'weekly', options);
+  return runReflectionForCompanion(companionId, userId, { startSql: startSql0, endSql: endSql0 }, 'weekly', options);
 }
