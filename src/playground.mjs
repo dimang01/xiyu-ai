@@ -183,14 +183,17 @@ export async function playgroundChat(companion, userText) {
 
   // v1.8.0 #6: Inner OS 双重思考 —— 生成内心独白后注入 system prompt
   // 失败/跳过都不阻塞主流程
-  const innerThought = await generateInnerMonologue({
+  const innerRes = await generateInnerMonologue({
     companion,
     userText: text,
     history,
     context: { accountId: null },  // playground 走 web 通道，没有 wechat account
   }).catch(() => null);
-  if (innerThought) {
-    systemPrompt += buildInnerOsHint(innerThought);
+  // generateInnerMonologue 返回 { thought, struct } 对象——必须取 .thought（字符串），
+  // 与 bot.mjs 一致。v1.21.0 改返回结构时此处漏改，曾把整个对象传 buildInnerOsHint
+  // 致 .trim() 裸 500（网页通道断约 2 天）。
+  if (innerRes?.thought) {
+    systemPrompt += buildInnerOsHint(innerRes.thought);
   }
 
   let reply;
