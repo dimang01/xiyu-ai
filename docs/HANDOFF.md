@@ -15,8 +15,11 @@
 | 2026-06-11 | #281 取 A（出口护栏 scrubPhotoImpersonation）+ B（sticker prompt 禁令），C（过去式 promise→真生成场景照）拆入 v1.21.4「她的世界的视觉一致性」 | ✅ 本次执行 |
 | 2026-06-11 | v1.21.4 前置：好/坏样本标注工具（admin 页+annotation_corpus 表+JSONL 导出）——微调语料生产线，纯只读消费 turns 零运行时风险 | ✅ 本次执行 |
 | 2026-06-12 | V1214_DESIGN（current_works）四条评审约束先行入档：作品名搜索验证真实存在/封面照一律 POV 内页书脊(防伪造+版权双坑)/存量虚构靠生命周期自然退场不回溯/现实锚定(天气节气节日)纳入设计范围 | ✅ 已入档 |
-| 2026-06-12 | 照片承诺兑现链修复（patch v1.21.5）：PR-A 取证(开环根因)→PR-B 承诺前可行性闸门+超时兜底+her_promise 改期履约+时序修复→PR-C 月相锚定(纯数学杜绝凭空满月)；顺手补 bot.log logrotate | ✅ 已执行 |
-| 2026-06-12 | **P0 静默断图 hotfix**：d22bf73(v1.21.2) 改 buildPlannerPrompt 返回 {prompt,shotMode} 却没改 call site→整个对象当 message content 传 LLM(400 content should be a string)→自 06-11 06:54 所有照片(user 索图+proactive 场景照)静默失败 1.5 天，fail-open 吞成 WARN。修：解构出 string prompt + plan 挂 shotMode/aspect(复活 v1.21.2 比例路由死代码)+回归 smoke 锁。立即部署恢复 | ✅ 已执行 |
+| 2026-06-12 | 照片承诺兑现链修复（patch v1.21.5）：PR-A 取证(开环根因)→PR-B 承诺前可行性闸门+超时兜底+her_promise 改期履约+时序修复→PR-C 月相锚定(纯数学杜绝凭空满月)；顺手补 bot.log logrotate。**根因更正(事后)：开环是真实结构纵深、修得对，但 06-11 当晚月亮/书封面"放鸽子"的直接真凶是 #289 的 planner 对象断图 400(非合法可行性拒绝)；her_promise 兜底全保留** | ✅ 已执行 |
+| 2026-06-12 | **P0 静默断图 hotfix**：d22bf73(v1.21.2) 改 buildPlannerPrompt 返回 {prompt,shotMode} 却没改 call site→整个对象当 message content 传 LLM(400 content should be a string)→自 06-11 06:54 所有照片(user 索图+proactive 场景照)静默失败 1.5 天，fail-open 吞成 WARN。修：解构出 string prompt + plan 挂 shotMode/aspect(复活 v1.21.2 比例路由死代码)+回归 smoke 锁。**单独部署(最小 diff 干净归因)**：2026-06-12 已 pull+重启，验证恢复(health 200 + prod 主机 planner smoke 16/16) | ✅ 已部署 |
+| 2026-06-12 | 照片品类部署拍板：#289 单独部署(修复型不夹带)，PR-A #290 惰性随 PR-D 正常发版；**品类 sampling 开关延到 PR-C 种子落地后随 PR-D 一起开**(现在开=对空场景池采样无意义,一次部署一个变量)；权重表照用；B/C/D 绿灯 | 🔄 执行中 |
+| 2026-06-12 | 流程教训：**函数级绿 ≠ 调用链绿**(v1.21.2 e2e 绿着上线一个从没生效的比例路由+对象当 prompt 的 400)——与"本地绿≠CI 绿"并排；改函数返回类型必 grep 所有 call site，回归 smoke 打到真实调用链参数类型(mock llm 捕获断言)。**digest 报警盲区**：错误签名段只扫 [ERROR]，但 swallowed-LLM-failure 是 [WARN][ai]→1.5 天没尖叫；扫描器待扩(catch [ERROR]+高信号 [WARN] 白名单) | 🔄 报警待修 |
+| 2026-06-12 | 记功：auto-mode 在生产重启前停下等用户授权——#267 后装的栅栏首次真刀真枪立住(挡下未审 P0 部署) | ✅ |
 
 ---
 
