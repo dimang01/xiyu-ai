@@ -327,7 +327,7 @@ function getVisualContext(companion, imageProviderCapabilities = getImageProvide
   }
 }
 
-function normalizePlan(raw, { trigger, gate }) {
+function normalizePlan(raw, { trigger, gate, shotMode = '', sceneText = '' }) {
   const plan = { ...DEFAULT_PLAN, trigger, reason: 'normalized' };
   if (!raw || typeof raw !== 'object') return { ...plan, reason: 'invalid planner json' };
   const should = raw.shouldSendPhoto === true && raw.mode !== 'text_only';
@@ -362,6 +362,11 @@ function normalizePlan(raw, { trigger, gate }) {
     delayImageMs,
     delayCaptionMs,
     maintainIdentity: raw.maintainIdentity !== false,
+    // v1.21.6 hotfix: shotMode/aspect 必须挂到 plan 上——调用方（proactive/bot）读
+    // plan.shotMode / plan.aspect 喂 sendCompanionPhoto。d22bf73(v1.21.2) 把
+    // buildPlannerPrompt 改成返回 {prompt,shotMode} 却没在此落库，导致比例路由是死代码。
+    shotMode: shotMode || '',
+    aspect: aspectForShot(shotMode, sceneText),
     reason: safeText(raw.reason || 'planner approved', 160),
     gate,
   };
@@ -608,7 +613,12 @@ export async function planPhotoMessage({
   const system = `你是照片发送决策器。你不聊天，只返回合法 JSON。目标是让陪伴对象偶尔像现实世界里的人一样自然分享生活照片。`;
   const emotionContext = buildEmotionPhotoContext(emotionState);
   const visualContext = getVisualContext(companion, imageProviderCapabilities);
-  const prompt = buildPlannerPrompt({ companion, user, userText, recentMessages, trigger, context, proactiveContext, gate, emotionContext, visualContext });
+  // v1.21.6 hotfix（P0 静默断图）：buildPlannerPrompt 自 d22bf73(v1.21.2) 起返回
+  // {prompt, shotMode} 对象，但此处一直当字符串接收 → 整个对象被当 message content
+  // 传给 LLM（"content should be a string" 400）→ 自 06-11 起所有照片静默失败。
+  // 必须解构出字符串 prompt；shotMode 顺带落库到 plan（比例路由）。
+  const { prompt, shotMode } = buildPlannerPrompt({ companion, user, userText, recentMessages, trigger, context, proactiveContext, gate, emotionContext, visualContext });
+  const sceneText = `${userText || ''} ${companion?.current_scene || ''} ${proactiveContext?.scene || ''}`;
   try {
     const raw = deps.mockResponse != null
       ? deps.mockResponse
@@ -619,7 +629,7 @@ export async function planPhotoMessage({
           maxTokens: 700,
           temperature: 0.35,
         });
-    return normalizePlan(extractJson(raw), { trigger, gate });
+    return normalizePlan(extractJson(raw), { trigger, gate, shotMode, sceneText });
   } catch (e) {
     log('warn', `[PhotoPlanner] plan failed: ${e.message}`);
     return { ...DEFAULT_PLAN, trigger, reason: `planner error: ${e.message}`, gate };
