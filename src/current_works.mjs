@@ -16,8 +16,8 @@
  */
 
 import { webSearch } from './web_search.mjs';
-import { extractStructuredInfo } from './ai.mjs';
-import { findVerifiedWork, getActiveCurrentWorks, insertCurrentWork, setCurrentWorkStatus, getAppSetting, setAppSetting } from './db.mjs';
+import { extractStructuredInfo, embedText } from './ai.mjs';
+import { findVerifiedWork, getActiveCurrentWorks, insertCurrentWork, setCurrentWorkStatus, getAppSetting, setAppSetting, saveMemory } from './db.mjs';
 import { log } from './logger.mjs';
 
 const VERIFIABLE = new Set(['book', 'series', 'anime', 'game']);   // craft 免验
@@ -120,6 +120,113 @@ export function isWorkFinished(work, now = new Date(), cfg = worksConfig()) {
   return now.getTime() - new Date(work.started_at).getTime() >= days * 86400_000;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 表达层（PR-W2；设计 docs/V1214_DESIGN.md §8 + §7 存量退场规则）。全纯函数：
+// hint 由调用方拼好传入 buildSystemPrompt（shapingHint 先例，保持 companion.mjs 零依赖）。
+// 红线：对话召回永不挂冷却（他问起永放行）；冷却只锁她「主动」提（proactive + 闲聊自荐）。
+// ════════════════════════════════════════════════════════════════════════════
+
+function clipNote(s, n = 30) { return String(s || '').replace(/\s+/g, ' ').trim().slice(0, n); }
+
+/** 素材账本命名空间（mem:/loop:/pref: 同模式；48h 冷却 + 周上限的计数单位）。 */
+export function workMaterialId(id) { return `work:${id}`; }
+
+/** 单条 work → 事实式短语（verified 指名《》/ generic 不指名 / craft 自由文本）。 */
+function renderWork(w) {
+  const status = String(w?.verify_status || '');
+  const kind = String(w?.kind || '').toLowerCase();
+  const prog = w?.progress_note ? `（${clipNote(w.progress_note)}）` : '';
+  if (status === 'generic') {
+    // generic 的 title 存的是题材（"推理小说"），绝不指名——模糊但不虚构（§8）
+    return `最近在看一本${stripBrackets(w.title) || '书'}${prog || '（还没看进去）'}`;
+  }
+  if (kind === 'craft' || status === 'skip') {
+    return `手上在${stripBrackets(w.title)}${prog}`;       // "给外婆织围巾（快收尾了）"
+  }
+  const verb = (kind === 'series' || kind === 'anime') ? '在追' : kind === 'game' ? '在玩' : '在看';
+  return `${verb}《${stripBrackets(w.title)}》${prog}`;
+}
+
+/**
+ * 注入段（§8）：active works 事实行 + 三条行为约束。
+ * 约束①他问起永放行（对话召回不挂冷却）②她别每条自荐（克制；冷却的语义侧）
+ * ③存量虚构退场——问起档案外旧作品名按"看完了"接，不展开内容、不否认（§7 + 红验④）。
+ * works 为空 → 返回 ''（不注入）。纯函数，零 IO。
+ */
+export function buildWorksPromptHint(works) {
+  const list = (Array.isArray(works) ? works : []).filter(w => w && w.title);
+  if (!list.length) return '';
+  const line = list.map(renderWork).join('；');
+  // 退场约束做成"档案即唯一事实源"（W1 同philosophy）——否则旧虚构名还在最近对话里时，
+  // LLM 会顺着上下文继续编进度/剧情（沙箱实测：问《转角》她接着说"女主刚发现…"）。
+  // 必须让档案权威性压过近 16 轮上下文：上面列的才是"现在"，别的都已完结。
+  return `\n【手头的事】你最近${line}。**这就是你现在手头在看/在做的全部**。
+- 他问起这些（"那本书看到哪了""最近在看啥"）你**永远正常接、聊得起来**——这是你的生活，不是不能说的秘密。
+- 但别每条消息都自己往上贴这些书/剧，尤其最近刚主动提过的就先放一放（真人不会逮着一本书天天念）。
+- **别的作品名——哪怕你前面对话里提到过——现在都当已经看完/翻完了**：他问起那些旧名，就自然带过（"啊那本早看完啦"），**绝不接着说它的进度或剧情**（接着编=继续虚构），也别否认说自己没提过。要聊新书只从上面这些里出。`;
+}
+
+/** 照片 activity_pov 品类的 works sceneSeed（无脸 POV 拍手头的事；复用既有品类，不另起 kind）。 */
+export function worksSceneSeed(work) {
+  if (!work) return '';
+  const kind = String(work.kind || '').toLowerCase();
+  const t = stripBrackets(work.title);
+  const prog = work.progress_note ? `，可顺带一句进度/感想（${clipNote(work.progress_note, 24)}）` : '';
+  if (kind === 'craft') {
+    return `此刻你手上在做的手工「${t}」——first-person POV 低头俯拍那件半成品/材料/工具（毛线织针、做了一半的东西），`
+      + `**不出现脸、不出现人**。caption 像随手分享你在做这个${prog || '，别太用力'}。`;
+  }
+  if (kind === 'series' || kind === 'anime' || kind === 'game') {
+    return `此刻你在追/在玩的《${t}》——拍屏幕一角/手柄/沙发毯子的氛围 POV（屏幕画面朦胧带过、不拍清晰版权画面），`
+      + `**不出现脸**。caption 像随手分享你在追这个${prog || '，别剧透'}。`;
+  }
+  // book（默认）：真实出版物护栏在 sceneSeed 层也写死一遍（与 planner 临时护栏冗余兜底）
+  return `此刻你正在看的《${t}》——first-person POV 低头俯拍摊开的书页/书脊一角/压在书上的手，**不出现脸**。`
+    + `**真实出版物护栏**：只拍摊开内页或书脊/封面一角的局部，绝不拍完整正面封面（生成封面=伪造、复刻=版权，两条都死）。`
+    + `caption 像随手分享你在读这本书${prog || '，别念书评腔'}。`;
+}
+
+/**
+ * 从 active works 里挑一件「现在可以主动提/拍」的（§8 冷却 + 周上限双闸）。
+ * 对话召回不走这里（他问起永放行）——这只服务 proactive 自荐。
+ * @param works getActiveCurrentWorks 结果
+ * @param o.usedIds      Set<string> 近 cooldown 窗内已用素材 id（48h 冷却 = 存在性）
+ * @param o.weeklyCount  (workMatId)=>number 近 7 天该 work 已主动出场次数（周上限 = 计数）
+ * @param o.eligible     (work)=>bool 额外资格（照片侧只拍 verified/craft，文本侧放行 generic）
+ * @returns 命中的 work 或 null（全冷却/超限/无资格）
+ */
+export function pickProactiveWork(works, { usedIds = new Set(), weeklyCount = () => 0, eligible = () => true, cfg = worksConfig(), rng = Math.random } = {}) {
+  const used = usedIds instanceof Set ? usedIds : new Set();
+  const pool = (Array.isArray(works) ? works : []).filter(w => {
+    if (!w || w.id == null || !eligible(w)) return false;
+    const id = workMaterialId(w.id);
+    if (used.has(id)) return false;                                    // 48h 冷却（存在性）
+    if ((Number(weeklyCount(id)) || 0) >= cfg.weeklyMentionCap) return false;   // 周上限（计数）
+    return true;
+  });
+  if (!pool.length) return null;
+  return pool[Math.floor(rng() * pool.length)];
+}
+
+/** 完结/弃读归档为一条记忆（§7；对话里"你之前看的那本"靠它召回接住）。纯函数返回字段。 */
+export function buildWorkArchiveMemory(work, dropped, now = new Date()) {
+  const status = String(work?.verify_status || '');
+  const monthLabel = `${new Date(now.getTime() + 8 * 3600_000).getUTCMonth() + 1}月`;
+  const note = work?.progress_note ? `，${clipNote(work.progress_note, 24)}` : '';
+  let content;
+  if (status === 'generic') {
+    const genre = stripBrackets(work?.title) || '书';
+    content = dropped ? `${monthLabel}有本${genre}看了一半弃了，看不下去` : `${monthLabel}看完了一本${genre}${note}`;
+  } else if (String(work?.kind || '').toLowerCase() === 'craft' || status === 'skip') {
+    const t = stripBrackets(work?.title);
+    content = dropped ? `${monthLabel}${t}做了一半放下了` : `${monthLabel}${t}做完了${note}`;
+  } else {
+    const t = stripBrackets(work?.title);
+    content = dropped ? `${monthLabel}《${t}》看了一半弃了，看不下去` : `${monthLabel}看完了《${t}》${note}`;
+  }
+  return { memoryType: 'event', content: content.slice(0, 80), importance: 5 };
+}
+
 /**
  * 一个 companion 的档案换档（§7 PR-W1：完结→换新 + 槽位不满→建档）。
  * deps（全注入，可测）：{ generate, search, findCached, dailyUsed, dailyCap, now, rng,
@@ -143,7 +250,7 @@ export async function ensureCurrentWorks(companion, deps = {}) {
     if (isWorkFinished(w, now, cfg)) {
       const dropped = rng() < cfg.dropProb;
       setStatus(w.id, dropped ? 'dropped' : 'finished');
-      if (deps.archiveFinished) { try { deps.archiveFinished(companion, w, dropped); } catch {} }
+      if (deps.archiveFinished) { try { await deps.archiveFinished(companion, w, dropped); } catch {} }
       dropped ? out.dropped++ : out.finished++;
     }
   }
@@ -219,6 +326,19 @@ function worksDailyKey(now) { return `works_verify_${new Date(now.getTime() + 8 
 function worksDailyUsed(now) { try { return Number(getAppSetting(worksDailyKey(now))) || 0; } catch { return 0; } }
 function bumpWorksDaily(now) { try { setAppSetting(worksDailyKey(now), String(worksDailyUsed(now) + 1)); } catch {} }
 
+/**
+ * 完结/弃读 → 归档一条 event 记忆（PR-W2 对话召回：他问"你之前看的那本"靠它接住）。
+ * fail-open：embed/落库失败绝不阻断换档。需 companion.user_id（plan_tasks SELECT 已带）。
+ */
+async function archiveFinishedWork(companion, work, dropped, now) {
+  if (!companion?.user_id) return;   // 无 user_id 无法落记忆——静默跳过（不阻断换档）
+  const m = buildWorkArchiveMemory(work, dropped, now);
+  let embedding = null;
+  try { embedding = await embedText(m.content); } catch { /* 无 embedding 仍可关键词召回 */ }
+  saveMemory({ companionId: companion.id, userId: companion.user_id, memoryType: m.memoryType, content: m.content, importance: m.importance, embedding });
+  log('info', `[CurrentWorks] 归档完结记忆 companion=${companion.id} ${dropped ? '弃读' : '完结'} "${m.content}"`);
+}
+
 /** 单 companion 换档（00:30 日程批顺路调；全程 fail-open，绝不阻断日程生成）。 */
 export async function refreshCurrentWorks(companion, { now = new Date() } = {}) {
   const out = await ensureCurrentWorks(companion, {
@@ -228,6 +348,7 @@ export async function refreshCurrentWorks(companion, { now = new Date() } = {}) 
     search: (q) => webSearch(q),
     findCached: findVerifiedWork,
     dailyUsed: worksDailyUsed(now),
+    archiveFinished: (comp, w, dropped) => archiveFinishedWork(comp, w, dropped, now),
   });
   if (out.added && out.statusOfAdded !== 'skip') bumpWorksDaily(now);   // 计一次验证额度（上限语义）
   return out;

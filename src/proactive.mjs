@@ -19,7 +19,9 @@ import {
   insertProactiveMaterialLog, getRecentlyUsedMaterialIds, getRecentProactiveTexts,  // v1.21.3 素材账本
   getCategorySendCounts,                      // v1.21.6 PR-A 照片品类 weeklyCap
   listPreferences, getMemories,               // v1.21.6 PR-B 想到你素材源（梗 listShaping 已在上）
+  getActiveCurrentWorks, countRecentMaterialUse,   // v1.21.4 PR-W2 works 注入 + 周上限计数
 } from './db.mjs';
+import { buildWorksPromptHint, worksSceneSeed, pickProactiveWork, workMaterialId, worksConfig } from './current_works.mjs';  // v1.21.4 PR-W2 表达层
 import { pickProactiveCategory, cappedCategoryIds } from './photo_categories.mjs';  // v1.21.6 PR-A 照片品类加权采样（默认关）
 import { selectThoughtMaterial, thoughtSceneSeed } from './photo_thought.mjs';      // v1.21.6 PR-B 想到你素材选择
 import { filterForStorage } from './privacy_filter.mjs';                            // v1.21.6 PR-B 隐私命中判定
@@ -714,10 +716,16 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
   // v1.20: 安全模式不拼想念/撒娇类情绪话术；v1.21: arc 激活时想念/冷落档让位
   const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule, arcActive: _arcExpr.active });
   const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
+  // v1.21.4 PR-W2: current_works 注入——她主动找他时也带着"手头的事"的生活背景。
+  // worksHint 进 buildSystemPrompt 生活背景带（§8 排序），永在 arcHint 之前。fail-open。
+  let proactiveActiveWorks = [];
+  try { proactiveActiveWorks = getActiveCurrentWorks(companion.id) || []; }
+  catch (e) { log('warn', `[CurrentWorks] proactive 档案读取失败 companion=${companion.id}: ${e.message}`); }
+  const worksHint = buildWorksPromptHint(proactiveActiveWorks);
   // ⚠ 必须是 let：下方 v1.20"事前反复读注入"会 systemPrompt += ——曾因 const 让活跃
   // 用户的 normal 主动消息全程静默炸掉（TypeError 被 tick catch 吃成 error 日志，进程
   // 不崩、冒烟不红，断供半天才被发现）。防回归断言在 proactive_dedup_smoke。
-  let systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)) })}${stickerHint}${emotionHint}${arcHint}
+  let systemPrompt = `${buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'proactive', dailySchedule: proactiveDailySchedule, recentSchedules: proactiveRecent, personaFacts: proactivePersonaFacts, preferences: proactivePreferences, shapingHint: buildShapingPromptHint(listShaping(companion.id)), worksHint })}${stickerHint}${emotionHint}${arcHint}
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
@@ -878,6 +886,32 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     systemPrompt += buildRecentProactiveHint(getRecentProactiveTexts(companion.id, { days: 7 }));
   }
 
+  // v1.21.4 PR-W2: works 主动话题供给——只 normal/lastcall（自由起话题）才把"手头的书"
+  // 当候选话题；冷却 48h（存在性）+ 周上限（计数）双闸，**不另起 proactive kind**（§8/§10对二）。
+  // 落账走下方现有 refs 落账（注入即占一次"出场"，发送成功才记 → 48h 内不再自荐同一本）。
+  let chosenWorkMatId = '';
+  if (effectiveKind === 'normal' || effectiveKind === 'lastcall') {
+    try {
+      const _wcfg = worksConfig();
+      const _coolDays = Math.max(0, _wcfg.mentionCooldownH / 24);
+      const _usedWork = getRecentlyUsedMaterialIds(companion.id, { days: _coolDays });
+      const pick = pickProactiveWork(proactiveActiveWorks, {
+        usedIds: _usedWork,
+        weeklyCount: (matId) => countRecentMaterialUse(companion.id, matId, { days: 7 }),
+        cfg: _wcfg,
+      });
+      if (pick) {
+        chosenWorkMatId = workMaterialId(pick.id);
+        const _label = pick.verify_status === 'generic'
+          ? `你最近在看的那本${String(pick.title || '书').replace(/[《》]/g, '')}`
+          : `你最近在看的《${String(pick.title || '').replace(/[《》]/g, '')}》`;
+        systemPrompt += `\n\n【★ 可选话题 · 手头的事】这次**可以**很自然地聊一句${_label}（随口说说进度/感想，像"刚看完一章"），也可以不聊、说你更想说的。别像念书评、别硬贴、一句带过就好。`;
+      }
+    } catch (e) {
+      log('warn', `[CurrentWorks] proactive 话题供给失败（不影响发送）companion=${companion.id}: ${e.message}`);
+    }
+  }
+
   const proactiveBinding = getActiveWechatBinding(companion.wechat_user_id, companion.bot_id);
   let reply = await generateReply(systemPrompt, history, userMessage, {
     temperature: companion.temperature,
@@ -989,6 +1023,9 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
       // 也要记账续冷却（沙箱 day18"成都草莓"形态），不然冷却一到期立刻复活
       const refs = extractMaterialRefs(reply, _recalledRaw.map(m => ({ id: memMaterialId(m.id), content: m.content })));
       if (effectiveKind === 'recall' && recallLoop?.id) refs.push(loopMaterialId(recallLoop.id));
+      // v1.21.4 PR-W2: works 话题"注入即占一次出场"——发送成功就落账（48h 冷却的判定单位），
+      // 不做锚匹配归因（她这次没提也算这本"轮过一次"，方向偏克制=少复读，符合 §8 手感）。
+      if (chosenWorkMatId) refs.push(chosenWorkMatId);
       if (refs.length) {
         insertProactiveMaterialLog(companion.id, {
           materialIds: refs,
@@ -1182,6 +1219,30 @@ async function sendScenePhoto(companion, ctx) {
       sampledCategory = null; categoryForPlanner = null;
     }
   }
+  // v1.21.4 PR-W2: 「此刻证明照」(activity_pov) 复用——若本次采到 activity_pov 且她正
+  // 在看一本真书/做手工，就把 sceneSeed 换成"拍手头那本书"(无脸 POV+封面护栏)。**不另起
+  // proactive kind**(§8)，走既有品类管线；与文本话题共享 work:<id> 48h 冷却(§10对二)。
+  // 照片只拍 verified 具体书 / craft 实物(generic 无名不拍)。fail-open：异常退回原 sceneSeed。
+  let workPhotoMatId = '';
+  if (sampledCategory?.id === 'activity_pov') {
+    try {
+      const works = getActiveCurrentWorks(companion.id) || [];
+      const _wcfg = worksConfig();
+      const pick = pickProactiveWork(works, {
+        usedIds: getRecentlyUsedMaterialIds(companion.id, { days: Math.max(0, _wcfg.mentionCooldownH / 24) }),
+        weeklyCount: (matId) => countRecentMaterialUse(companion.id, matId, { days: 7 }),
+        eligible: (w) => w.verify_status === 'verified' || String(w.kind || '').toLowerCase() === 'craft',
+        cfg: _wcfg,
+      });
+      if (pick) {
+        workPhotoMatId = workMaterialId(pick.id);
+        categoryForPlanner = { ...sampledCategory, sceneSeed: worksSceneSeed(pick) };
+        log('info', `[Proactive] activity_pov 拍手头的事 companion=${companion.id} work=${workPhotoMatId} "${pick.title}"`);
+      }
+    } catch (e) {
+      log('warn', `[CurrentWorks] activity_pov works sceneSeed 失败，退回原品类 companion=${companion.id}: ${e.message}`);
+    }
+  }
   // v1.21.6 PR-C 互拍邀请（每周≤1）：近 7 天没发过 invite 指纹 + 低概率 → caption 带"到你了"。
   // 互拍是邀请不是广播，所以低频；用 invite:photo 指纹做每周封顶。
   let inviteBack = false;
@@ -1234,6 +1295,13 @@ async function sendScenePhoto(companion, ctx) {
   if (thoughtMaterialId) {
     insertProactiveMaterialLog(companion.id, {
       materialIds: [thoughtMaterialId], kind: 'photo_thought',
+      scene: companion.current_scene || '', nowIso: new Date().toISOString(),
+    });
+  }
+  // v1.21.4 PR-W2: 拍了手头的书 → work:<id> 落同一账本（与文本话题共享 48h 冷却，§10对二）
+  if (workPhotoMatId) {
+    insertProactiveMaterialLog(companion.id, {
+      materialIds: [workPhotoMatId], kind: 'photo_work',
       scene: companion.current_scene || '', nowIso: new Date().toISOString(),
     });
   }

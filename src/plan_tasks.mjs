@@ -218,7 +218,7 @@ const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周�
 async function runDailySchedules(dateKey, weekdayLabel, weekdayNum) {
   const db = getDb();
   const companions = db.prepare(`
-    SELECT c.id, c.name, c.age, c.role_title, c.personality_tags, c.hobbies
+    SELECT c.id, c.user_id, c.name, c.age, c.role_title, c.personality_tags, c.hobbies
     FROM companions c
     JOIN users u ON u.id = c.user_id
     JOIN wechat_accounts wa ON wa.wechat_user_id = u.wechat_user_id
