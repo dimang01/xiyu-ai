@@ -36,6 +36,7 @@ import { runRelationalDiariesBatch } from './relational_diary.mjs';
 import { runEmotionRecalcBatch } from './emotion_state.mjs';
 import { runArcTimeTickBatch } from './relationship_arc_runtime.mjs';
 import { checkProactiveDeadman } from './proactive_deadman.mjs';
+import { refreshCurrentWorks } from './current_works.mjs';   // v1.21.4 PR-W1 档案换档
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -229,6 +230,13 @@ async function runDailySchedules(dateKey, weekdayLabel, weekdayNum) {
       await generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum);
     } catch (e) {
       log('warn', `[DailySchedule] companion=${comp.id} 失败: ${e.message}`);
+    }
+    // v1.21.4 PR-W1: 搭便车换档 current_works 档案（不新增定时器；fail-open 绝不阻断日程）
+    try {
+      const r = await refreshCurrentWorks(comp);
+      if (r.added || r.finished || r.dropped) log('info', `[CurrentWorks] companion=${comp.id} 完结${r.finished}/弃${r.dropped}/新建${r.added}(${r.statusOfAdded || '-'})`);
+    } catch (e) {
+      log('warn', `[CurrentWorks] 换档失败 companion=${comp.id}: ${e.message}`);
     }
   }
 }
