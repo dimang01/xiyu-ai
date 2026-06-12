@@ -413,6 +413,22 @@ export function getRecentlyUsedMaterialIds(companionId, { days = 14, now = Date.
   } catch { return new Set(); }
 }
 
+/**
+ * 近 N 天某素材 ID 被主动消息引用的「次数」（getRecentlyUsedMaterialIds 是去重存在性，
+ * 这里要计数——works 周上限 ≤3 需要计数而非存在性判定）。fail-open 返回 0。
+ */
+export function countRecentMaterialUse(companionId, materialId, { days = 7, now = Date.now() } = {}) {
+  try {
+    migrateProactiveMaterialLog();
+    const sinceIso = new Date(now - days * 86400_000).toISOString();
+    const needle = `%${JSON.stringify(String(materialId))}%`;   // 形如 %"work:5"%（含引号防 work:5 命中 work:50）
+    return getDb().prepare(`
+      SELECT COUNT(*) AS n FROM companion_proactive_material_log
+      WHERE companion_id = ? AND used_at >= ? AND material_ids LIKE ?
+    `).get(companionId, sinceIso, needle)?.n || 0;
+  } catch { return 0; }
+}
+
 /** 近 N 天已发主动消息文本（软约束注入用；fail-open 返回空数组） */
 export function getRecentProactiveTexts(companionId, { days = 7, limit = 10 } = {}) {
   try {

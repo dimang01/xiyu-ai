@@ -26,12 +26,14 @@ import {
   claimMessage, clearProactiveUnanswered,
   getOpenRelationshipEvent,
   saveOpenLoop,   // v1.21.5: 照片承诺改期写 her_promise open_loop
+  getActiveCurrentWorks,   // v1.21.4 PR-W2: current_works 表达层注入
 } from './db.mjs';
 import { buildSystemPrompt, buildFirstTurnHint } from './companion.mjs';
 import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach, canAcceptConfession, daysSinceMeet, DAYS_TO_LOVER } from './memory.mjs';
 import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
+import { buildWorksPromptHint } from './current_works.mjs';   // v1.21.4 PR-W2 表达层注入
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubPhotoImpersonation, scrubConflictRedline } from './moderation.mjs';
 import { runArcSignalTick } from './relationship_arc_runtime.mjs';
@@ -854,9 +856,15 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     if (_taught.length) { for (const _t of _taught) { try { upsertShaping({ companionId: companion.id, kind: _t.kind, content: _t.content, rawMsg: userText }); } catch (e) { log('warn', `[Shaping] upsert failed: ${e.message}`); } } }
     const shapingConfirmHint = buildShapingConfirmHint(_taught);
     const shapingHint = buildShapingPromptHint(listShaping(companion.id));
+    // v1.21.4 PR-W2: current_works 注入（她手头在看/在做的事）。对话召回不挂任何冷却——
+    // 他问起永放行（克制是她不主动天天念，不是答不上）。fail-open：档案读失败=不注入。
+    let worksHint = '';
+    try { worksHint = buildWorksPromptHint(getActiveCurrentWorks(companion.id)); }
+    catch (e) { log('warn', `[CurrentWorks] 注入构建失败 companion=${companion.id}: ${e.message}`); }
     // v1.21: arc 激活时 escalation 指令让位（L2+ 已作为 pressure_spam 喂进状态机，
-    // arc directive 自带冷语气，双指令会打架）；arc 主导语气追加在最后（最高优先）
-    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + (arcCtx.active ? '' : escalationDirective(esc.level)) + (arcCtx.directive || '');
+    // arc directive 自带冷语气，双指令会打架）；arc 主导语气追加在最后（最高优先）。
+    // worksHint 走 buildSystemPrompt 参数注入（生活背景带，§8 排序），结构上永在 arc 指令之前。
+    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint, worksHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + (arcCtx.active ? '' : escalationDirective(esc.level)) + (arcCtx.directive || '');
     // v1.16.x: 首轮破冰 —— 她还没回过任何消息(全新对话) → 首次回复精心破冰(onboarding 留人)
     try {
       const _prior = getRecentHistory(msg.fromUser, botId, 6) || [];

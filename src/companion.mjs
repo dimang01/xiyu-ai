@@ -131,7 +131,7 @@ export function buildFirstTurnHint(companion) {
 }
 
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
-export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null, shapingHint = '', locale = null } = {}) {
+export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null, shapingHint = '', worksHint = '', locale = null } = {}) {
   const c     = companion;
   const parts = [];
 
@@ -510,6 +510,17 @@ ${scheduleLines}${dailySchedule.mood_arc ? `\n今天的心情：${dailySchedule.
     parts.push(`\n【你最近几天的生活片段】
 ${recentBlock}
 ★ 这些是你最近做过的事，如果对方问起"前天""昨天"，可以参考。也可以主动提一句"昨天我..."自然带入。`);
+  }
+
+  // ── 14e. 手头的事（current_works；v1.21.4 PR-W2 表达层；设计 §8）──────────────
+  // 注入排序（刻意，禁止头插）：works 是"她当下的生活背景事实"，与【今日日程】【近几天
+  // 生活片段】同族，所以紧随其后落在生活背景带里。**优先级刻意低**——它是事实不是指令；
+  // 调用方（bot/proactive）在 buildSystemPrompt 返回后才追加 emotion/arc 主导语气指令
+  // （arc directive 永远在最后=最高优先），所以 works 注入结构上始终在那些指令之前、
+  // 绝不稀释 cold/低能量等表达语气（红验：arc cold + works 同场，cold 不被 works 冲淡）。
+  // hint 由调用方拼好传入（shapingHint 先例），本函数保持零依赖纯函数。
+  if (worksHint && typeof worksHint === 'string' && worksHint.trim()) {
+    parts.push(worksHint);
   }
 
   if (longTermDigest && typeof longTermDigest === 'string' && longTermDigest.trim()) {

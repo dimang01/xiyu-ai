@@ -17,12 +17,13 @@ for (const suf of ['', '-wal', '-shm']) { try { unlinkSync(process.env.DB_PATH +
 
 const {
   insertProactiveMaterialLog, getRecentlyUsedMaterialIds, getRecentProactiveTexts,
-  getDb, saveConversationTurn,
+  countRecentMaterialUse, getDb, saveConversationTurn,
 } = await import('../src/db.mjs');
 const {
   filterRecentlyUsed, extractMaterialRefs, materialDedupDays,
   memMaterialId, loopMaterialId, buildRecentProactiveHint,
 } = await import('../src/proactive_material.mjs');
+const { workMaterialId } = await import('../src/current_works.mjs');   // v1.21.4 PR-W2 work: 命名空间
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { if (cond) { pass++; } else { fail++; console.log('  ✗', name); } };
@@ -113,6 +114,33 @@ ok(/kind === 'reminder'\s*\n?\s*\? new Set\(\)/.test(proactiveSrc.replace(/\r/g,
    'reminder（纪念日）豁免存在');
 ok(proactiveSrc.includes('extractMaterialRefs(') && proactiveSrc.includes('insertProactiveMaterialLog('),
    '发送成功后归因落账已挂');
+
+// ── 6. work: 命名空间（v1.21.4 PR-W2）：48h 冷却（存在性）+ 周上限（计数）双闸 ──────
+ok(workMaterialId(5) === 'work:5' && workMaterialId(50) === 'work:50', 'work: 素材 ID 规范');
+const W = workMaterialId(5);          // work:5
+const W50 = workMaterialId(50);       // work:50（前缀相近，验证计数不串号）
+insertProactiveMaterialLog(9, { materialIds: [W], kind: 'normal', scene: '在家' });
+insertProactiveMaterialLog(9, { materialIds: [W50], kind: 'photo_work', scene: '在家' });
+// 48h 冷却 = 存在性：2 天窗内 work:5 在冷却集 → 不再主动自荐
+const used48 = getRecentlyUsedMaterialIds(9, { days: 2 });
+ok(used48.has(W), '48h 冷却：work:5 在 2 天窗冷却集（她不再主动提）');
+ok(used48.has(W50) && !used48.has('work:500'), '不同 work id 各自独立，无前缀串号');
+// 周上限 = 计数：work:5 近 7 天计 1 次；work:50 不被 work:5 的 LIKE 命中（引号边界）
+ok(countRecentMaterialUse(9, W, { days: 7 }) === 1, '周计数：work:5 = 1 次');
+ok(countRecentMaterialUse(9, W50, { days: 7 }) === 1, '周计数：work:50 = 1 次（不被 work:5 串号）');
+insertProactiveMaterialLog(9, { materialIds: [W], kind: 'normal', scene: '通勤' });
+ok(countRecentMaterialUse(9, W, { days: 7 }) === 2, '周计数累加：work:5 再出场 → 2 次');
+// 过期不计：8 天前的旧账不进 7 天窗
+insertProactiveMaterialLog(9, { materialIds: [W], kind: 'normal', nowIso: new Date(NOW - 8 * 86400e3).toISOString() });
+ok(countRecentMaterialUse(9, W, { days: 7, now: NOW }) === 2, '周计数：8 天前旧账不计入');
+ok(countRecentMaterialUse(9, 'work:404', { days: 7 }) === 0, '未出场 work → 计数 0');
+// 作用域：work: 冷却同样只挂 proactive；对话召回（bot.mjs）零引用（works 注入走 getActiveCurrentWorks，不挂账本）
+for (const [name, src] of [['bot.mjs', botSrc], ['playground.mjs', pgSrc]]) {
+  ok(!src.includes('countRecentMaterialUse') && !src.includes('getRecentlyUsedMaterialIds'),
+     `对话召回不挂 work 冷却：${name} 零账本引用`);
+}
+ok(proactiveSrc.includes('countRecentMaterialUse(') && proactiveSrc.includes('pickProactiveWork('),
+   'proactive.mjs：work 主动供给挂了冷却+周上限双闸');
 
 console.log(`\nproactive_material_smoke: ${pass} passed, ${fail} failed`);
 for (const suf of ['', '-wal', '-shm']) { try { unlinkSync(process.env.DB_PATH + suf); } catch {} }
