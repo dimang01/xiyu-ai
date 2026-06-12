@@ -18,8 +18,11 @@
 | 2026-06-12 | 照片承诺兑现链修复（patch v1.21.5）：PR-A 取证(开环根因)→PR-B 承诺前可行性闸门+超时兜底+her_promise 改期履约+时序修复→PR-C 月相锚定(纯数学杜绝凭空满月)；顺手补 bot.log logrotate。**根因更正(事后)：开环是真实结构纵深、修得对，但 06-11 当晚月亮/书封面"放鸽子"的直接真凶是 #289 的 planner 对象断图 400(非合法可行性拒绝)；her_promise 兜底全保留** | ✅ 已执行 |
 | 2026-06-12 | **P0 静默断图 hotfix**：d22bf73(v1.21.2) 改 buildPlannerPrompt 返回 {prompt,shotMode} 却没改 call site→整个对象当 message content 传 LLM(400 content should be a string)→自 06-11 06:54 所有照片(user 索图+proactive 场景照)静默失败 1.5 天，fail-open 吞成 WARN。修：解构出 string prompt + plan 挂 shotMode/aspect(复活 v1.21.2 比例路由死代码)+回归 smoke 锁。**单独部署(最小 diff 干净归因)**：2026-06-12 已 pull+重启，验证恢复(health 200 + prod 主机 planner smoke 16/16) | ✅ 已部署 |
 | 2026-06-12 | 照片品类部署拍板：#289 单独部署(修复型不夹带)，PR-A #290 惰性随 PR-D 正常发版；**品类 sampling 开关延到 PR-C 种子落地后随 PR-D 一起开**(现在开=对空场景池采样无意义,一次部署一个变量)；权重表照用；B/C/D 绿灯 | 🔄 执行中 |
-| 2026-06-12 | 流程教训：**函数级绿 ≠ 调用链绿**(v1.21.2 e2e 绿着上线一个从没生效的比例路由+对象当 prompt 的 400)——与"本地绿≠CI 绿"并排；改函数返回类型必 grep 所有 call site，回归 smoke 打到真实调用链参数类型(mock llm 捕获断言)。**digest 报警盲区**：错误签名段只扫 [ERROR]，但 swallowed-LLM-failure 是 [WARN][ai]→1.5 天没尖叫；扫描器待扩(catch [ERROR]+高信号 [WARN] 白名单) | 🔄 报警待修 |
+| 2026-06-12 | 流程教训：**函数级绿 ≠ 调用链绿**(v1.21.2 e2e 绿着上线一个从没生效的比例路由+对象当 prompt 的 400)——与"本地绿≠CI 绿"并排；改函数返回类型必 grep 所有 call site，回归 smoke 打到真实调用链参数类型(mock llm 捕获断言)。**digest 报警盲区**：错误签名段只扫 [ERROR]，但 swallowed-LLM-failure 是 [WARN][ai]→1.5 天没尖叫；扫描器待扩(catch [ERROR]+高信号 [WARN] 白名单) | ✅ 第一版 #292 已修(白名单法)，极性反转优化见下条 |
 | 2026-06-12 | 记功：auto-mode 在生产重启前停下等用户授权——#267 后装的栅栏首次真刀真枪立住(挡下未审 P0 部署) | ✅ |
+| 2026-06-12 | **#292 报警极性反转**（立项下个 patch，不阻塞 PR-B）：白名单→反转为 **WARN 全量进签名聚合 + suppress 名单(外置配置文件,每条须注"为何无害"一句话)管已知良性**(cooldown/daily-count 等)，🆕 新签名/高频涨幅置顶。红验①拿这次的 400 烧旧极性必须漏、烧新极性必须报 ②一条已知良性 WARN 加进 suppress 后必须安静 | 📋 已立项 |
+| 2026-06-12 | **封面临时护栏**（搭 PR-C 车）：planner prompt 加一行——真实出版物类(书/专辑/杂志/教材)只拍摊开内页或边角局部，不拍完整封面正面；反误伤断言：她自己的笔记本/手账封面不受限(非出版物)。**标注：V1214 正式解之前的临时规矩，正式解落地后此行撤销** | 🔄 搭 PR-C |
+| 2026-06-12 | **通电冒烟测试**（立项 backlog，PR-D 顺路或单独 patch）：stub provider 拉起应用，真跑一次 proactive tick + 一次 photo plan 到发送层，断言全链通电(只验电流走通,不验内容质量)；红验：对 buildPlannerPrompt 对象 bug 坏版本必须红。完成后 HANDOFF 记一行"接线类 bug(const+=/migratePhotoLog/buildPlannerPrompt 三案)系统解已上线" | 📋 已立项 |
 
 ---
 
