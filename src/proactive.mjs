@@ -45,7 +45,7 @@ import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stic
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
-import { safeOutboundReply, scrubPhotoImpersonation } from './moderation.mjs';
+import { safeOutboundReply, scrubPhotoImpersonation, scrubFabricatedIllness } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
 import { moonFactLine } from './utils/moon_phase.mjs';   // v1.21.5 PR-C 月相锚定
@@ -947,6 +947,9 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
       return;
     }
   }
+
+  // 2026-06-13 临时止血闸：proactive 凭空重度身体事件拦截（reply 定稿单点，覆盖主+撞车重生）
+  reply = scrubFabricatedIllness(reply, companion.id);
 
   // v1.4.0: 微信端语音路径已撤（iLink 协议禁止 bot outbound voice，详见顶部注释）。
   // 语音体验改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。

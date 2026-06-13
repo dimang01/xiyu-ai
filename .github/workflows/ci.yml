@@ -89,6 +89,9 @@ jobs:
       - name: 冲突红线护栏 + 危机覆盖
         run: node scripts/conflict_redline_guard.mjs
 
+      - name: 凭空重度身体事件临时闸（2026-06-13 拦住院/重伤·放行轻度+否定+他人+引用）
+        run: node scripts/fabricated_illness_smoke.mjs
+
       - name: proactive 死人开关心跳
         run: node scripts/proactive_deadman_smoke.mjs
 
