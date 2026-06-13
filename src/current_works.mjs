@@ -319,6 +319,8 @@ export function buildWorkGenPrompt(companion, { existingTitles = [], recentTitle
   let persona = '';
   try { persona = JSON.parse(companion?.personality_tags || '[]').join('、'); } catch {}
   const age = Number(companion?.age) || 22;
+  // 多样性 avoid：existing(自己)+recentTitles(他人)合并去重。**必 normalize(stripBrackets)后比对**——
+  // 否则"小王子"与曾经入库的"《小王子》"会被当两本书（2026-06-13 维护者 normalize 半笔，与缓存键同源）。
   const avoid = [...new Set([...(existingTitles || []), ...(recentTitles || [])].map(t => stripBrackets(t)).filter(Boolean))];
   const system = '你给一个 AI 伴侣生成"她最近在看/在做的一件真实存在的事"。只返回合法 JSON，不解释。';
   const prompt = `她的兴趣：${hobbies || '阅读、看剧'}。她 ${age} 岁，性格：${persona || '温和'}。

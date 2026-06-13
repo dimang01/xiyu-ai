@@ -146,6 +146,9 @@ jobs:
       - name: current_works 表达层（v1.21.4 PR-W2 注入排序/冷却放行双向/存量退场/归档）
         run: node scripts/current_works_expression_smoke.mjs
 
+      - name: proactive digest 旁路素材冷却闸门（接线类第五案：mem:509 复读修+双向红验）
+        run: node scripts/proactive_digest_cooldown_smoke.mjs
+
       - name: 记忆 chip↔layer 双向对账（2026-06-12 删死枚举 chip 后防空抽屉/防有数据无窗口）
         run: node scripts/memory_chip_parity_smoke.mjs
 
