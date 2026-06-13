@@ -688,8 +688,11 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     : [];
   const memories = filterRecentlyUsed(_recalledRaw, _materialUsed);
   const history = getRecentHistory(companion.wechat_user_id, companion.bot_id, 20);
-  // v1.3.4: 开源版所有 companion 享受完整长期记忆摘要（不再按 plan 区分）
-  const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id);
+  // v1.3.4: 开源版所有 companion 享受完整长期记忆摘要（不再按 plan 区分）。
+  // 素材冷却闸门（接线类第五案，2026-06-13）：digest 旁路也过冷却——传 _materialUsed 剔除
+  // 近期已复读的 summary（mem:509 形态：daily_summary 反复出场 4 次/天）。reminder 时
+  // _materialUsed 为空 Set=不剔除（与召回路豁免一致）。对话召回路径（bot.mjs）绝不传。
+  const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id, { excludeUsedIds: _materialUsed });
 
   const stickerEnabled = !!companion.sticker_reply_enabled && hasStickers();
   const stickerHint = buildStickerPromptHint(stickerEnabled);

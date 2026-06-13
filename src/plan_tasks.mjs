@@ -763,20 +763,37 @@ async function writeMemoryFile(companionId, kind, key, summary, meta = {}) {
  */
 // v1.3.4: 第三个参数 { isPro } 已废弃（向后兼容仍接受但忽略）。开源版所有 companion
 // 都注入完整长期记忆（月+周+日），不再按账号付费层级筛选。
-export async function buildLongTermDigest(companionId, userId, _opts = {}) {
+/**
+ * 长期记忆摘要（月/周/日 summary 聚合注入 prompt）。
+ *
+ * ⚠⚠ 素材冷却闸门【架构铁律】（2026-06-13，接线类第五案；新增旁路强制 review 本条）：
+ * summary 经本函数走 longTermDigest 旁路注入 prompt——这是「向 proactive prompt 注入记忆类
+ * 素材」的一条**旁路**。生产实锤 mem:509（daily_summary）经此路反复复读 4 次/天：素材级去重
+ * （filterRecentlyUsed）只挡 recallMemories 召回路，**覆盖不到本旁路**。漏洞本质不是 summary
+ * 特殊，是「旁路绕过了公共冷却闸门」。**任何向 proactive prompt 注入记忆类素材的路径，都必须
+ * 过素材冷却闸门**——闸门挂在「注入动作」上而非某条路径，这族接线 bug 才绝后。
+ *   故加 opts.excludeUsedIds：**proactive 调用传**（近期已落账素材集，剔除复读 summary）；
+ *   **reply/对话召回调用不传**（他问起的 summary 永放行——digest 剔除绝不挂对话路径，这是
+ *   「主动是克制、召回不失忆」铁律的延伸）。分得开就靠这一个三元判断。
+ */
+export async function buildLongTermDigest(companionId, userId, { excludeUsedIds = null } = {}) {
   if (!companionId || !userId) return '';
   const blocks = [];
+  // 素材冷却闸门：仅 proactive 传 excludeUsedIds(Set) 时剔除近期已用 summary；reply 不传=全保留。
+  const cool = (rows) => (excludeUsedIds instanceof Set && excludeUsedIds.size)
+    ? rows.filter(r => !excludeUsedIds.has(`mem:${r.id}`))
+    : rows;
 
-  const monthly = getRecentSummaries(companionId, userId, 'monthly_summary', 3);
+  const monthly = cool(getRecentSummaries(companionId, userId, 'monthly_summary', 3));
   if (monthly.length > 0) {
     blocks.push('【月度回顾（最近 3 个月）】\n' + monthly.map(m => `- ${m.content}`).join('\n'));
   }
-  const weekly = getRecentSummaries(companionId, userId, 'weekly_summary', 4);
+  const weekly = cool(getRecentSummaries(companionId, userId, 'weekly_summary', 4));
   if (weekly.length > 0) {
     blocks.push('【近期周记（最近 4 周）】\n' + weekly.map(w => `- ${w.content}`).join('\n'));
   }
 
-  const daily = getRecentSummaries(companionId, userId, 'daily_summary', 7);
+  const daily = cool(getRecentSummaries(companionId, userId, 'daily_summary', 7));
   if (daily.length > 0) {
     blocks.push('【最近每日小结】\n' + daily.map(d => `- ${d.content}`).join('\n'));
   }

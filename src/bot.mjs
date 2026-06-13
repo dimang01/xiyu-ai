@@ -788,7 +788,9 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
 
     // ── 构建完整系统提示词（含记忆 + 画像 + 心情 + 场景 + 长期总结 + 今日日程 + 近期日程 + 表情包）
     // v1.3.4: 开源版所有人享受完整长期记忆摘要（不再按 isPro 区分）
-    const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id, { isPro: true });
+    // ★ 对话召回路径：**不传 excludeUsedIds**——他问起的 summary 永放行（digest 素材冷却闸门
+    //   只挂 proactive，对话召回不挂冷却是铁律：主动是克制、召回不失忆）。
+    const longTermDigest = await buildLongTermDigest(companion.id, companion.user_id);
     const todayKey = shanghaiDateKey();
     const dailyRaw = getDailySchedule(companion.id, todayKey);
     const dailySchedule = dailyRaw ? { ...dailyRaw, date_key: todayKey } : null;
