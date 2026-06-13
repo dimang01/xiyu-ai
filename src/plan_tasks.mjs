@@ -26,6 +26,7 @@ import {
   listEpisodicMemoriesOlderThan, deleteMemoriesByIds,   // v1.9.8 老记忆压缩
   cleanupProcessedMessages,                              // Issue #1 去重表清理
   cleanupAiUsageEvents,                                  // P1-7 成本明细清理
+  getActiveCurrentWorks,                                 // v1.21.4 PR-W5 日程结构化：消费 works 档案
 } from './db.mjs';
 import { applyMemoryDecayBatch } from './memory_v2.mjs';
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
@@ -37,7 +38,7 @@ import { runRelationalDiariesBatch } from './relational_diary.mjs';
 import { runEmotionRecalcBatch } from './emotion_state.mjs';
 import { runArcTimeTickBatch } from './relationship_arc_runtime.mjs';
 import { checkProactiveDeadman } from './proactive_deadman.mjs';
-import { refreshCurrentWorks } from './current_works.mjs';   // v1.21.4 PR-W1 档案换档
+import { refreshCurrentWorks, buildScheduleWorksHint } from './current_works.mjs';   // v1.21.4 PR-W1 换档 / W5 日程消费档案
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -227,17 +228,19 @@ async function runDailySchedules(dateKey, weekdayLabel, weekdayNum) {
   `).all();
   log('info', `[DailySchedule] 准备为 ${companions.length} 个 companion 生成日程 date=${dateKey} weekday=${weekdayLabel}`);
   for (const comp of companions) {
+    // v1.21.4 PR-W5: 先换档+进度推进 works 档案，再生成日程——让本日日程消费「刚刷新的」
+    // 档案（书名/进度最新、完结的已换新书）。W1 原是日程后搭便车换档；W5 提前到日程前，
+    // 因为日程要结构化消费档案（§7 进行中），档案必须先就位。fail-open 绝不阻断日程。
+    try {
+      const r = await refreshCurrentWorks(comp);
+      if (r.added || r.finished || r.dropped || r.progressed) log('info', `[CurrentWorks] companion=${comp.id} 完结${r.finished}/弃${r.dropped}/新建${r.added}(${r.statusOfAdded || '-'})/进度推进${r.progressed}`);
+    } catch (e) {
+      log('warn', `[CurrentWorks] 换档失败 companion=${comp.id}: ${e.message}`);
+    }
     try {
       await generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum);
     } catch (e) {
       log('warn', `[DailySchedule] companion=${comp.id} 失败: ${e.message}`);
-    }
-    // v1.21.4 PR-W1: 搭便车换档 current_works 档案（不新增定时器；fail-open 绝不阻断日程）
-    try {
-      const r = await refreshCurrentWorks(comp);
-      if (r.added || r.finished || r.dropped) log('info', `[CurrentWorks] companion=${comp.id} 完结${r.finished}/弃${r.dropped}/新建${r.added}(${r.statusOfAdded || '-'})`);
-    } catch (e) {
-      log('warn', `[CurrentWorks] 换档失败 companion=${comp.id}: ${e.message}`);
     }
   }
 }
@@ -271,6 +274,12 @@ async function generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum) {
     }
   } catch { /* 拿不到昨天就正常生成 */ }
 
+  // v1.21.4 PR-W5：日程结构化消费 works 档案——日程里「读书/看番/打游戏/做手工」类
+  // 活动必须引用档案真实条目（杜绝日程层重新漂移出档案外书名）。fail-open。
+  let worksScheduleHint = '';
+  try { worksScheduleHint = buildScheduleWorksHint(getActiveCurrentWorks(comp.id)); }
+  catch (e) { log('warn', `[CurrentWorks] 日程 works hint 失败 companion=${comp.id}: ${e.message}`); }
+
   const sys = `你帮一个虚拟角色生成"今天的日程"，要符合人设、真实可信、有生活气息。
 
 角色：${comp.name}，${age}岁，${comp.role_title || '邻家女孩'}${personality ? '，性格' + personality : ''}${hobbies ? '，爱好：' + hobbies : ''}
@@ -279,6 +288,7 @@ async function generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum) {
 【强制约束 - 极其重要】
 ${occupationHint}
 ${continuityHint}
+${worksScheduleHint}
 
 【风格要求】
 - 输出 8-12 个时间点，覆盖从 07:00 到 23:30

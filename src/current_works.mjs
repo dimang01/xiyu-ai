@@ -17,7 +17,7 @@
 
 import { webSearch } from './web_search.mjs';
 import { extractStructuredInfo, embedText } from './ai.mjs';
-import { findVerifiedWork, getActiveCurrentWorks, insertCurrentWork, setCurrentWorkStatus, getAppSetting, setAppSetting, saveMemory, getRecentWorkTitles } from './db.mjs';
+import { findVerifiedWork, getActiveCurrentWorks, insertCurrentWork, setCurrentWorkStatus, setCurrentWorkProgress, getAppSetting, setAppSetting, saveMemory, getRecentWorkTitles } from './db.mjs';
 import { log } from './logger.mjs';
 
 const VERIFIABLE = new Set(['book', 'series', 'anime', 'game']);   // craft 免验
@@ -119,6 +119,68 @@ export function lifecycleDays(kind, startedAt, cfg = worksConfig()) {
 export function isWorkFinished(work, now = new Date(), cfg = worksConfig()) {
   const days = lifecycleDays(work.kind, work.started_at, cfg);
   return now.getTime() - new Date(work.started_at).getTime() >= days * 86400_000;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 日程结构化（PR-W5；设计 §7「进行中」）：让日程消费 works 档案 + progress 可推进。
+// 把日程从「LLM 每天即兴重画」改造成「消费结构化档案、状态可推进」——这是 v1.22
+// life_state（生病/疲惫/生理期）的物理前置：works 是第一个「档案驱动日程」实现，
+// 结构上为 life_state 留好同样的「状态源→日程」注入位（见 buildScheduleWorksHint 注释）。
+// ════════════════════════════════════════════════════════════════════════════
+
+/** 在档进度比例 0~1（elapsed / 生命周期天数；确定性，与 isWorkFinished 同尺）。 */
+export function workProgressRatio(work, now = new Date(), cfg = worksConfig()) {
+  const days = lifecycleDays(work.kind, work.started_at, cfg);
+  const r = (now.getTime() - new Date(work.started_at).getTime()) / Math.max(1, days * 86400_000);
+  return r < 0 ? 0 : r > 1 ? 1 : r;
+}
+
+// 渐进进度文案（按 kind × 阶段；跨阶段才变=低频不跳，与生命周期换档天然衔接）
+const PROGRESS_STAGES = {
+  book:   ['才翻开没几页', '看了几章了', '看到一半了', '快读完了'],
+  series: ['刚追了一两集', '追了几集了', '追到一半了', '就剩最后几集'],
+  anime:  ['刚开番', '追了几话了', '过半了', '快完结了'],
+  game:   ['刚开个头', '玩了一阵了', '玩到中段了', '快通关了'],
+  craft:  ['才起了个头', '做了一点了', '做了一半了', '快收尾了'],
+};
+
+/** kind × ratio → 渐进进度文案（确定性；ratio 单调↑则文案单调推进，绝不跳级/回退）。 */
+export function progressStageNote(kind, ratio) {
+  const k = ['book', 'series', 'anime', 'game', 'craft'].includes(String(kind || '').toLowerCase())
+    ? String(kind).toLowerCase() : 'book';
+  const stages = PROGRESS_STAGES[k] || PROGRESS_STAGES.book;
+  const idx = ratio < 0.2 ? 0 : ratio < 0.5 ? 1 : ratio < 0.8 ? 2 : 3;
+  return stages[idx];
+}
+
+/** 该 work 当前应处的进度文案；与现 progress_note 不同才返回（跨阶段才推进，否则 null=不写库）。 */
+export function advanceWorkProgress(work, now = new Date(), cfg = worksConfig()) {
+  if (!work || work.verify_status === 'generic') return null;   // generic 泛读态不指名进度
+  const note = progressStageNote(work.kind, workProgressRatio(work, now, cfg));
+  return (note && note !== work.progress_note) ? note : null;
+}
+
+/**
+ * 给日程生成的「档案驱动」hint（§7 进行中）：active works 注入，日程里「读书/看番/
+ * 打游戏/做手工」类活动必须引用这些真实条目，杜绝日程层重新漂移出档案外书名。
+ * ★ life_state 预留位：未来 life_state（生病/疲惫/生理期）作为同类「影响今日日程的状态源」
+ *   在此并列注入（works 是第一个实现）——本任务只落 works，结构留位、不写 life_state 代码。
+ */
+export function buildScheduleWorksHint(works) {
+  const list = (Array.isArray(works) ? works : []).filter(w => w && w.title);
+  if (!list.length) return '';
+  const verb = (k) => { const x = String(k || '').toLowerCase();
+    return (x === 'series' || x === 'anime') ? '在追' : x === 'game' ? '在玩' : x === 'craft' ? '在做' : '在看'; };
+  const lines = list.map(w => {
+    const t = w.verify_status === 'generic' ? `一本${stripBrackets(w.title)}`
+      : String(w.kind || '').toLowerCase() === 'craft' ? stripBrackets(w.title)
+        : `《${stripBrackets(w.title)}》`;
+    return `${verb(w.kind)}${t}${w.progress_note ? `（${w.progress_note}）` : ''}`;
+  });
+  return `
+【她正在进行的事（来自档案 · 必须用真实条目）】她${lines.join('；')}。
+今天日程里「读书/看剧/看番/打游戏/做手工」类活动**必须引用上面这些真实条目的原名**（她在看哪本就写哪本），**绝不另编新书名/剧名**；进度自然延续（昨天看到一半→今天接着看）。
+（★ 结构预留：未来 life_state 身体状态——生病/疲惫/生理期——同样作为"影响今日日程的状态源"在此并列注入，本任务先落 works。）`;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -242,7 +304,7 @@ export async function ensureCurrentWorks(companion, deps = {}) {
   const getActive = deps.getActive;     // (companionId) => rows
   const insert = deps.insert;           // ({...}) => id
   const setStatus = deps.setStatus;     // (workId, status)
-  const out = { finished: 0, dropped: 0, added: 0, statusOfAdded: null };
+  const out = { finished: 0, dropped: 0, added: 0, progressed: 0, statusOfAdded: null };
   if (!getActive || !insert || !setStatus) throw new Error('ensureCurrentWorks 缺 db 注入');
 
   let active = getActive(companion.id) || [];
@@ -295,6 +357,16 @@ export async function ensureCurrentWorks(companion, deps = {}) {
       out.statusOfAdded = 'generic';
     }
     out.added++;
+  }
+
+  // 3) 进度推进（PR-W5 §7 进行中）：对剩余 active works 按在档时长渐进推进 progress_note
+  //    （跨阶段才写库=低频不跳；推到"快读完"后由 isWorkFinished 接力换档归档，天然衔接）。
+  if (deps.setProgress) {
+    for (const w of (getActive(companion.id) || [])) {
+      if (isWorkFinished(w, now, cfg)) continue;   // 到点的本趟已 finished 处理
+      const note = advanceWorkProgress(w, now, cfg);
+      if (note) { try { deps.setProgress(w.id, note); w.progress_note = note; out.progressed++; } catch {} }
+    }
   }
   return out;
 }
@@ -374,6 +446,7 @@ export async function refreshCurrentWorks(companion, { now = new Date() } = {}) 
     dailyUsed: worksDailyUsed(now),
     recentTitles,                                                  // #1 多样性降权
     archiveFinished: (comp, w, dropped) => archiveFinishedWork(comp, w, dropped, now),
+    setProgress: setCurrentWorkProgress,                           // W5 §7 进度推进
   });
   if (out.added && out.statusOfAdded !== 'skip') bumpWorksDaily(now);   // 计一次验证额度（上限语义）
   return out;

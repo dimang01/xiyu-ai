@@ -319,6 +319,12 @@ export function setCurrentWorkStatus(workId, status) {
     WHERE id = ?`).run(status, status, new Date().toISOString(), workId).changes;
 }
 
+/** 推进进度文案（PR-W5 §7 进行中；progress_note 过隐私过滤，与入档同口径） */
+export function setCurrentWorkProgress(workId, note) {
+  const pn = note ? (filterForStorage(String(note)).text || '') : null;
+  return getDb().prepare(`UPDATE companion_current_works SET progress_note = ? WHERE id = ?`).run(pn, workId).changes;
+}
+
 /**
  * 验证缓存：任意 companion 已 verified 的 (title,creator) → 免重搜（缓存即表本身，永不过期；只缓正结果）。
  *
