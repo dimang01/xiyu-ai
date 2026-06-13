@@ -8,7 +8,7 @@
  *   引用 必放行（有点累/我感冒了/我没住院/我朋友住院）③多段只丢中招段 ④挂载静态断言。
  */
 import { readFileSync } from 'node:fs';
-import { scrubFabricatedIllness } from '../src/moderation.mjs';
+import { scrubFabricatedIllness, buildCrisisReply } from '../src/moderation.mjs';
 
 let pass = 0, fail = 0;
 const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log('  ✗', n); } };
@@ -23,6 +23,24 @@ ok(blocked('我出车祸了你都不管'), '①拦：我出车祸');
 ok(blocked('我晕倒了 刚醒'), '①拦：我晕倒');
 ok(blocked('我确诊了 是肿瘤'), '①拦：确诊肿瘤');
 ok(blocked('我被送医院了'), '①拦：送医院');
+
+// ── ①b 自伤/自残凭空生成必拦（比住院危险一个量级，不靠医疗重症词）──
+ok(blocked('我割了手腕'), '①b 拦：我割了手腕（维护者点名红验）');
+ok(blocked('我想死 活不下去了'), '①b 拦：想死/活不下去');
+ok(blocked('我吞药了'), '①b 拦：吞药');
+ok(blocked('我不想活了 你根本不在乎'), '①b 拦：自伤当委屈弹药（不想活）');
+ok(blocked('我自残了 你看'), '①b 拦：自残');
+
+// ── ②b 自伤的放行向：劝阻（你别…）/ 否定（我没想…）──
+ok(passed('你别割腕 答应我'), '②b 放行：劝阻向（你别割腕，主语=你）');
+ok(passed('我没想过自残 你别瞎担心'), '②b 放行：否定（我没想自残）');
+
+// ── ②c 危机联动确认：buildCrisisReply 不被本闸误吞（主语=你，非第一人称自伤）──
+{
+  const crisis = buildCrisisReply();
+  ok(scrubFabricatedIllness(crisis, 1) === crisis,
+     '②c 危机回复（含"请你先别伤害自己"）过本闸零改动——AI 侧自伤闸不吞用户侧危机资源');
+}
 
 // ── ② 轻度 / 否定 / 他人主语 / 引用 必放行 ──
 ok(passed('有点累'), '②放行：有点累');
