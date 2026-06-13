@@ -66,6 +66,7 @@ export function getDb() {
     migrateSafetyEvents(); // v1.9.0 #1 安全事件记录（高危后暂停普通主动消息）
     migrateRelationshipArc(); // v1.21.0 冲突与和好弧（关系事件状态机）
     migrateCurrentWorks();    // v1.21.4 PR-W1 current_works 档案（她手头在看/在做的事）
+    migrateLifeState();       // v1.22 PR-L1 life_state 身体状态档案（生理期/小恙/小伤）
   }
   return db;
 }
@@ -355,6 +356,61 @@ export function getRecentWorkTitles(companionId, { days = 14, now = Date.now(), 
       GROUP BY title ORDER BY n DESC, title LIMIT ?
     `).all(companionId, sinceIso, Math.max(1, limit | 0)).map(r => r.title).filter(Boolean);
   } catch { return []; }
+}
+
+// ─── v1.22 PR-L1: life_state 身体状态档案（设计 docs/LIFE_STATE_DESIGN.md §2.1）─────
+// 「档案即事实源」从作品扩展到健康层。表**不进 ALLOWED_FIELDS**、不开通用 PATCH——
+// 身体状态由生命周期任务独占写入（防 dashboard 一拨就"来姨妈/好了"伪造状态绕过周期，
+// 照 arc_state / current_works 范式）；note 入库过 filterForStorage（隐私全口子不破例）；
+// 人设导出不带（运行时关系/身体状态先例，尤涉隐私）。
+function migrateLifeState() {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS companion_life_state (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      companion_id    INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+      kind            TEXT NOT NULL,        -- period|minor_illness|injury
+      phase           TEXT NOT NULL,        -- kind 内阶段（period: premenstrual|menstrual|recovering）
+      severity        INTEGER NOT NULL DEFAULT 1,   -- 1-4，同 arc 标尺
+      disclosed       INTEGER NOT NULL DEFAULT 0,   -- 是否已对用户披露过（披露门控状态，PR-L2）
+      note            TEXT,                 -- 一句话状态，表达层唯一引用源
+      started_at      TEXT NOT NULL,
+      expected_end_at TEXT,                 -- 确定性康复/结束锚
+      next_onset_at   TEXT,                 -- 仅周期性 kind（period）：下次起点锚（PR-L2）
+      status          TEXT NOT NULL DEFAULT 'active',   -- active|resolved
+      created_at      TEXT NOT NULL,
+      resolved_at     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_life_state_comp ON companion_life_state(companion_id, status);
+  `);
+}
+
+/** 插入身体状态档案（note 过 filterForStorage——隐私全口子承诺不破例）。onset 调用方=PR-L2。 */
+export function insertLifeState(companionId, { kind, phase, severity = 1, note, startedAt, expectedEndAt, nextOnsetAt } = {}) {
+  const nt = note ? (filterForStorage(String(note)).text || '') : null;
+  const now = new Date().toISOString();
+  return getDb().prepare(`
+    INSERT INTO companion_life_state (companion_id, kind, phase, severity, note, started_at, expected_end_at, next_onset_at, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+  `).run(companionId, kind, phase, severity, nt, startedAt || now, expectedEndAt || null, nextOnsetAt || null, now).lastInsertRowid;
+}
+
+/** active 身体状态档案（#317 四档 gate 查档案 + 表达层注入 + 槽位判定的唯一来源） */
+export function getActiveLifeStates(companionId) {
+  return getDb().prepare(`SELECT * FROM companion_life_state WHERE companion_id = ? AND status = 'active' ORDER BY started_at`).all(companionId);
+}
+
+/** 推进 phase（生命周期 tick 用；可顺带更新 note，过隐私过滤同口径） */
+export function setLifeStatePhase(stateId, phase, note) {
+  if (note != null) {
+    const nt = filterForStorage(String(note)).text || '';
+    return getDb().prepare(`UPDATE companion_life_state SET phase = ?, note = ? WHERE id = ?`).run(phase, nt, stateId).changes;
+  }
+  return getDb().prepare(`UPDATE companion_life_state SET phase = ? WHERE id = ?`).run(phase, stateId).changes;
+}
+
+/** 归档（到点结束 → 回健康基线；period 续期算 next_onset = PR-L2） */
+export function resolveLifeState(stateId) {
+  return getDb().prepare(`UPDATE companion_life_state SET status = 'resolved', resolved_at = ? WHERE id = ?`).run(new Date().toISOString(), stateId).changes;
 }
 
 /** arc 信号流水写入（静默失败，不阻塞主链路） */

@@ -27,6 +27,7 @@ import {
   getOpenRelationshipEvent,
   saveOpenLoop,   // v1.21.5: 照片承诺改期写 her_promise open_loop
   getActiveCurrentWorks,   // v1.21.4 PR-W2: current_works 表达层注入
+  getActiveLifeStates,     // v1.22 PR-L1: #317 四档身体事件闸查档案
 } from './db.mjs';
 import { buildSystemPrompt, buildFirstTurnHint } from './companion.mjs';
 import { syncUpdateCompanionState, extractAndSaveMemories, extractAndUpdateUserProfile, consumePendingCelebration, detectUserConfession, detectCompanionConfession, detectIntimacyOvereach, canAcceptConfession, daysSinceMeet, DAYS_TO_LOVER } from './memory.mjs';
@@ -1005,8 +1006,12 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     reply = scrubConflictRedline(reply, arcCtx.arcState, companion.id);
     // #281：表情包冒充照片护栏——文本回复链上本轮必无真实照片（photo 分支早已 return）
     reply = scrubPhotoImpersonation(reply, companion.id);
-    // 2026-06-13 临时止血闸：凭空生成住院/重伤/重病/急症等重度身体事件拦截（待 life_state 档案化）
-    reply = scrubFabricatedIllness(reply, companion.id);
+    // #317 四档身体事件出站闸（v1.22 PR-L1 升级为「档案即事实源」）：severe/自伤无条件拦 /
+    // diagnosed（我感冒了/姨妈来了）无 life_state 档案则拦 / symptom-only / transient 放行。
+    // fail-open：查档案失败 → activeLifeStates=undefined → gate 不开（退回保守只拦 severe）。
+    let _activeLifeStates;
+    try { _activeLifeStates = getActiveLifeStates(companion.id); } catch { /* fail-open: gate off */ }
+    reply = scrubFabricatedIllness(reply, companion.id, { activeLifeStates: _activeLifeStates });
 
     // ── Persona Guard ─────────────────────────────────────────────────────────
     try {
