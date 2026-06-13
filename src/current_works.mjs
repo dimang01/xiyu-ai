@@ -75,7 +75,8 @@ export async function verifyWorkCandidate(candidate, deps = {}) {
 
   if (!requiresVerification(kind, title)) return { status: 'skip', evidence: null };
 
-  // 缓存：只缓 verified、永不过期；负结果不缓存
+  // 缓存：只缓 verified、永不过期；负结果不缓存。
+  // ⚠ 缓存键 normalize 约定：key 必先 stripBrackets（与入库口径一致）——详见 db.findVerifiedWork 注释。
   const cached = findCached(stripBrackets(title), creator || null);
   if (cached) return { status: 'verified', evidence: cached.verify_evidence || null };
 
