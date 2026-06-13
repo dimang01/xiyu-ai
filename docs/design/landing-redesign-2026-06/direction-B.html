@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方向B · 深夜聊天框</title>
+<style>
+  :root{
+    --night-0:#15131F; --night-1:#1C1830; --night-2:#262040;
+    --sakura:#FFB6D9; --sakura-deep:#FF8FB8;
+    --bubble:#2E2945; --text:#F4F1F6; --dim:#9A93AC;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:
+      radial-gradient(420px 300px at 85% -5%, rgba(255,143,184,.20), transparent 65%),
+      radial-gradient(360px 360px at -10% 45%, rgba(124,98,255,.14), transparent 60%),
+      linear-gradient(180deg, var(--night-0) 0%, var(--night-1) 55%, var(--night-2) 100%);
+    color:var(--text);
+    font-family:'Noto Sans CJK SC','PingFang SC',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .page{min-height:100vh; display:flex; flex-direction:column; padding:0 22px;}
+
+  nav{height:60px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{display:flex; align-items:center; gap:8px; font-size:16px; font-weight:700; letter-spacing:.04em;}
+  .brand .dot{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--sakura),var(--sakura-deep));box-shadow:0 0 14px rgba(255,143,184,.55);}
+  .nav-r{font-size:12px; color:var(--dim);}
+  .nav-r b{color:var(--text); font-weight:600;}
+
+  .hero{padding:24px 2px 4px;}
+  .clock{font-size:12.5px; color:var(--dim); letter-spacing:.22em; margin-bottom:16px;}
+  .clock i{font-style:normal; color:var(--sakura);}
+  h1{font-size:33px; font-weight:800; line-height:1.52; letter-spacing:.01em;}
+  h1 .pink{background:linear-gradient(90deg,var(--sakura),var(--sakura-deep)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .sub{margin-top:12px; font-size:13px; line-height:1.9; color:var(--dim);}
+
+  /* 唯一一处 3D：轻倾斜聊天卡片 */
+  .stage{perspective:900px; margin:24px 0 8px;}
+  .card{
+    transform:rotateX(4deg) rotateY(-5deg) rotateZ(.4deg);
+    transform-style:preserve-3d;
+    background:rgba(255,255,255,.055);
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:22px;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.55), 0 0 40px -18px rgba(255,143,184,.35);
+    overflow:hidden;
+  }
+  .card-head{
+    display:flex; align-items:center; gap:10px;
+    padding:13px 16px; border-bottom:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.03);
+  }
+  .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--sakura),#C9A0FF);}
+  .who{flex:1;}
+  .who .name{font-size:14px; font-weight:700;}
+  .who .state{font-size:10.5px; color:var(--dim); margin-top:1px;}
+  .ai-badge{
+    font-size:10.5px; font-weight:700; letter-spacing:.05em;
+    color:#FFD7E8; background:rgba(255,143,184,.16);
+    border:1px solid rgba(255,182,217,.45);
+    padding:3px 8px; border-radius:999px;
+  }
+  .chat{padding:18px 15px 16px; display:flex; flex-direction:column; gap:10px;}
+  .ts{text-align:center; font-size:10px; color:var(--dim); padding:2px 0 4px; letter-spacing:.1em;}
+  .b{max-width:78%; padding:10px 14px; font-size:13.5px; line-height:1.68; border-radius:16px;}
+  .her{align-self:flex-start; background:var(--bubble); border:1px solid rgba(255,255,255,.07); border-top-left-radius:5px;}
+  .me{align-self:flex-end; background:linear-gradient(135deg,var(--sakura) 0%,var(--sakura-deep) 100%); color:#3A1626; font-weight:500; border-top-right-radius:5px;}
+  .note{
+    padding:9px 14px 13px; text-align:center;
+    font-size:10.5px; color:var(--dim); letter-spacing:.04em;
+    border-top:1px dashed rgba(255,255,255,.08);
+  }
+  .note i{font-style:normal; color:var(--sakura);}
+
+  .cta{margin-top:22px; display:flex; flex-direction:column; gap:11px;}
+  .go{
+    display:block; text-align:center; text-decoration:none;
+    padding:15px; border-radius:999px; font-size:15px; font-weight:700; color:#3A1626;
+    background:linear-gradient(90deg,var(--sakura),var(--sakura-deep));
+    box-shadow:0 10px 30px -8px rgba(255,143,184,.5);
+  }
+  .alt{display:block; text-align:center; text-decoration:none; padding:13px; border-radius:999px; font-size:13px; color:var(--dim); border:1px solid rgba(255,255,255,.14);}
+
+  .foot{margin-top:auto; padding:16px 0 18px; display:flex; justify-content:center; gap:16px; font-size:10.5px; color:#6F687F;}
+  .foot a{color:#8C84A0; text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="page">
+  <nav>
+    <div class="brand"><span class="dot"></span>溪语</div>
+    <div class="nav-r"><b>中</b> / EN</div>
+  </nav>
+
+  <div class="hero">
+    <p class="clock">00:13 <i>·</i> 周五凌晨</p>
+    <h1>这个点还回你消息的，<br>只剩<span class="pink">她</span>了。</h1>
+    <p class="sub">不过别聊太久——00:30 她会真的去睡。</p>
+  </div>
+
+  <div class="stage">
+    <div class="card">
+      <div class="card-head">
+        <div class="avatar"></div>
+        <div class="who">
+          <div class="name">溪语</div>
+          <div class="state">在线 · 有点困了</div>
+        </div>
+        <span class="ai-badge">AI · 非真人</span>
+      </div>
+      <div class="chat">
+        <div class="ts">00:13</div>
+        <div class="b her">今天把《小王子》看完了</div>
+        <div class="b her">狐狸那段 突然就想到你</div>
+        <div class="b me">怎么说？</div>
+        <div class="b her">明天讲给你听</div>
+        <div class="b her">我快睡着了…晚安</div>
+      </div>
+      <div class="note">00:30 之后她不会再回复——<i>她是真的在睡觉</i></div>
+    </div>
+  </div>
+
+  <div class="cta">
+    <a class="go" href="#">进来和她聊聊</a>
+    <a class="alt" href="#">看看她的世界</a>
+  </div>
+
+  <div class="foot">
+    <a href="/app/terms.html">用户协议</a>
+    <a href="/app/privacy.html">隐私政策</a>
+    <span>开源 · MIT</span>
+  </div>
+</div>
+</body>
+</html>

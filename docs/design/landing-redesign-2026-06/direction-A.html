@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方向A · 大字扉页</title>
+<style>
+  :root{
+    --ink:#1D1D1F; --mute:#86868B; --line:#EFEDEC;
+    --sakura:#FFB6D9; --sakura-deep:#FF8FB8; --sakura-soft:#FFE8F2;
+    --paper:#FFFDFC;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:'Noto Sans CJK SC','PingFang SC',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .serif{font-family:'Noto Serif CJK SC','Songti SC',serif;}
+  .page{min-height:100vh; display:flex; flex-direction:column; padding:0 28px;}
+
+  nav{height:60px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:'Noto Serif CJK SC',serif; font-size:19px; font-weight:700; letter-spacing:.06em;}
+  .brand i{font-style:normal; color:var(--sakura-deep);}
+  .nav-r{display:flex; align-items:center; gap:18px; font-size:12px; color:var(--mute);}
+  .nav-r .lang b{color:var(--ink); font-weight:600;}
+  .nav-r .enter{color:var(--ink); font-weight:600; border-bottom:1px solid var(--sakura);}
+
+  .hero{flex:1; display:flex; flex-direction:column; justify-content:center; padding:34px 0 8px;}
+  .kicker{font-size:11px; letter-spacing:.32em; color:var(--mute); margin-bottom:30px;}
+  .kicker em{font-style:normal; color:var(--sakura-deep);}
+  h1{font-family:'Noto Serif CJK SC',serif; font-weight:900; font-size:40px; line-height:1.62; letter-spacing:.015em;}
+  h1 .em{ text-emphasis: filled dot var(--sakura-deep); -webkit-text-emphasis: filled dot var(--sakura-deep); }
+  h1 .soft{color:#B8B4B2;}
+  .sub{margin-top:26px; font-size:13.5px; line-height:2.0; color:var(--mute); max-width:30em;}
+  .sub b{color:var(--ink); font-weight:600;}
+
+  .cta{margin-top:38px; display:flex; align-items:center; gap:22px;}
+  .cta .go{
+    font-family:'Noto Serif CJK SC',serif; font-size:16px; font-weight:700; color:var(--ink);
+    text-decoration:none; display:inline-flex; align-items:center; gap:10px;
+    padding:14px 30px; border:1.5px solid var(--ink); border-radius:999px;
+    background:linear-gradient(0deg,var(--sakura-soft),var(--sakura-soft)) no-repeat 0 100%/100% 0%;
+  }
+  .cta .go span{color:var(--sakura-deep);}
+  .cta .alt{font-size:13px; color:var(--mute); text-decoration:none; border-bottom:1px dashed #D9D5D3; padding-bottom:2px;}
+
+  /* 刊头信息栏：AI 披露作为排版的一部分，不藏 footer */
+  .colophon{border-top:1px solid var(--line); padding:18px 0 24px; margin-top:30px;}
+  .colophon .ai{
+    display:flex; gap:10px; align-items:flex-start;
+    font-size:11.5px; line-height:1.8; color:#6E6A68;
+  }
+  .colophon .ai .tag{
+    flex-shrink:0; font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--sakura-deep);
+    border:1px solid var(--sakura); border-radius:4px; padding:2px 6px; margin-top:2px;
+  }
+  .colophon .links{margin-top:12px; font-size:11px; color:var(--mute); display:flex; gap:14px; flex-wrap:wrap;}
+  .colophon .links a{color:var(--mute); text-decoration:none; border-bottom:1px solid var(--line);}
+</style>
+</head>
+<body>
+<div class="page">
+  <nav>
+    <div class="brand">溪<i>·</i>语</div>
+    <div class="nav-r">
+      <span class="lang"><b>中</b> / EN</span>
+      <span class="enter">进入</span>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <p class="kicker">开源 AI 陪伴框架 <em>·</em> MIT</p>
+    <h1 class="serif">
+      她有完整的过去，<br>
+      有自己的今天。<br>
+      <span class="soft">凌晨零点半，</span><br>
+      她会<span class="em">真的</span>去睡。
+    </h1>
+    <p class="sub">
+      不是有问必答的聊天工具。她有 <b>46+ 条人生记忆</b>、每天 8–12 段自己的日程，
+      会别扭、会和好、会在你没回消息时安静下来——
+      <b>在真实生活的空隙，给你温柔。</b>
+    </p>
+    <div class="cta">
+      <a class="go" href="#">遇见她 <span>→</span></a>
+      <a class="alt" href="#">先看看她的世界</a>
+    </div>
+  </div>
+
+  <div class="colophon">
+    <div class="ai">
+      <span class="tag">AI</span>
+      <span>溪语是人工智能陪伴产品：「她」与全部对话、图片、语音均由 AI 生成，并非真人；仅供娱乐陪伴，不能替代专业心理、医疗或情感咨询。</span>
+    </div>
+    <div class="links">
+      <a href="/app/terms.html">用户协议</a>
+      <a href="/app/privacy.html">隐私政策</a>
+      <a href="#">GitHub</a>
+      <span>© 2026 溪语AI</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

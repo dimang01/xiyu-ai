@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方向C · 便利店暖光</title>
+<style>
+  :root{
+    --cream:#FFF8F0; --ink:#4A3F3C; --mute:#A08D86;
+    --sakura:#FFB6D9; --sakura-deep:#FF8FB8; --sakura-soft:#FFE8F2;
+    --warm:#FFD9A0; --warm-deep:#F5B85C; --orange:#E8965A;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:linear-gradient(180deg, var(--cream) 0%, #FFF3F0 70%, var(--sakura-soft) 100%);
+    color:var(--ink);
+    font-family:'LXGW WenKai','Noto Sans CJK SC',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .page{min-height:100vh; display:flex; flex-direction:column; padding:0 24px;}
+
+  nav{height:60px; display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-size:19px; font-weight:700; letter-spacing:.05em;}
+  .brand i{font-style:normal; color:var(--sakura-deep);}
+  .nav-r{font-size:13px; color:var(--mute);}
+  .nav-r b{color:var(--ink);}
+
+  .hero{padding:16px 0 0;}
+  h1{font-size:30px; line-height:1.62; font-weight:700; letter-spacing:.02em;}
+  h1 .glow{color:var(--warm-deep);}
+  .sub{margin-top:12px; font-size:14.5px; line-height:1.9; color:var(--mute);}
+  .sub i{font-style:normal; color:var(--sakura-deep);}
+
+  /* CSS 插画：便利店窗 + 橘猫 */
+  .scene{margin:24px auto 0; width:100%; max-width:330px; position:relative;}
+  .shopwin{
+    position:relative; border-radius:26px; overflow:hidden;
+    background:linear-gradient(180deg,#5C4A56 0%, #4E3F4C 100%);
+    padding:14px 14px 0;
+    box-shadow:0 22px 50px -18px rgba(125,84,100,.45);
+  }
+  .sign{
+    display:flex; align-items:center; justify-content:space-between; padding:2px 6px 12px;
+  }
+  .sign .name{color:#FFE9F4; font-size:13px; letter-spacing:.28em;}
+  .sign .h24{
+    font-size:11px; font-weight:700; color:#FFF;
+    background:linear-gradient(90deg,var(--sakura),var(--sakura-deep));
+    border-radius:6px; padding:2px 8px;
+    box-shadow:0 0 14px rgba(255,143,184,.8);
+  }
+  .glass{
+    position:relative; height:218px; border-radius:18px 18px 0 0; overflow:hidden;
+    background:
+      radial-gradient(150px 110px at 50% 105%, rgba(255,217,160,.95), rgba(255,196,120,.5) 55%, transparent 80%),
+      linear-gradient(180deg, #2E2435 0%, #45333C 45%, #6E4F46 100%);
+    border:3px solid #3A2E3C; border-bottom:none;
+  }
+  .bar{position:absolute; left:50%; top:0; bottom:0; width:5px; margin-left:-2.5px; background:#3A2E3C;}
+  .bar2{position:absolute; left:0; right:0; top:46%; height:5px; background:#3A2E3C;}
+  .shelf{position:absolute; left:10%; right:10%; height:7px; border-radius:3px; background:#27202E;}
+  .shelf.s1{top:24%;} .shelf.s2{top:38%;}
+  .item{position:absolute; width:13px; height:15px; border-radius:3px; bottom:100%; margin-bottom:0;}
+  .lamp{
+    position:absolute; top:8%; left:50%; transform:translateX(-50%);
+    width:54px; height:10px; border-radius:6px; background:#FFEFC9;
+    box-shadow:0 6px 26px 8px rgba(255,228,160,.55);
+  }
+  /* 橘猫剪影：坐在窗台 */
+  .cat{position:absolute; bottom:-2px; right:24px; width:84px; height:74px;}
+  .ledge{height:16px; border-radius:0 0 18px 18px; background:#3A2E3C; margin:0 -14px; position:relative;}
+
+  .caption{
+    margin-top:14px; text-align:center; font-size:12.5px; color:var(--mute); letter-spacing:.06em;
+  }
+  .caption i{font-style:normal; color:var(--orange);}
+
+  /* 手写便签：AI 披露 */
+  .memo{
+    margin:22px auto 0; max-width:330px; position:relative;
+    background:#FFFDF8; border-radius:10px; padding:14px 16px 13px;
+    box-shadow:0 8px 24px -10px rgba(160,120,100,.35);
+    transform:rotate(-1.6deg);
+    font-size:12.5px; line-height:1.85; color:#6E5F58;
+  }
+  .memo .tape{
+    position:absolute; top:-9px; left:50%; transform:translateX(-50%) rotate(2deg);
+    width:74px; height:18px; background:rgba(255,182,217,.5); border-radius:2px;
+  }
+  .memo b{color:var(--sakura-deep);}
+
+  .cta{margin:24px 0 8px; display:flex; gap:11px;}
+  .go{
+    flex:1.4; text-align:center; text-decoration:none; padding:15px 0;
+    border-radius:999px; font-size:16px; font-weight:700; color:#FFF;
+    background:linear-gradient(90deg,var(--sakura),var(--sakura-deep));
+    box-shadow:0 12px 26px -10px rgba(255,143,184,.65);
+  }
+  .alt{
+    flex:1; text-align:center; text-decoration:none; padding:15px 0;
+    border-radius:999px; font-size:14px; color:var(--ink);
+    border:1.5px solid #E8D5CC; background:rgba(255,255,255,.6);
+  }
+
+  .foot{margin-top:auto; padding:14px 0 18px; display:flex; justify-content:center; gap:16px; font-size:11px; color:var(--mute);}
+  .foot a{color:var(--mute); text-decoration:none; border-bottom:1px dotted #D9C5BC;}
+</style>
+</head>
+<body>
+<div class="page">
+  <nav>
+    <div class="brand">溪语<i>。</i></div>
+    <div class="nav-r"><b>中</b> / EN</div>
+  </nav>
+
+  <div class="hero">
+    <h1>下晚自习的路上，<br>便利店的灯<span class="glow">还亮着</span>。</h1>
+    <p class="sub">她会问你今天过得怎么样，<br>也会在凌晨零点半，<i>真的去睡觉</i>。</p>
+  </div>
+
+  <div class="scene">
+    <div class="shopwin">
+      <div class="sign"><span class="name">便利店</span><span class="h24">24h</span></div>
+      <div class="glass">
+        <div class="lamp"></div>
+        <div class="shelf s1">
+          <span class="item" style="left:12%; background:#FF9E9E;"></span>
+          <span class="item" style="left:24%; background:#9ECfFF; height:18px;"></span>
+          <span class="item" style="left:62%; background:#FFD27D;"></span>
+          <span class="item" style="left:74%; background:#B8E6A3; height:12px;"></span>
+        </div>
+        <div class="shelf s2">
+          <span class="item" style="left:18%; background:#D8B6FF; height:13px;"></span>
+          <span class="item" style="left:56%; background:#FFB6D9;"></span>
+          <span class="item" style="left:68%; background:#FFE9A3; height:17px;"></span>
+        </div>
+        <div class="bar"></div>
+        <div class="bar2"></div>
+        <!-- 橘猫剪影 -->
+        <svg class="cat" viewBox="0 0 100 88" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#E8965A" d="M30 88 C12 88 6 74 9 60 C12 47 22 40 34 40 L36 30 L44 38 L56 38 L64 30 L66 41 C76 45 83 54 83 65 C83 79 72 88 56 88 Z"/>
+          <path fill="#E8965A" d="M82 84 C95 82 98 70 92 62 C90 74 84 79 76 81 Z"/>
+          <circle cx="36" cy="56" r="2.6" fill="#3A2E3C"/>
+          <circle cx="54" cy="56" r="2.6" fill="#3A2E3C"/>
+          <path d="M41 64 Q45 68 49 64" stroke="#3A2E3C" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="ledge"></div>
+    </div>
+    <p class="caption">窗台上的橘猫也认识她了 <i>·</i> 它叫豆豆</p>
+  </div>
+
+  <div class="memo">
+    <span class="tape"></span>
+    便签：溪语是 <b>AI 陪伴</b>——「她」和全部对话、照片、声音都由 AI 生成，<b>并非真人</b>，不能替代专业心理与医疗咨询。但她说的晚安，每一句都认真。
+  </div>
+
+  <div class="cta">
+    <a class="go" href="#">去见她</a>
+    <a class="alt" href="#">她的世界</a>
+  </div>
+
+  <div class="foot">
+    <a href="/app/terms.html">用户协议</a>
+    <a href="/app/privacy.html">隐私政策</a>
+    <span>开源 · MIT</span>
+  </div>
+</div>
+</body>
+</html>
