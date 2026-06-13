@@ -12,7 +12,7 @@ import { log } from './logger.mjs';
 import {
   saveMemories, recallMemories as upsertShaping,
   patchCompanion, getUserProfile, upsertUserProfile,
-  saveStageMilestone, shanghaiDateKey,
+  saveStageMilestone, shanghaiDateKey, getDb,
 } from './db.mjs';
 import { extractStructuredInfo, embedText } from './ai.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -344,12 +344,17 @@ export function buildImageReactionText(memories, imageDescription) {
 const MEMORY_SYSTEM_PROMPT = `你是记忆提取助手。分析他（对方）说的话，提取关于他本人的明确信息。
 只提取他主动透露的真实信息，不要推测或虚构。
 
-输出 JSON 数组，每条结构：
+输出 JSON 对象：
 {
-  "memory_type": "fact" | "preference" | "event" | "emotion" | "inside_joke",
-  "content": "20字内简洁描述（第三人称一律用'他'指代对方：'他...'，绝不写'用户'）",
-  "importance": 1-10,
-  "keywords": ["核心词1","核心词2","核心词3"]
+  "current_scene": "他俩此刻所处的场景/地点（如：图书馆、咖啡馆、在路上、公园、电影院、在家）。**只在本轮对话明确表明当前场景或发生位置变化时才填**（如"去图书馆吧""到家了""在咖啡馆等你"）；本轮没有场景信息就留空字符串\"\"。这是'此刻在哪'的**当前状态**，**不是过去事件**——别把'昨天去过XX'写成当前场景。",
+  "memories": [
+    {
+      "memory_type": "fact" | "preference" | "event" | "emotion" | "inside_joke",
+      "content": "20字内简洁描述（第三人称一律用'他'指代对方：'他...'，绝不写'用户'）",
+      "importance": 1-10,
+      "keywords": ["核心词1","核心词2","核心词3"]
+    }
+  ]
 }
 
 importance 评分细则：
@@ -360,7 +365,7 @@ importance 评分细则：
 - 1-2：闲聊噪音
 
 特别地，inside_joke = 你们之间的**专属梗 / 黑话 / 自创词 / 只有你俩懂的暗号或称呼**（反复出现的内部笑点）；content 写这个梗本身，importance 给 6。普通聊天里没有就别硬凑。
-只输出 JSON 数组。没有可记的就 []。`;
+只输出 JSON 对象。没有可记的 memories 就 []，没有场景就 current_scene 留空 ""。`;
 
 // 阈值：< MEMORY_MIN_IMPORTANCE 直接丢弃（避免噪音）。importance >= 7 自动 pin
 const MEMORY_MIN_IMPORTANCE = 4;
@@ -372,7 +377,11 @@ export async function extractAndSaveMemories(companionId, userId, userMsg, botRe
 
   try {
     const raw = await extractStructuredInfo(MEMORY_SYSTEM_PROMPT, userContent);
-    const list = safeParseArray(raw);
+    const obj = safeParseObject(raw);
+    // 兼容：LLM 偶尔回退成裸数组 → 当作 { memories: 数组, 无场景 }
+    const list = Array.isArray(obj.memories) ? obj.memories : safeParseArray(raw);
+    // #324 失忆修：场景搭车本 pass 自动更新（信息本就被提取，只是从前流错了地方）
+    applySceneUpdate(companionId, obj.current_scene);
     if (list.length === 0) return 0;
 
     // M2 专属梗：inside_joke 分流到 shaping lexicon（你们俩独有的梗，不进普通记忆库）
@@ -422,6 +431,56 @@ export async function extractAndSaveMemories(companionId, userId, userMsg, botRe
     return candidates.length;
   } catch (e) {
     log('warn', `[Memory] 记忆提取失败: ${e.message}`);
+    applySceneUpdate(companionId, null, { extractionFailed: true });   // 抽取失败→回落"日常"，不留可能过期的旧场景
+    return 0;
+  }
+}
+
+/**
+ * 更新 companion.current_scene —— #324 失忆修。
+ *
+ * current_scene 是「**可变当前态**」（patch、覆盖），与 episodic 记忆的"过去事件"措辞严格区分：
+ * episodic 记"他提议去图书馆"(发生过的事)，current_scene 记"图书馆"(此刻在哪)。它被 §6 无条件
+ * 注入 prompt（companion.mjs「你现在在：X」），所以必须**跨轮持久**——一旦设定就留住到下次场景
+ * 切换，否则密聊下真场景滑出 16 行窗口后又回到注入"在家"的老 bug。
+ *
+ * 语义（拍板）：
+ *   · 本轮抽到明确场景        → patch 覆盖（场景切换/确认）
+ *   · 本轮无场景信号(空)      → **保留现值**（场景跨轮持久＝修复要害，别被非场景轮清掉）
+ *   · 抽取失败(extractionFailed) → **回落「日常」**（fail-open 反转：过期值反客为主是本 bug 根因，
+ *                                 旧值比空值危险；宁可退回§6"随意聊"也不留可能过期的旧场景）
+ *   · 跨日陈旧 → 由 plan_tasks 次日 00:30 TTL 批清场（不在此处）
+ */
+export function applySceneUpdate(companionId, scene, { extractionFailed = false } = {}) {
+  try {
+    if (extractionFailed) {
+      patchCompanion(companionId, { current_scene: '日常' });
+      return;
+    }
+    const s = String(scene ?? '').trim().slice(0, 30);
+    // 本轮无明确场景信号 → 保留现值（场景跨轮持久）。注意"在家"是真实场景(到家了)不跳过；
+    // 仅空串/占位词不更新。prompt 已约束"只在明确场景时才填"，防止把"图书馆"误覆盖成默认。
+    if (!s || s === '无' || s === '日常') return;
+    patchCompanion(companionId, { current_scene: s });
+  } catch (e) {
+    log('debug', `[Scene] current_scene 更新跳过 companion=${companionId}: ${e.message}`);
+  }
+}
+
+/**
+ * #324 TTL：次日 00:30 批清场——把所有 companion 的 current_scene 回落"日常"，防"昨天的图书馆"
+ * 漏到今天（场景是**当日态**，跨日必清）。纯批量 UPDATE、幂等。约定类(open_loop)靠其自身生命周期
+ * （履约关闭 / markStaleOpenLoops），不在此清。
+ */
+export function resetScenesForNewDay() {
+  try {
+    const r = getDb().prepare(
+      "UPDATE companions SET current_scene = '日常' WHERE current_scene IS NOT NULL AND current_scene NOT IN ('日常','在家')",
+    ).run();
+    if (r.changes) log('info', `[Scene] 次日清场：${r.changes} 个 companion 的 current_scene 回落"日常"`);
+    return r.changes;
+  } catch (e) {
+    log('warn', `[Scene] 次日清场失败（已忽略）: ${e.message}`);
     return 0;
   }
 }

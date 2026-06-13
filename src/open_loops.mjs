@@ -14,6 +14,26 @@ import { extractStructuredInfo } from './ai.mjs';
 import { saveOpenLoop, listOpenLoops, resolveOpenLoop, markStaleOpenLoops, shanghaiDateKey } from './db.mjs';
 import { log } from './logger.mjs';
 
+/**
+ * #324 失忆修：把"还没了结的事/约定"拼成 reply prompt 注入串——**无条件注入**，不靠易失的
+ * immediate 16 行窗口兜着（密聊下"约了一起吃晚饭"这类共同约定最容易被长对话挤出窗口而失忆）。
+ * 约定/约会(appointment)置顶。纯读、bounded（≤4 条），无则返回 ''。
+ */
+export function buildOpenLoopsHint(companionId) {
+  try {
+    const loops = listOpenLoops(companionId, { status: 'open', limit: 20 });
+    if (!loops.length) return '';
+    // appointment（你俩的约定）置顶，其余保持 listOpenLoops 既有排序(emotional_weight/due_at)
+    const sorted = [...loops].sort((a, b) =>
+      (b.loop_kind === 'appointment' ? 1 : 0) - (a.loop_kind === 'appointment' ? 1 : 0));
+    const lines = sorted.slice(0, 4).map(l =>
+      `- ${String(l.title).slice(0, 60)}${l.loop_kind === 'appointment' ? '（你俩的约定，还没兑现）' : ''}`);
+    return `\n【你还记得这些没了结的事】（别忘了；约定没兑现别当没发生过，自然时可主动提起）\n${lines.join('\n')}`;
+  } catch {
+    return '';
+  }
+}
+
 function buildExtractSystemPrompt(todayKey) {
   return `你是 open-loop 提取助手。从他（对方）的消息中识别"未完成、有未来结果、值得后续询问"的事情。
 
@@ -22,22 +42,24 @@ function buildExtractSystemPrompt(todayKey) {
 due_at 只能输出 YYYY-MM-DD 或 null，禁止输出相对说法（如"明天"）。
 
 只提取这类事：
-- 他提到的"将来要做的事"且**还没结果**："明天去面试"、"周五考试"、"周末搬家"、"等下吃完饭"
-- 他提到的"等结果的事"："送出了简历"、"医院做了检查"、"投了那家公司"
-- 他提到"想去做但还没做"："想买 XX"、"想去 XX 旅游"（情感权重较低）
-- 他提到的"短期纠结/烦恼"："最近被工作压得喘不过气"、"在纠结要不要分手"（情感权重高）
+- 他提到的"将来要做的事"且**还没结果**："明天去面试"、"周五考试"、"周末搬家"、"等下吃完饭"（kind="todo"）
+- 他提到的"等结果的事"："送出了简历"、"医院做了检查"、"投了那家公司"（kind="todo"）
+- 他提到"想去做但还没做"："想买 XX"、"想去 XX 旅游"（情感权重较低，kind="todo"）
+- 他提到的"短期纠结/烦恼"："最近被工作压得喘不过气"、"在纠结要不要分手"（情感权重高，kind="todo"）
+- **你俩之间约定/约会还没兑现的事**（kind="date"）："约了一起吃晚饭"、"说好周末一起看电影"、"等下一起去图书馆"、"今天见面了说下次再约"——**这类是你和他共同的安排，不是他一个人的事**，title 直接写"约了一起吃晚饭"即可，不必以"他"开头。**当前这顿/这场还没发生**就算 open loop（吃了/看了/见过了就不是了）。
 
 不要提取：
-- 已经结束的事（"我昨天去过了"、"刚弄完"、"寄了"、"白去了"、"没戏了"）
+- 已经结束的事（"我昨天去过了"、"刚弄完"、"寄了"、"白去了"、"没戏了"、"刚吃完饭"、"看完了"）
 - 长期事实（"我是程序员"）
 - 偏好（"我喜欢猫"）
 
 输出 JSON 数组，每条：
 {
-  "title": "他明天去招聘会找工作",          // ≤80 字，以"他XXX"开头描述
-  "due_at": "2026-06-10" 或 null,         // YYYY-MM-DD，没有具体时间填 null
-  "emotional_weight": 70,                  // 0-100，他在乎程度
-  "expected_followup": "明天晚上问招聘会结果"  // ≤80 字
+  "title": "他明天去招聘会找工作 / 约了一起吃晚饭",   // ≤80 字；todo 以"他XXX"开头，date 直接写约定
+  "kind": "todo" | "date",                  // date=你俩共同约定/约会；todo=他个人的事（缺省 todo）
+  "due_at": "2026-06-10" 或 null,           // YYYY-MM-DD，没有具体时间填 null
+  "emotional_weight": 70,                    // 0-100，他在乎程度
+  "expected_followup": "明天晚上问招聘会结果"   // ≤80 字
 }
 
 如果消息里没有 open loop，返回空数组 []。
@@ -52,6 +74,8 @@ const RESOLVE_KEYWORDS = [
   { re: /(?:没去|没去成|不去了|取消了|改天再说|算了|放弃了|不做了|不用去了|没戏|没戏了|白去了|白跑了|白搞了|凉了|寄了|GG|没下文)/, action: 'check' },
   // 结果反馈
   { re: /(?:面试.*(?:通过|没过|挂了|凉了|过了)|工作.*(?:找到|找着|没找到|定了)|考试.*(?:过了|没过|挂了)|offer)/, action: 'check' },
+  // #324：约定/约会履约或取消（"约了一起吃晚饭"→吃完就该关，别当没发生过）
+  { re: /(?:吃完了?|吃过了|吃过饭|吃了饭|看完了|看过了|见过了|见完了|约会(?:结束|回来)|玩完了|逛完了|散完步)/, action: 'check' },
 ];
 
 function safeParseArray(raw) {
@@ -76,7 +100,7 @@ export async function extractOpenLoops(companionId, userMsg, botReply, sourceMes
   if (!userMsg || userMsg.length < 8) return 0;
 
   // 启发式快速筛：消息里没有时间/事件相关词时直接 skip，省 LLM 调用
-  const QUICK_GATE = /(?:明天|后天|下周|周末|过几天|今天|周一|周二|周三|周四|周五|周六|周日|要去|准备|计划|想去|打算|要做|要交|送出|投了|去了|面试|考试|面|考|医院|检查|约|订|预约|发烧|生病|去看|做|赶|搬|结果|后|之后|过完|考完|交完|做完|结束)/;
+  const QUICK_GATE = /(?:明天|后天|下周|周末|过几天|今天|周一|周二|周三|周四|周五|周六|周日|要去|准备|计划|想去|打算|要做|要交|送出|投了|去了|面试|考试|面|考|医院|检查|约|订|预约|发烧|生病|去看|做|赶|搬|结果|后|之后|过完|考完|交完|做完|结束|一起|见面|约好|说好|改天|下次|吃饭|碰面|等下|待会)/;
   if (!QUICK_GATE.test(userMsg)) return 0;
 
   const userContent = `他说："${userMsg}"\nAI回复："${(botReply || '').slice(0, 100)}"\n\n请提取 open loops（如果有）。`;
@@ -99,6 +123,8 @@ export async function extractOpenLoops(companionId, userMsg, botReply, sourceMes
             : null,
           emotionalWeight: Math.max(0, Math.min(100, Number(item.emotional_weight) || 5)),
           expectedFollowup: item.expected_followup ? String(item.expected_followup).slice(0, 200) : null,
+          // #324：你俩共同约定/约会 → loopKind='appointment'，供 reply 无条件注入"还没兑现的约定"
+          loopKind: item.kind === 'date' ? 'appointment' : 'user_said',
           sourceMessageId,
         });
         saved++;

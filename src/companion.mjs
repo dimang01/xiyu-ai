@@ -131,7 +131,7 @@ export function buildFirstTurnHint(companion) {
 }
 
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
-export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null, shapingHint = '', worksHint = '', locale = null } = {}) {
+export function buildSystemPrompt(companion, { memories = [], userProfile = null, recentTurns = [], longTermDigest = null, promptMode = 'reply', dailySchedule = null, recentSchedules = null, personaFacts = null, preferences = null, shapingHint = '', worksHint = '', openLoopsHint = '', locale = null } = {}) {
   const c     = companion;
   const parts = [];
 
@@ -242,7 +242,9 @@ export function buildSystemPrompt(companion, { memories = [], userProfile = null
   parts.push(`\n【此刻的你】`);
   const moodText = MOOD_INFLUENCE[c.current_mood] || MOOD_INFLUENCE['平静'];
   parts.push(moodText);
-  if (c.current_scene && c.current_scene !== '在家') {
+  // #324：'日常' 与 '在家' 同为中性默认（无特定场景），退回"随意聊"；真实场景才点名注入。
+  // 仅扩 current_scene 的中性判定，不动 mood 注入（emotion/L3 域）。
+  if (c.current_scene && c.current_scene !== '在家' && c.current_scene !== '日常') {
     parts.push(`你现在在：${c.current_scene}。`);
   } else {
     parts.push('你现在在家，很随意地和他聊天。');
@@ -521,6 +523,10 @@ ${recentBlock}
   // hint 由调用方拼好传入（shapingHint 先例），本函数保持零依赖纯函数。
   if (worksHint && typeof worksHint === 'string' && worksHint.trim()) {
     parts.push(worksHint);
+  }
+  // #324 失忆修：未了结的事/约定无条件注入（"约了一起吃晚饭"），同 worksHint 调用方拼好传入。
+  if (openLoopsHint && typeof openLoopsHint === 'string' && openLoopsHint.trim()) {
+    parts.push(openLoopsHint);
   }
 
   if (longTermDigest && typeof longTermDigest === 'string' && longTermDigest.trim()) {

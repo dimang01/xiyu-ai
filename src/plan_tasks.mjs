@@ -29,6 +29,7 @@ import {
   getActiveCurrentWorks,                                 // v1.21.4 PR-W5 日程结构化：消费 works 档案
 } from './db.mjs';
 import { applyMemoryDecayBatch } from './memory_v2.mjs';
+import { resetScenesForNewDay } from './memory.mjs';   // #324 失忆修：次日 00:30 场景清场（TTL）
 import { runDailyReflectionForCompanion, runWeeklyReflectionForCompanion } from './reflection.mjs';
 import { formatReflectionRollup } from './reflection_heartbeat.mjs';
 import { generateDailyDiaryForCompanion, generateWeeklyDiaryForCompanion } from './diary.mjs';
@@ -71,6 +72,8 @@ async function tick(now = new Date()) {
   const parts = shanghaiParts(now);
   // 00:30 — 为每个 companion 生成今日日程
   await runOnce(parts, 'daily-schedule', parts.hour === 0 && parts.minute === 30, () => runDailySchedules(parts.dateKey, parts.weekdayLabel, parts.weekday));
+  // #324 失忆修：次日 00:30 场景清场（current_scene 是当日态，跨日必清，防"昨天的图书馆"漏到今天）
+  await runOnce(parts, 'scene-reset', parts.hour === 0 && parts.minute === 30, () => resetScenesForNewDay());
   // 02:00 — 所有人的日总结 + 清理
   await runOnce(parts, 'daily-summary', parts.hour === 2 && parts.minute === 0, () => runDaily(parts.dateKey));
   // 周日 02:30 — Pro 周总结
