@@ -27,7 +27,6 @@ function worksOnDay(dayIdx) {
   ];
 }
 
-const ARCHIVE_TITLES = ['活着'];
 const FORBIDDEN_DRIFT = /《(?!活着》)([^》]{2,})》/g;   // 出现「非《活着》」的书名号=日程层漂移
 
 let warn = 0;
@@ -46,7 +45,7 @@ ${hint}
 【风格要求】输出 8-12 个时间点（07:00-23:30），其中至少 1 条是"读书"类活动。
 返回 JSON：{"items":[{"time":"HH:MM","activity":"...","importance":1-10}]}`;
 
-  let items = [];
+  let items;
   try {
     const raw = await extractStructuredInfo(sys, '生成今天的日程 JSON', { maxTokens: 1200 });
     const m = String(raw || '').match(/\{[\s\S]*\}/);
