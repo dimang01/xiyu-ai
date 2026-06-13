@@ -47,9 +47,14 @@ ok(illum(new Date(newMoon + 14.8 * 86400e3).toISOString()) > 0.95, '新月+14.8d
 const planner = readFileSync(new URL('../src/photo_planner.mjs', import.meta.url), 'utf8');
 ok(planner.includes('moonFactLine') && planner.includes('月相事实（真实天象，不可违背）'),
    'planner 夜空场景注入月相事实');
+// v1.21.4 PR-W3：proactive 的月相已收编进统一【★真实世界】事实层（buildRealityFacts，
+// 夜间 isNightShanghai 才带月相）；月相事实本体仍由 reality_facts 引 moonFactLine 流入。
 const pro = readFileSync(new URL('../src/proactive.mjs', import.meta.url), 'utf8');
-ok(pro.includes('moonFactLine') && pro.includes('绝不要凭空说"月亮好圆'),
-   'proactive 夜间注入月相事实（禁凭空月亮好圆）');
+ok(pro.includes('buildRealityFacts') && pro.includes('isNightShanghai'),
+   'proactive 夜间经统一真实世界层注入月相（W3 收编）');
+const rf = readFileSync(new URL('../src/utils/reality_facts.mjs', import.meta.url), 'utf8');
+ok(rf.includes('moonFactLine'),
+   'reality_facts 收编 moonFactLine（月相事实仍流入，杜绝凭空月亮好圆）');
 
 console.log(`\nmoon_phase_smoke: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

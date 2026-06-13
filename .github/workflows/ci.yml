@@ -140,6 +140,9 @@ jobs:
       - name: 日出日落纯数学（v1.21.6 PR-C 晚霞窗口/物理合理性/注入红验）
         run: node scripts/sun_times_smoke.mjs
 
+      - name: reality facts 真实世界事实层（v1.21.4 PR-W3 节气/农历天文计算+注入纪律不编造）
+        run: node scripts/reality_facts_smoke.mjs
+
       - name: 照片锚定与护栏注入（v1.21.6 PR-C 封面/天气/日落/互拍/candid）
         run: node scripts/photo_anchor_smoke.mjs
 

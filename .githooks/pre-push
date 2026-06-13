@@ -1,0 +1,9 @@
+#!/bin/sh
+# 推前确定性门禁（2026-06-13 立，"推前漏跑 lint"复发第三次后——把"靠记得"变"手被挡"）。
+# 安装：git config core.hooksPath .githooks  （每个克隆一次性；已在 README/CONTRIBUTING 注明）
+# 绕过（紧急）：git push --no-verify
+set -e
+echo "[pre-push] lint + 语法检查（确定性护栏 > 自觉）…"
+npm run lint
+find src scripts -name '*.mjs' -exec node --check {} \;
+echo "[pre-push] ✓ 通过"
