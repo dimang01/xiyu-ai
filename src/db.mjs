@@ -327,6 +327,22 @@ export function findVerifiedWork(title, creator) {
   `).get(String(title || ''), creator == null ? null : String(creator));
 }
 
+/**
+ * 近 N 天「其他 companion」已选的 verified 作品名（换档生成多样性降权用——
+ * 防 13 角色扎堆同一本《百年孤独》）。只取 verified（generic 是题材不指名、craft 自由文本，
+ * 不参与作品雷同判定）；排除自己（自己的在 existing 里）。fail-open 返回 []。
+ */
+export function getRecentWorkTitles(companionId, { days = 14, now = Date.now(), limit = 30 } = {}) {
+  try {
+    const sinceIso = new Date(now - days * 86400_000).toISOString();
+    return getDb().prepare(`
+      SELECT title, COUNT(*) AS n FROM companion_current_works
+      WHERE verify_status = 'verified' AND companion_id != ? AND started_at >= ?
+      GROUP BY title ORDER BY n DESC, title LIMIT ?
+    `).all(companionId, sinceIso, Math.max(1, limit | 0)).map(r => r.title).filter(Boolean);
+  } catch { return []; }
+}
+
 /** arc 信号流水写入（静默失败，不阻塞主链路） */
 export function insertArcSignalLog(companionId, row = {}) {
   try {

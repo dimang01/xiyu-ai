@@ -10,6 +10,7 @@
  */
 import {
   verifyWorkCandidate, requiresVerification, ensureCurrentWorks, lifecycleDays, isWorkFinished,
+  buildWorkGenPrompt,
 } from '../src/current_works.mjs';
 
 let pass = 0, fail = 0;
@@ -104,6 +105,28 @@ ok(requiresVerification('book', '活着') === true, 'book 类必验');
 ok(lifecycleDays('book', new Date().toISOString()) >= 10 && lifecycleDays('book', new Date().toISOString()) <= 21, 'book 生命周期 ∈ [10,21]');
 ok(isWorkFinished({ kind: 'book', started_at: new Date(Date.now() - 40 * 86400e3).toISOString() }) === true, '40 天前 book 必完结');
 ok(isWorkFinished({ kind: 'book', started_at: new Date().toISOString() }) === false, '刚建的 book 不完结');
+
+// ── digest 跟进（换档生成质量）：#2 入库剥《》 + #1 多样性 + #3 人设软提示 ──
+{
+  const db = makeDb();
+  const out = await ensureCurrentWorks({ id: 20 }, {
+    getActive: db.getActive, insert: db.insert, setStatus: db.setStatus,
+    generate: async () => ({ kind: 'book', title: '《活着》', creator: '余华', genre: '小说' }),  // LLM 不守"不加《》"
+    search: async () => ({ ok: true, results: [{ title: '活着 余华', snippet: '余华长篇小说《活着》' }] }),
+    findCached: () => null, rng: () => 0.9,
+  });
+  ok(out.statusOfAdded === 'verified', '剥《》前置：真书仍 verified');
+  ok(db.getActive(20)[0].title === '活着', `#2 入库统一剥《》（实测 "${db.getActive(20)[0].title}"，与缓存查询口径一致）`);
+}
+{
+  const c = { id: 21, age: 19, personality_tags: JSON.stringify(['文静', '内向']), hobbies: JSON.stringify(['阅读']) };
+  const { prompt } = buildWorkGenPrompt(c, { existingTitles: ['活着'], recentTitles: ['《百年孤独》', '百年孤独'] });
+  ok(prompt.includes('19 岁') && prompt.includes('文静'), '#3 人设软提示：年龄/性格进 prompt');
+  ok(prompt.includes('品味') && (prompt.includes('真实存在') || prompt.includes('必须真实')), '#3 是"调品味不拦真书"措辞（仍要求真实存在）');
+  ok(prompt.includes('百年孤独') && prompt.includes('避免雷同'), '#1 多样性：他人近期作品进"避免雷同"清单');
+  ok((prompt.match(/百年孤独/g) || []).length === 1, '#1 avoid 去重（《百年孤独》+百年孤独 → 合一条）');
+  ok(prompt.includes('不加书名号'), '#2 源头：prompt 明令 title 不加书名号（入库 stripBrackets 双保险）');
+}
 
 console.log(`\ncurrent_works_smoke: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
