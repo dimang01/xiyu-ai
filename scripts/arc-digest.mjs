@@ -16,6 +16,7 @@ import path from 'node:path';
 import { isReportableErrorLine, normalizeErrorSignature } from './error_signature.mjs';
 import { parseUiLayers, parityOffenders } from './memory_chip_parity_smoke.mjs';
 import { parseReflectionRollup } from '../src/reflection_heartbeat.mjs';
+import { parseDeadmanCycle } from '../src/proactive_heartbeat.mjs';
 
 const DB_PATH = process.env.DB_PATH || 'data/bot.db';
 const daysIdx = process.argv.indexOf('--days');
@@ -319,6 +320,57 @@ if (hasTable('companion_current_works')) {
       console.log(`  ${fmtT(new Date(r.ts).toISOString())}  ${r.kind} ${r.date}  ran=${r.ran}  提议 ${r.candidates} → 入 ${r.inserted}/并 ${r.merged}/更 ${r.updated}${r.rejected ? `  🔴 拒 ${r.rejected}` : ''}`);
     }
     if (totRej) console.log('   拒>0：有记忆产出在静默蒸发（查 [Reflection] insert 失败 的 CHECK/约束原因）');
+  }
+}
+
+// ── proactive 健康三桶（#263 误报修：克制 ≠ 断供）──
+// 数据源：deadman 每周期写的 [Deadman] cycle 心跳行（emit↔parse 契约由 proactive_heartbeat_smoke 锁）。
+// 红线同 deadman：纯只读。🟡 持续克制=正常（不发邮件，本段可见即可——per-companion 卡死 bug 在此露馅）；
+// 🔴 errored>0=疑似 #263（即便同窗有 sent 也要查，别让"一次成功"遮报错）。
+{
+  const sumVals = (o) => Object.values(o || {}).reduce((a, b) => a + Number(b), 0);
+  const cycles = [];
+  if (existsSync(LOG_FILE)) {
+    const rl = createInterface({ input: createReadStream(LOG_FILE, { encoding: 'utf8' }), crlfDelay: Infinity });
+    const sinceMs = Date.now() - DAYS * 86400e3;
+    for await (const line of rl) {
+      const tm = line.match(/^\[([^\]]+)\]/);
+      const ts = tm ? new Date(tm[1]).getTime() : NaN;
+      if (!Number.isFinite(ts) || ts < sinceMs) continue;
+      const c = parseDeadmanCycle(line);
+      if (c) cycles.push({ ts, ...c });
+    }
+  }
+  const appVal = (k) => db.prepare('SELECT value FROM app_settings WHERE key = ?').get(k)?.value;
+  const strikes = Number(appVal('proactive_deadman_strikes') || 0);
+  const lastAlertMs = Number(appVal('proactive_deadman_last_alert') || 0);
+  const tickRun = appVal('proactive_tick_last_run');
+  const tickAgeMin = tickRun ? Math.round((Date.now() - Number(tickRun)) / 60000) : null;
+
+  console.log(`\n── proactive 健康（近 ${DAYS} 天）strikes=${strikes}${strikes >= 2 ? ' 🔴' : ''}  tick 心跳=${tickAgeMin == null ? '⚠ 从未写入' : tickAgeMin + 'min 前'}${lastAlertMs ? `  上次告警 ${fmtT(new Date(lastAlertMs).toISOString())}` : ''} ──`);
+  if (!cycles.length) {
+    console.log(`  ⚠ 近 ${DAYS} 天日志无 [Deadman] cycle 心跳行（批没跑完 / 日志未含 / 旧版无此行）`);
+  } else {
+    const sum = cycles.reduce((a, c) => ({ sent: a.sent + c.sent, restrained: a.restrained + c.restrained, errored: a.errored + c.errored }), { sent: 0, restrained: 0, errored: 0 });
+    const errWins = cycles.filter(c => c.errored > 0);
+    console.log(`  三桶累计（${cycles.length} 周期）：已发送 ${sum.sent} / 克制 ${sum.restrained} / 错误 ${sum.errored}${sum.errored ? ` 🔴（${errWins.length} 个窗有 errored，即便同窗有 sent 也要查）` : ''}`);
+    // per-companion 克制细分（补充③：谁·在用户活跃期被持续克制·各自主因）
+    const byComp = {};
+    for (const c of cycles) for (const [cid, reasons] of Object.entries(c.restrainedBy || {})) {
+      byComp[cid] = byComp[cid] || {};
+      for (const [rsn, n] of Object.entries(reasons)) byComp[cid][rsn] = (byComp[cid][rsn] || 0) + Number(n);
+    }
+    const compRows = Object.entries(byComp).sort((a, b) => sumVals(b[1]) - sumVals(a[1]));
+    if (compRows.length) {
+      console.log('  🟡 用户活跃期被持续克制（正当·不告警，仅可见——per-companion 卡死 bug 会在此露馅）：');
+      for (const [cid, reasons] of compRows.slice(0, 8)) {
+        const detail = Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([rsn, n]) => `${rsn}×${n}`).join(' ');
+        console.log(`    ${cname(Number(cid))}  克制 ${sumVals(reasons)} 次：${detail}`);
+      }
+    }
+    for (const c of errWins.slice(-5)) {
+      console.log(`  🔴 ${fmtT(new Date(c.ts).toISOString())}  active=${c.active} sent=${c.sent} errored=${c.errored} bucket=${c.bucket} strikes=${c.strikes}`);
+    }
   }
 }
 
