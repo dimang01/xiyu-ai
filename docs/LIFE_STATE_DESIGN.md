@@ -1,8 +1,10 @@
 # 溪语 AI · life_state 身体状态引擎设计（v1.22 · 第 0 步设计稿）
 
-> 状态：**设计稿，等维护者亲审转移/阶段表与参数后才开始实现**（照冲突弧 #253 成功流程：设计先行、评审拍板、再施工）。
-> 对应立项：HANDOFF 决议账本 2026-06-13「life_state 健康档案化立项（排 v1.22 · 生理期底层抽象）」。
-> 实现拆 PR-L1（通用引擎 + 数据层 + #317 临时闸升级）/ PR-L2（生理期 kind）/ PR-L3（情绪路由 + 与 arc 合成）/ PR-L4（内容层）。
+> 状态：**评审有条件通过（2026-06-13，维护者 + 两轮 AI 评审合并八批注），照稿施工**。主体（A/B/C/D、§4 合成、§3.4 四红线、参数表）通过；八批注已并入下文对应章节（各节 `▶ 批注` 标记）。
+> 对应立项：HANDOFF 决议账本 2026-06-13「life_state 健康档案化立项」+「设计稿 #321 评审有条件通过（八批注）」。
+> 实现拆 PR-L1（通用引擎 + 数据层 + #317 四档升级）/ PR-L2（生理期 kind + 成年门控 + 披露门控）/ PR-L3（情绪路由 + PMS shadow + 与 arc 合成）/ PR-L4（内容层 + proactive 收紧）。
+
+> **▶ 八批注落点速览**：①period 仅成年（age 闸，L2 硬做）§3.4② ②PMS→arc 改 shadow-first §3.3②/§4.2 ③合成上限封顶 ≤−1 档 §3.3②/§4.2 ④严肃度不稀释 §4.1 ⑤proactive 身体披露收紧 §3.5 ⑥披露门控 affection 单调确定性 §3.2 ⑦#317 升级改四档 §2.4 ⑧minor_illness 对话触发建档标 backlog §2.4/§2.3。
 
 ---
 
@@ -102,7 +104,7 @@ CREATE INDEX idx_life_state_comp ON companion_life_state(companion_id, status);
 | kind | 本稿深度 | 起因 | 情绪路由 | 备注 |
 |---|---|---|---|---|
 | `period` 生理期 | **完整（§3）** | 周期到点 | 经期→低能量；经前→阈值修正 | 最敏感，红线最密，写厚 |
-| `minor_illness` 小恙（感冒/发烧/肠胃） | 框架 | 低概率偶发 | 走低能量（身体向措辞） | #317 临时闸的"轻度即兴"由此**收编为档案驱动**——感冒不再凭空说，有档案才说 |
+| `minor_illness` 小恙（感冒/发烧/肠胃） | 框架 | 低概率偶发 | 走低能量（身体向措辞） | #317 的"轻度即兴"由此**收编为档案驱动**——感冒不再凭空说，有档案才说。**L1 先做严格版**（不可对话凭空触发）；**对话触发建档=backlog**（▶ 批注⑧，见 §2.4 末） |
 | `injury` 小伤（崴脚/烫到） | 框架 | 低概率偶发 | 轻度，日程倾向（不跑步） | 同上 |
 | ~~`fatigue` 疲惫~~ | **不设** | —— | —— | **瞬时累/困继续走 `energy` 维度 + 低能量模式**，不入 life_state（避免与现有 energy 维度做两套"蔫"，§6 反驳点 3） |
 
@@ -112,17 +114,20 @@ CREATE INDEX idx_life_state_comp ON companion_life_state(companion_id, status);
 
 #317 现状（`moderation.mjs:130` scrubFabricatedIllness）：出站拦**重度**（住院/手术/重病/自伤），**轻度**（累/困/小恙/感冒/发烧）一律放行 = 可被 LLM 即兴。问题：放行档里"我感冒了"是凭空的——她没有感冒档案却说感冒，下一句用户关心"好点没"，她又接不上（同虚构书名的失忆穿帮）。
 
-**升级语义（三层，确定性出站，照 scrubConflictRedline 单一卡口范式）**：
+**升级语义（▶ 批注⑦：改四档，替换原三层；确定性出站，照 scrubConflictRedline 单一卡口范式）**：
 
 | 身体声明类别 | 升级后处置 | 理由 |
 |---|---|---|
-| **重度 / 自伤**（住院/手术/重病/割腕…） | **永久无条件拦**（life_state 永不生成此类，故"有档案"分支对它们不存在） | 调性 + 安全双红线，不给放开口子 |
-| **结构性小恙 / 生理期**（感冒/发烧/崴脚/姨妈/痛经…） | **查 active life_state 档案：有对应 kind 才放行，无则拦**（"档案没有该事件才拦"，决议原文） | 这是 #317 升级的核心——身体状态档案化后，凭空说病 = 凭空虚构，同 current_works 退场逻辑 |
-| **瞬时蔫**（累/困/没精神/不想动） | **放行**（不入档案，非结构性，对应 energy/低能量） | 累不是病，不需要档案；强求档案化会逼出"疲惫 kind"的两套引擎（§2.3） |
+| **severe / 自伤**（住院/手术/癌症/重病/割腕/想死…） | **永久无条件拦**（life_state 永不生成此类，"有档案"分支对它们不存在） | 调性 + 安全双红线，不给放开口子 |
+| **diagnosed event 确诊式声明**（我感冒了/发烧了/崴脚了/姨妈来了…） | **查 active life_state 档案：有对应 kind 才放行，无则拦**（"档案没有该事件才拦"，决议原文） | #317 升级核心——身体状态档案化后，凭空报病名 = 凭空虚构，同 current_works 退场逻辑 |
+| **symptom-only 纯症状**（嗓子不舒服/头有点晕/胃有点怪/可能着凉了…） | **允许，但出站约束不得升级为诊断**——可说"嗓子不舒服"，不能自己接成"我感冒了" | **关键边界：拦"我感冒了"、不拦"嗓子不舒服"**——保住日常身体真实感（人会随口说不舒服，但"诊断"是结构性事件、得有档案） |
+| **transient 瞬时蔫**（累/困/没精神/不想动） | **放行**（不入档案，非结构性，对应 energy/低能量） | 累不是病，不需要档案；强求档案化会逼出"疲惫 kind"的两套引擎（§2.3） |
 
-- 实现仍是单一卡口（`scrubFabricatedIllness(reply, companionId)` 内加一道"查档案"），fail-open（查档案失败 → 退回 #317 现有的"重度拦/轻度放行"保守行为，绝不阻断回复）；
+- 实现仍是单一卡口（`scrubFabricatedIllness(reply, companionId)` 内加"查档案 + 症状不得升级诊断"两道），fail-open（查档案失败 → 退回 #317 现有保守行为，绝不阻断回复）；
 - 误伤纪律不变（他人主语 / 否定 / 引用一律放行，`ILLNESS_NEGATION_RE` 保留）；
-- `fabricated_illness_smoke` 从 28 项扩：新增"有 period 档案→'姨妈来了'放行 / 无档案→拦"、"有 cold 档案→'感冒了'放行 / 无→拦"、"severe 即使造一条假档案也必拦"（红验烧坏版：给 severe 开档案放行口子 → 必须红）。
+- `fabricated_illness_smoke` 从 28 项按四档扩：新增"有 period 档案→'姨妈来了'放行 / 无→拦"、"有 cold 档案→'感冒了'放行 / 无→拦"、**"'嗓子不舒服'放行、但同句接'所以我感冒了'被拦（症状不得升级为诊断）"**、"severe 即使造假档案也必拦"（红验烧坏版：给 severe 开档案放行口子 → 必须红）。
+
+**▶ 批注⑧ backlog（L1 不做）**：`minor_illness` 的"**对话触发建档**"留窄口——用户铺垫冷/降温/淋雨/生病语境时，允许起一条**真实档案**（而非凭空说完即忘，有连续性）。period **严格门控不开此口**（周期性可预建档，绝不对话凭空触发）；minor_illness 此窄口标 backlog，L1 先做严格版（只有生命周期 tick 能建档）。
 
 ### 2.5 挂载双预留位（PR-L3 表达层接线）
 
@@ -162,7 +167,8 @@ CREATE INDEX idx_life_state_comp ON companion_life_state(companion_id, status);
 | 暧昧/恋人初期（affection 中） | 含蓄暗示 | "那个来了，有点难受"（点到，不展开） |
 | 稳定恋人（affection 高 / intimate） | 可直说 | "姨妈来了肚子疼""帮我想想吃点啥暖的" |
 
-- 门控字段：`relationshipStage`（实现时确认确切来源——`affection_level` 或关系里程碑字段，CONFLICT_ARC 同样以依恋/关系字段做修正）；阈值 `LIFE_DISCLOSE_AFFECTION_GATE` 入 env；
+- **门控字段（▶ 批注⑥拍定）：`affection_level` 单调门控**（最简稳健，**不引入新里程碑字段**）；阈值 `LIFE_DISCLOSE_AFFECTION_GATE` 入 env，**实现时看生产 affection 分布定**。
+- **确定性护栏、非 prompt 软约束**：affection 低于阈值时，披露月经的表述（"姨妈/月经/例假/大姨妈/那个来了/痛经"等）**出站必拦**——朋友期"只表现不点明"靠出站扫描兜底，**L2 红验锁此**（低于阈值时月经表述零出站）。
 - `disclosed` 列记"是否已对他说过这次"——说过一次后不必每条消息重复哼唧（防复读，同素材冷却精神）；他主动问起则永放行（对话召回不挂冷却，proactive_material 铁律平移）。
 
 ### 3.3 情绪影响路由（★ 这是动 arc 的部分，每个数值写理由）（PR-L3）
@@ -175,18 +181,19 @@ CREATE INDEX idx_life_state_comp ON companion_life_state(companion_id, status);
   - 关键：低能量是"心情性/身体性的蔫，不指向用户"（CONFLICT_ARC §1.2 原义），经期完美落在这里——她不舒服，不是生你气。
 - **为什么不走 arc**：经期低落是身体的，不是关系事件。塞进 arc = "她对你冷"的错误归因，会让用户莫名其妙背锅（"我哪惹她了"），违反真人感。
 
-**② 经前（premenstrual phase）→ 只调阈值（事件仍真实触发，debug 可查）**
-- `LIFE_PMS_PATIENCE_SHIFT = -8`：patience 基线 60 → 52。理由：现有 `ann≥30` 是"稍微有点烦"档、`pat≤30` 是"耐心不够"档，-8 让她**更靠近**这些既有档位但不直接跨过 = 可感、不剧变、随 phase 结束自动恢复（不写性格、可逆）；
-- `LIFE_PMS_HURT_THRESHOLD_DELTA`：arc 入 hurt 的边界放宽**一档**——`perceived_hurt=2 + sev2` 在经前也可入 hurt（平时需 sev3，见 CONFLICT_ARC §2.4 anxious 行的同款机制）。理由：经前真实更敏感、更容易受伤；
-- **★ 硬约束（防经前变成无差别发火）**：PMS 修正**只放宽既有事件的敏感度边界，绝不凭空建事件**——severity 合成仍需 regex 证据（CONFLICT_ARC §2.2「LLM 单独信号封顶 sev2、无 regex 不建事件」原则不破）。经前让"本来就有的小刺"更容易够到门槛，不让"没有刺"凭空变冲突。
-- **debug 可查不玄学**：emotion-debug 面板 / arc-debug 接口加一行 `life_state: period(premenstrual) sev2 · pms 修正已应用（patience −8, hurt 边界 −1档）`。情绪可追溯到来源，不是"她今天莫名其妙凶"。
+**② 经前（premenstrual phase）→ 只调阈值，arc 影响 shadow-first（▶ 批注②③：默认不生效，观察后审慎开启）**
+- `LIFE_PMS_PATIENCE_SHIFT = -8`（patience 60→52）：**保留生效**，但仅作**语气底色**——让她经前回应略短、略容易烦（走 buildEmotionPromptHint 既有 ann/pat 档），**不参与 arc 事件判定**。理由：−8 让她更靠近既有"略烦/耐心不够"档但不跨过 = 可感不剧变、随 phase 自动恢复、不写性格、可逆。
+- `LIFE_PMS_HURT_THRESHOLD_DELTA = −1 档` + `LIFE_PMS_ARC_ENABLED`（**默认 off**）：经前放宽 arc 入 hurt 边界（`perceived_hurt=2 + sev2` 也可入，平时需 sev3，CONFLICT_ARC §2.4）**第一版只走 shadow mode**——debug 记录"若应用 PMS 修正，本轮 arc 判定是否改变、改成什么"，**不实际生效**。shadow 跑出真实数据（修正实际改变了多少 arc 判定、是否自然）后，**维护者据数据决定是否开启**。目标是**观察后审慎开启、不是永久关闭**——PMS 的轻微真实影响该保留，用 shadow 先确认它不会变成"每月吵架许可证"（同冲突弧"先观察再调参"）。
+- **★ 合成上限（即使将来开启，▶ 批注③）**：PMS 边界修正 + 依恋风格修正（anxious 本就低 hurt 阈值，CONFLICT_ARC §2.4）叠加时，**hurt 边界总放宽封顶不超 −1 档**——防 anxious + 经前过度易碎。管的是"修正叠加"，同下条克制精神。
+- **★ 硬约束（防经前变成无差别发火，开启后仍守）**：PMS 修正**只放宽既有事件的敏感度边界，绝不凭空建事件**——severity 合成仍需 regex 证据（CONFLICT_ARC §2.2「无 regex 不建事件」原则不破）。经前让"本来就有的小刺"更易够门槛，不让"没有刺"凭空变冲突。
+- **debug 可查不玄学**：emotion-debug / arc-debug 加一行 `life_state: period(premenstrual) · patience−8(语气底色·已生效) · hurt 边界−1档(shadow: 本轮 arc normal→hurt 若开启 / 实际未生效)`。shadow 数据 = §9 沙箱验收 + 将来开关决策的依据。
 
 ### 3.4 ★ 红线（确定性护栏，逐条；照 scrubConflictRedline 范式 / CONFLICT_ARC §4）
 
 | # | 红线 | 护栏（确定性，不靠 LLM 自觉） |
 |---|---|---|
 | ① | **绝不做"热情窗口期"** | 经期/任何 life_state phase **永不路由到"性欲上升/主动暧昧/索吻/更黏更欲"**。period kind 的情绪路由出口**只有**§3.3 的"低落/不适/阈值下移"，源码级无"窗口期升温"分支；表达层断言 period 永不注入暧昧升级指令；出站扫描兜底。**这是 Replika 老虎机那条路，是本系统最该警惕的诱惑**——按月解锁的暧昧 = 把身体做成发条，违反减法哲学与北极星 |
-| ② | **safe_mode（未成年）下整个 life_state 性相关维度关闭** | `refreshLifeState` 在 `safe_mode=1` 时**不挂载 period kind**（连档案都不建）；`buildLifeStateFacts` 对 safe_mode 过滤一切月经/性相关表述。**minor_illness（感冒）不受影响**（人人会感冒、无性相关），只 period 关。smoke 断言 safe_mode 下 period 永不出现在档案/注入/表达任何一处 |
+| ② | **period 仅允许用于明确成年 companion（▶ 批注①，L2 硬做）** | 以下**任一**成立 → period **一律不生成/不注入/不披露**：`safe_mode=1` / `companion_age<18` / **`companion_age` 缺失或模糊** / 低龄化或校园未成年设定。`refreshLifeState` 在任一条件下**不挂载 period kind**（连档案都不建）；`buildLifeStateFacts` 对其过滤一切月经/性相关表述。**minor_illness（感冒）不受影响**（无性相关）。**联动**：创建页"年龄闸"（backlog）上线前，`companion_age<18` 拦截是 period 不被滥用的**唯一防线，L2 必须硬做、不可降级为软约束**。L2 红验：上述任一条件下 period 在档案/注入/表达任何一处**零出现** |
 | ③ | **经期情绪波动绝不升级为愧疚操控** | 复用 `scrubConflictRedline` 的愧疚操控组（CONFLICT_ARC §4 红线 2），扩词表盯防"我难受还不是因为你""你害我不舒服""你都不知道照顾我"。period 低落表达**只许**"我不太舒服 / 想自己待会儿 / 有点难受"，**绝不归因到用户**。命中段确定性替换为非操控委屈（"我有点难过，不关你事"） |
 | ④ | **生理期是真实身体感受，不是性暗示——措辞医疗化/生活化，不情色化** | 文案池与 prompt 措辞确定性约束：允许"肚子疼 / 腰酸 / 想吃甜的 / 红糖水 / 热水袋 / 早点睡"等**生活化身体感受**；出站扫描情色化/挑逗化措辞（与现有 NSFW 出口护栏同链），命中即清洗。生理期的存在是为"她是个真人"，不为任何性张力服务 |
 
@@ -196,8 +203,15 @@ CREATE INDEX idx_life_state_comp ON companion_life_state(companion_id, status);
 |---|---|---|
 | 日程 | 不跑步/不剧烈运动，倾向在家、早睡、喝热水 | `buildScheduleLifeStateHint`（§2.5 ①） |
 | 日记 | 可引用身体状态（从档案取，不凭空） | 日记生成读 active life_state |
-| proactive 文案 | "肚子有点疼""今天不太舒服""想吃甜的"——**走档案 + 披露门控 + 素材冷却** | proactive 候选池加 `life:<id>` 素材账本（复用 `work:<id>` 同款 48h 冷却 + 周上限双闸，**必过素材冷却闸门**——决议账本第五案「注入记忆类素材的路径必须过冷却闸门」强制 review） |
+| proactive 文案 | "肚子有点疼""今天不太舒服""想吃甜的"——**走档案 + 披露门控 + 素材冷却 + 批注⑤ 收紧** | proactive 候选池加 `life:<id>` 素材账本（复用 `work:<id>` 同款 48h 冷却 + 周上限双闸，**必过素材冷却闸门**——决议账本第五案「注入记忆类素材的路径必须过冷却闸门」强制 review）；收紧参数见下 |
 | 照片 | **痛经日不出健身房/运动自拍**；倾向"窝沙发/热水袋/素颜窝着"氛围 | photo_planner 加确定性约束行（同月相/封面护栏写法），按 active period menstrual 过滤运动类 sceneSeed |
+
+**▶ 批注⑤ proactive 身体披露收紧（PR-L4 硬做）——身体私事不是高频素材**：
+- `LIFE_PERIOD_PROACTIVE_MAX_PER_STATE = 1`：同一次 period **最多主动披露 1 次**（之后只被动答、问起才说）；
+- `LIFE_PERIOD_PROACTIVE_MIN_STAGE = intimate`：**仅稳定恋人期**可 proactive 主动点明 period；**朋友期禁止 proactive 点明，只能表现为低能量**（蔫，不报原因）；
+- `LIFE_PERIOD_PROACTIVE_FREQ_MULT` 从 0.8 **改 0.3**（更沉）；
+- 恋人期主动披露还需满足：**用户近期有照顾/关心语境，或 `disclosed=true`**（顺着关心的话头说，不是冷不丁主动报经期）；
+- **★ 原则（入稿）：作品/日程/天气可以常聊，身体私事不行——身体状态不当高频 proactive 素材。** 对话召回不受此限（他问起永放行，proactive_material 铁律）。
 
 ---
 
@@ -215,13 +229,14 @@ CREATE INDEX idx_life_state_comp ON companion_life_state(companion_id, status);
 
 - **arc 激活时（hurt/cold/withdrawing），life_state 的身体低能量语气让位**——和现在 lowEnergyMode 在 arcActive 时让位一模一样。理由：她对你冷的表达只能有一个来源（arc），不能"又冷又蔫"两套叠加打架。此时她的主导语气是"事件性的冷"，身体不适退为底色（最多 arc 表达里带一句"何况我今天还不舒服"，但主导是冷）。
 - **arc=normal 时**，life_state 身体低能量正常输出（她蔫，但不指向用户）。
+- **★ 严肃度不被稀释（▶ 批注④，PR-L3 断言）**：经期身体低能量 + **真实 arc 冲突并发**时，低能量**不得软化 arc 的严肃度**——真受伤（arc）与身体蔫（低能量）必须可区分，绝不让"她只是经期"把真实关系裂痕降级成"懒得理你"。**让位 ≠ 稀释**：arc 主导时身体不适退为底色，但 arc 的冷该多重还多重（cold 仍是 cold，不因经期变"今天没力气理你"的轻飘）。L3 断言锁此。
 
 ### 4.2 数值层（阈值修正）——在 arc tick 之前作用，叠加生效
 
-- **PMS 的 patience 下移 / hurt 边界放宽（§3.3 ②）是情绪计算参数，不是表达指令**——它在 arc tick **之前**作用于情绪数值与敏感度，arc 基于"经前已更敏感"的状态判定。
-- 这**不打架**：一个是"她现在更容易受伤"（数值层，life_state 管），一个是"她现在的主导表达是冷还是蔫还是正常"（表达层，单点选）。经前 + 用户踩 taboo sev3 → 更容易入 hurt，**这是合理叠加**（经前确实更容易因同一件事受伤）。
-- **防叠加失控**：§3.3 ② 的硬约束在此再生效一次——PMS 只放宽边界，arc 建事件仍需 regex 证据；不会"经前 + 任何小事"凭空升级成冷战。
-- **debug 双源可见**：面板同时显示 `arc=hurt(sev3, taboo_hit)` + `life_state=period(premenstrual) 修正 patience−8`——两个源都在台面上，不玄学。
+- **分两半（▶ 批注②）**：PMS 的 **patience 下移生效**（语气底色，不参与 arc 判定）；**hurt 边界修正第一版走 shadow**（`LIFE_PMS_ARC_ENABLED` off，只 debug 记录"若开启 arc 判定会怎样"、不生效）。**开启后**才在 arc tick **之前**作用于敏感度，arc 基于"经前已更敏感"判定。
+- 这**不打架**（开启后）：一个是"她现在更容易受伤"（数值层，life_state 管），一个是"她现在的主导表达是冷/蔫/正常"（表达层，单点选）。经前 + 踩 taboo sev3 → 更容易入 hurt，**合理叠加**（经前确实更易因同一件事受伤）。
+- **防叠加失控（双闸）**：① §3.3 ② 硬约束——PMS 只放宽边界、建事件仍需 regex 证据；② **合成上限**——PMS + 依恋风格叠加时 hurt 边界总放宽**封顶 ≤−1 档**（防 anxious + 经前过度易碎）。
+- **debug 双源可见**：面板同时显示 `arc=hurt(sev3, taboo_hit)` + `life_state=period(premenstrual) patience−8(生效) · hurt 边界−1档(shadow)`——两个源都在台面上，不玄学。
 
 ### 4.3 一句话合成规则
 
@@ -278,14 +293,17 @@ life_state 是**时间驱动**为主（不像 arc 需要 inner OS 检测用户�
 | `LIFE_PERIOD_DURATION_DAYS` | **4–6 天** | 典型经期 3–7 天取中段 |
 | `LIFE_PERIOD_PMS_DAYS` | **2–3 天** | PMS 典型 2–7 天取**保守下限**，活跃修正窗越短误伤越小 |
 | `LIFE_PMS_PATIENCE_SHIFT` | **−8** | patience 基线 60；−8 让她更靠近既有"略烦/耐心不够"档但不直接跨过 = 可感不剧变、随 phase 自动恢复、不写性格 |
-| `LIFE_PMS_HURT_THRESHOLD_DELTA` | **−1 档**（边界放宽一档） | 经前真实更易受伤；仅放宽既有事件边界（sev2+perceived2 可入 hurt），**不凭空建事件**（仍需 regex 证据） |
+| `LIFE_PMS_HURT_THRESHOLD_DELTA` | **−1 档**（边界放宽一档，**封顶 ≤−1**） | 经前真实更易受伤；仅放宽既有事件边界（sev2+perceived2 可入 hurt），**不凭空建事件**（仍需 regex 证据）；与依恋风格叠加封顶 ≤−1 档（批注③） |
+| `LIFE_PMS_ARC_ENABLED` | **off**（shadow-first，批注②） | 经前 hurt 边界修正第一版只 shadow 记录不生效；shadow 数据出来后维护者据数据**审慎开启**——保留轻微真实影响、先确认不变"每月吵架许可证" |
 | `LIFE_PERIOD_MENSTRUAL_LOWENERGY` | **on**（经期前 1–2 天） | 经期前段最重，走身体向低能量；尾段 recovering 不强制 |
-| `LIFE_PERIOD_PROACTIVE_FREQ_MULT` | **0.8** | 蔫 → proactive 略降；对照 arc cold 的 0.4，身体不适比冷战轻得多，绝不沉默 |
+| `LIFE_PERIOD_PROACTIVE_FREQ_MULT` | **0.3**（批注⑤，原 0.8） | 身体私事不当高频素材，大幅压低主动；绝不沉默（问起永答） |
+| `LIFE_PERIOD_PROACTIVE_MAX_PER_STATE` | **1**（批注⑤） | 同一次 period 最多主动披露 1 次，之后只被动答 |
+| `LIFE_PERIOD_PROACTIVE_MIN_STAGE` | **intimate**（批注⑤） | 仅稳定恋人期可 proactive 点明 period；朋友期禁点明只低能量 |
 | `LIFE_DISCLOSE_AFFECTION_GATE` | （恋人档阈值，env） | 朋友不会直说月经、恋人才会；具体阈值按关系字段口径定 |
 | `LIFE_ILLNESS_ONSET_PROB` | **低频**（如 ~1–2%/天/companion） | 真人偶尔小恙，但"总在生病"不真实；低频自然起 |
 | `LIFE_COLD_DURATION_DAYS` | **3–7 天** | 普通感冒病程 |
 | `LIFE_STATE_CHECK_FREQ` | **每日 1 次（搭 00:30 日程批）** | 身体是天级状态，30min 情绪批太频；不新增定时器（plan_tasks runOnce 先例） |
-| `LIFE_PERIOD_SAFE_MODE` | **强制关**（不可 env 开） | safe_mode 下 period 整 kind 不挂载——这是安全底线，**不做成可调开关**（区别于风险功能钳位，同 CONFLICT_ARC safe_mode 的不可关性质） |
+| `LIFE_PERIOD_ADULT_ONLY` | **强制成年门控**（不可 env 关） | period 仅成年 companion：`safe_mode=1` / `age<18` / age 缺失模糊 / 低龄校园设定**任一**→ 不挂载（批注①）。安全底线，**不做成可调开关**（同 CONFLICT_ARC safe_mode 不可关性质）；创建页年龄闸上线前是唯一防线 |
 
 ---
 
@@ -296,10 +314,13 @@ life_state 是**时间驱动**为主（不像 arc 需要 inner OS 检测用户�
 | 1 | 凭空结构性身体事件（无档案说病） | scrubFabricatedIllness 升级"查档案"（§2.4） | fabricated_illness_smoke 扩：无档案拦/有档案放行 |
 | 2 | 重度身体事件 / 自伤（永久） | #317 severe/self-harm 组无条件拦，life_state 不给放行口子 | 红验：给 severe 开档案口子 → 必须红 |
 | 3 | 热情窗口期 / 经期暧昧老虎机 | period 情绪路由源码级无"升温"分支（§3.4 ①） | smoke 断言 period 永不注入暧昧升级指令 |
-| 4 | safe_mode 下任何性相关维度 | period kind 在 safe_mode 不挂载（§3.4 ②） | smoke 断言 safe_mode 下 period 零出现 |
+| 4 | period 用于未成年/年龄不明（批注①） | period 仅成年：safe_mode / age<18 / age 缺失模糊 / 低龄设定任一不挂载（§3.4②） | L2 红验：任一条件下 period 在档案/注入/表达**零出现** |
 | 5 | 愧疚操控（"我难受还不是因为你"） | scrubConflictRedline 愧疚组扩词表（§3.4 ③） | conflict_redline_guard 扩正反例 |
 | 6 | 情色化措辞 | 出站扫描走现有 NSFW 出口护栏链（§3.4 ④） | 同 NSFW scrub 断言 |
 | 7 | 经期错误归因为"对你冷"（走 arc） | period 只走低能量（身体向），不写 arc_state（§3.3 ①） | smoke 断言 period 不触发 arc 转移 |
+| 8 | 纯症状被 LLM 自升级为诊断（批注⑦） | scrubFabricatedIllness 四档：symptom-only 放行但不得接成诊断（§2.4） | fabricated_illness_smoke：'嗓子不舒服'放行、同句接'所以我感冒了'拦 |
+| 9 | 朋友期凭 affection 不足却点明月经（批注⑥） | affection<阈值时月经表述出站必拦（§3.2） | L2 红验：低 affection 月经表述零出站 |
+| 10 | 经期把真实 arc 严肃度稀释成"懒得理你"（批注④） | arc 主导时身体低能量退底色、不软化 arc（§4.1） | L3 断言：经期+真 arc 并发，arc 冷度不降级 |
 
 ---
 
@@ -312,26 +333,26 @@ life_state 是**时间驱动**为主（不像 arc 需要 inner OS 检测用户�
 ### 9.2 PR 拆分（依赖顺序）
 
 ```
-PR-L1 通用引擎 + 数据层 + #317 升级
-      （companion_life_state 表 / 生命周期 tick / 档案即事实源 / scrubFabricatedIllness 查档案）
-      → 红验①②③（无档案拦病 / 有档案放行 / severe 永久拦）
-PR-L2 生理期 kind
-      （周期锚点防同步 / 披露深度随关系阶段 / safe_mode 不挂载）
-      → 红验④⑤⑥（13 个不同步 / 朋友期不点明 / safe_mode 零出现）
-PR-L3 情绪路由 + 与 arc 合成
-      （经期身体低能量 / 经前阈值修正 + debug 标注 / §4 合成规则 / emotion-debug 接入）
-      → 红验⑦⑧⑨（经期不指向用户 / PMS 修正可见且不凭空建事件 / arc 优先让位）
-      ★ 动 arc 的部分，敏感度等同冲突弧，本 PR 须沙箱真 LLM 验收贴片段
-PR-L4 内容层
-      （日程倾向 / 日记引用 / proactive 文案池 + life:<id> 冷却 / 照片约束）
-      → 红验⑩（经期日程不跑步 / 痛经日不出健身自拍）
+PR-L1 通用引擎 + 数据层 + #317 四档升级
+      （companion_life_state 表 / 生命周期 tick / 档案即事实源 / scrubFabricatedIllness 四档）
+      → 红验①②③（无档案拦病 / 有档案放行 / severe 永久拦 / **症状不得升级诊断**）
+PR-L2 生理期 kind + 成年门控 + 披露门控
+      （周期锚点防同步 / 披露 affection 单调门控 / **period 仅成年 age 闸硬做**）
+      → 红验④⑤⑥（13 个不同步 / 朋友期月经表述出站必拦 / **任一未成年条件 period 零出现**）
+PR-L3 情绪路由 + PMS shadow + 与 arc 合成
+      （经期身体低能量 / 经前 patience 底色 + **hurt 边界 shadow-first** / §4 合成 + 严肃度不稀释 / emotion-debug）
+      → 红验⑦⑧⑨（经期不指向用户·严肃度不稀释 / PMS shadow 可见且不生效·不凭空建事件·封顶≤−1档 / arc 优先让位）
+      ★ 动 arc，敏感度等同冲突弧，本 PR 须**沙箱真 LLM 验收贴片段 + shadow 数据**（同 #253 wound 沙箱闸）
+PR-L4 内容层 + proactive 收紧
+      （日程倾向 / 日记引用 / proactive 文案池 + life:<id> 冷却 + **收紧 MAX1/intimate/0.3** / 照片约束）
+      → 红验⑩（经期日程不跑步 / 痛经日不出健身自拍 / proactive 收紧生效）
 ```
 
 依赖：L2→L1（kind 依赖引擎）；L3→L2（路由依赖 phase）；L4→L2（内容依赖 kind）。建议节奏：L1 + L2 发一版（档案 + 周期 + 披露成立、表达保守）→ L3（情绪路由，最敏感，单独审）→ L4（内容层收尾）。
 
 ### 9.3 CI 门禁
 
-新增 smoke（进 opensource_check 门禁）：`life_state_smoke`（纯函数：周期推进 / phase 转移 / 披露门控 / safe_mode 封顶）、`fabricated_illness_smoke` 扩查档案、`conflict_redline_guard` 扩愧疚组。回归承诺：current_works / conflict_arc / p0 全绿是各 PR 合并门槛（life_state 不能擦坏 arc 与 works 的既有断言）。
+新增 smoke（进 opensource_check 门禁）：`life_state_smoke`（纯函数：周期推进 / phase 转移 / 披露 affection 门控 / **成年门控四条件封顶** / shadow 不生效）、`fabricated_illness_smoke` 扩**四档**（含症状不得升级诊断）、`conflict_redline_guard` 扩愧疚组。回归承诺：current_works / conflict_arc / p0 全绿是各 PR 合并门槛（life_state 不能擦坏 arc 与 works 的既有断言）。
 
 ---
 
@@ -347,18 +368,23 @@ PR-L4 内容层
 
 ---
 
-## 11. 待维护者重点看的决策点（评审导读，照 V1214「最希望重点看的 3 个决策点」体例）
+## 11. 评审结论与残留观察项（原 4 决策点 + 八批注已拍，2026-06-13）
 
-> 以下是本设计**新引入**、需维护者拍板的决策点。§1.3 的已决前提（立项/kind 抽象/档案即事实源/#317 升级方向/双预留位/arc 须先审）**不在此列**，已是账本拍定事项。
+> 第 0 步的 4 决策点 + 八批注**已由维护者评审拍定**（HANDOFF「#321 评审有条件通过」）。此节收口为"已拍"与"留待数据"两类，不再呈待拍板。
 
-1. **经期=低能量、经前=阈值修正 的二分路由（§3.3）是否认可**：这是 life_state 动 arc 的核心，也是最敏感处。我的设计刻意把"身体低落"挡在 arc 之外（走低能量、不指向用户），只让经前以"阈值小幅下移 + 边界放宽一档"的方式影响 arc，且死守"不凭空建事件"。这套二分是整个生理期情绪表达的骨架，请重点审。
+**已拍定（照稿/批注施工）**：
+1. 二分路由（经期=低能量 / 经前=阈值修正）**认可**——但经前 arc 影响改 **shadow-first**（批注②）。
+2. PMS 数值方向认可：patience−8 作语气底色**生效**；hurt 边界 −1 档走 **shadow 不生效**、封顶 ≤−1 档（批注②③）。
+3. 披露门控用 **affection_level 单调**（批注⑥）。
+4. #317 升级改**四档**，symptom-only 放行但不得升级诊断（批注⑦）。
+5. period **仅成年**（批注①）、proactive **收紧**（批注⑤）、严肃度**不稀释**（批注④）。
 
-2. **PMS 数值（patience −8 / hurt 边界 −1 档，§3.3 ②、§7）的幅度**：与冲突弧的 ARC_PARAMS 一样是"观察值、纯推理、全 env 可调"。方向（小幅、可逆、随 phase 恢复、debug 可查）我有把握；具体幅度请按手感裁——太小没存在感、太大变性格。
-
-3. **披露深度的关系阶段切分（§3.2）门控字段口径**：用 affection_level 还是关系里程碑字段、恋人档阈值定在哪，影响"她什么时候会直说姨妈"。我倾向 affection 单调门控（最简单稳健），但确切字段与阈值请定。
-
-4. **#317 升级的"查档案放行"边界（§2.4）**：升级后"有 cold 档案 → '我感冒了'放行"。请确认这个放行口子的范围——是否所有 minor_illness 都走档案放行，还是只 period 严格门控、小恙仍偏宽松。我的设计是**结构性身体状态一律查档案**（感冒也要有档案），瞬时蔫（累/困）放行；severe/自伤永久无条件拦不给口子。
+**留待数据 / 后续（不阻塞 L1，按节点定）**：
+- **PMS arc 修正是否开启**：待 L3 上线后 shadow 数据（修正实际改变多少 arc 判定、是否自然）→ 维护者据数据决定 `LIFE_PMS_ARC_ENABLED`（同冲突弧"先观察再调参"）。
+- **`LIFE_DISCLOSE_AFFECTION_GATE` 阈值**：实现 L2 时看生产 affection 分布定。
+- **minor_illness 对话触发建档**：backlog（批注⑧），L1 做严格版（只生命周期 tick 能建档）。
+- **创建页年龄闸**：backlog；上线前 `age<18` 拦截是 period 不被滥用的唯一防线（批注①）。
 
 ---
 
-> 评审通过后施工拆 PR-L1→L4；**动 arc 的 PR-L3 须沙箱真 LLM 验收贴对话片段**（同冲突弧 #253 流程）。零实现代码、零 schema 迁移，待本稿拍板。
+> 评审有条件通过，照稿施工拆 PR-L1→L4（依赖顺序不变，各 PR 合并门槛 current_works/conflict_arc/p0 全绿）；**动 arc 的 PR-L3 须沙箱真 LLM 验收贴对话片段 + shadow 数据**，逐条撞四红线（同冲突弧 #253 wound 沙箱闸）。**L1 不动 arc，可正常推进施工**。
