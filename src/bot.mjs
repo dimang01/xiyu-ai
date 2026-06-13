@@ -34,6 +34,7 @@ import { buildLongTermDigest } from './plan_tasks.mjs';
 import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stickers.mjs';
 import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
 import { buildWorksPromptHint } from './current_works.mjs';   // v1.21.4 PR-W2 表达层注入
+import { buildRealityFacts, isNightShanghai } from './utils/reality_facts.mjs';   // v1.21.4 PR-W3 统一真实世界事实层
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubPhotoImpersonation, scrubConflictRedline, scrubFabricatedIllness } from './moderation.mjs';
 import { runArcSignalTick } from './relationship_arc_runtime.mjs';
@@ -867,6 +868,13 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // arc directive 自带冷语气，双指令会打架）；arc 主导语气追加在最后（最高优先）。
     // worksHint 走 buildSystemPrompt 参数注入（生活背景带，§8 排序），结构上永在 arc 指令之前。
     let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint, worksHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + (arcCtx.active ? '' : escalationDirective(esc.level)) + (arcCtx.directive || '');
+    // v1.21.4 PR-W3: 统一【★真实世界】事实层也注入对话回复——他在 chat 里问"今天什么节气/节日"
+    // 或聊到冷/月亮时，她答得上真实历法天象（§9 注入口扩到 reply：chat 才是用户问历法的地方）。
+    // 拿不到的字段不提、绝不编造（普通日空注入=不冒节日）。fail-open。
+    try {
+      const _rf = buildRealityFacts(new Date(), { includeNightSky: isNightShanghai() });
+      if (_rf) systemPrompt += `\n\n${_rf}`;
+    } catch (e) { log('warn', `[RealityFacts] reply 注入失败: ${e.message}`); }
     // v1.16.x: 首轮破冰 —— 她还没回过任何消息(全新对话) → 首次回复精心破冰(onboarding 留人)
     try {
       const _prior = getRecentHistory(msg.fromUser, botId, 6) || [];

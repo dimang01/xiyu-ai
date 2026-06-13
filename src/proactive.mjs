@@ -48,7 +48,7 @@ import { sendCompanionPhoto } from './photo_sender.mjs';
 import { safeOutboundReply, scrubPhotoImpersonation, scrubFabricatedIllness } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
-import { moonFactLine } from './utils/moon_phase.mjs';   // v1.21.5 PR-C 月相锚定
+import { buildRealityFacts, isNightShanghai } from './utils/reality_facts.mjs';   // v1.21.4 PR-W3 统一真实世界事实层（收编月相）
 import { buildShapingPromptHint } from './shaping.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
 import { getArcProactivePolicy, getArcExpressionContext, buildOliveBranchHint, markOliveBranchSent } from './relationship_arc_runtime.mjs';
@@ -732,13 +732,12 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
 
 【今日特别提醒】今天的特殊日期：${timeContext.specialText}。可自然地融入，不要喊口号。`;
 
-  // v1.21.5 PR-C 月相锚定：夜间给真实月相事实，杜绝凭空"月亮好圆"（生产案 A 根因之一）。
-  {
-    const _shHour = ((new Date().getUTCHours() + 8) % 24);
-    if (_shHour >= 19 || _shHour < 5) {
-      systemPrompt += `\n\n【★ 真实天象】${moonFactLine(new Date())}。**绝不要凭空说"月亮好圆/月色真美"——若前半夜不可见就根本看不到月亮**，别编。`;
-    }
-  }
+  // v1.21.4 PR-W3：统一【★真实世界】事实层——节气/节日（白天也注入）+ 月相（夜间，收编
+  // v1.21.5 PR-C 的月相锚定，杜绝凭空"月亮好圆"）。拿不到的字段不提、绝不编造。fail-open。
+  try {
+    const _rf = buildRealityFacts(new Date(), { includeNightSky: isNightShanghai() });
+    if (_rf) systemPrompt += `\n\n${_rf}`;
+  } catch (e) { log('warn', `[RealityFacts] proactive 注入失败: ${e.message}`); }
 
   // ── 检查是否触发"AI 主动表白" ──
   // 条件：normal 时段 + 好感度>=50 + 双方都没表白过 + 认识>=5 天

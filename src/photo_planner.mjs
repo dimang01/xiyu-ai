@@ -12,6 +12,7 @@ import { getImageProviderCapabilities } from './providers/image.mjs';
 import { getVisualIdentity, selectReferenceImage } from './visual_identity.mjs';
 import { moonFactLine } from './utils/moon_phase.mjs';   // v1.21.5 PR-C 月相锚定
 import { sunsetFactLine } from './utils/sun_times.mjs';  // v1.21.6 PR-C 晚霞窗口锚定
+import { realityDateFacts } from './utils/reality_facts.mjs';   // v1.21.4 PR-W3 节气/节日历法事实
 
 const DEFAULT_PLAN = Object.freeze({
   shouldSendPhoto: false,
@@ -525,6 +526,9 @@ function buildPlannerPrompt({ companion, userText, recentMessages, trigger, proa
     if (!sunsetScene) return '';
     return `
 - ★ 日落事实（真实天象，不可违背）：${sunsetFactLine(now)}`;
+  })()}${(() => {
+    // v1.21.4 PR-W3：节气/节日真实历法（caption 可自然带，如"中秋拍的月饼"）——月相/日落上面已单管。
+    try { const d = realityDateFacts(now); return d ? `\n- ★ 真实历法（caption 可自然带，不编造）：今天是${d}。` : ''; } catch { return ''; }
   })()}
 
 - trigger: ${trigger}${sampledCategory ? `
