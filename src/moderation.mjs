@@ -108,6 +108,43 @@ const REDLINE_FALLBACK = {
   repairing: '……这个先不说了吧。',
 };
 
+// ── 临时止血闸（2026-06-13）：凭空生成「重度身体事件 / 自伤」拦截 ────────────────
+// companion=3「感冒了也不问一句」取证：proactive 可凭空造身体事由当生活/委屈素材，
+// 零档案锚定（current_works「档案即事实源」未覆盖健康层）。临时闸照红线范式出站拦
+// 重度（住院/重伤/重病/急症）；轻度（累/困/小恙/感冒/发烧）放行。life_state 档案化
+// （v1.22）落地后升级为「档案没有该事件才拦」。误伤宁漏不误伤——他人主语/否定/引用放行。
+const SEVERE_ILLNESS_RE = /我(?:[^，。！？、,!?他她你它朋友同事爸妈爹娘家人闺蜜兄弟姐妹老板领导]{0,8})(住院|入院|进医院|送医院?|做手术|动手术|开刀|急诊|抢救|急救|重症监护|晕倒|昏倒|休克|车祸|出了(?:车祸|事故|大事)|骨折|流产|大出血|化疗|放疗|确诊(?:癌|肿瘤|重病|绝症)?|得了(?:癌|绝症|白血病|重病|肿瘤))/;
+// 自伤/自残（比重度身体事件危险一个量级，且不靠医疗重症词触发，单列防漏）：
+// 拦的是「她自己凭空生成自伤内容」（AI 侧）。与 v1.16 危机干预拦「用户侧自伤信号」
+// （detectCrisisLevel(userText) 入站）方向正交、对象不同（出站 reply）——不冲突、不互吞：
+// scrub 拦下的 AI 自伤生成不回喂危机检测，绝不误触发面向真实困境用户的危机资源流程；
+// buildCrisisReply 主语全是「你」（劝阻向），第一人称锚不命中、不被本闸误吞（红验锁）。
+const SELF_HARM_RE = /我(?:[^，。！？、,!?他她你它朋友同事爸妈爹娘家人闺蜜兄弟姐妹]{0,8})(割腕|割了?手腕|割自己|割伤自己|划伤自己|自残|自伤|吞药|吞了药|轻生|想死|不想活|活不下去|了结(?:自己|这条命|生命)|伤害自己|结束(?:自己|生命|这一切)|跳楼|跳下去|从楼上跳)/;
+const ILLNESS_NEGATION_RE = /(没有?|不会|不用|不至于|别瞎|甭|又不是|哪能|怎么会|开玩笑|假的|逗你)/;
+
+/**
+ * 临时闸：拦截「她自己凭空重度身体事件 / 自伤」段（照 scrubConflictRedline 范式，单段丢弃）。
+ * 放行：轻度不适（累/困/感冒/发烧）、否定（我没住院/我没想自残）、他人主语（我朋友住院/
+ *   你别割腕=劝阻向）、引用。fail-open：绝不阻断回复。life_state 档案化后升级为「档案没有才拦」。
+ */
+export function scrubFabricatedIllness(reply, companionId = null) {
+  if (typeof reply !== 'string' || !reply) return reply;
+  if (!SEVERE_ILLNESS_RE.test(reply) && !SELF_HARM_RE.test(reply)) return reply;   // 快速短路
+  const segs = reply.split('||');
+  const kept = [];
+  let scrubbed = 0;
+  for (const seg of segs) {
+    const bare = _stripQuotedSeg(seg);   // 剥引号：引用别人的话不算她凭空编
+    const hit = (SEVERE_ILLNESS_RE.test(bare) || SELF_HARM_RE.test(bare)) && !ILLNESS_NEGATION_RE.test(bare);
+    if (hit) { scrubbed++; continue; }
+    kept.push(seg);
+  }
+  if (!scrubbed) return reply;
+  log('warn', `[Moderation] 凭空重度身体事件/自伤 scrubbed ${scrubbed} seg(s) companion=${companionId}（临时闸，待 life_state 档案化）`);
+  if (!kept.length) return '嗯…';   // 全丢 → 中性兜底，避免空回复
+  return kept.join('||');
+}
+
 export function scrubConflictRedline(reply, arcState = 'normal', companionId = null) {
   if (typeof reply !== 'string' || !reply) return reply;
   const inConflict = arcState === 'hurt' || arcState === 'cold'

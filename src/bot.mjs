@@ -35,7 +35,7 @@ import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stic
 import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from './shaping.mjs';
 import { buildWorksPromptHint } from './current_works.mjs';   // v1.21.4 PR-W2 表达层注入
 import { uploadFile, readMediaBuffer } from './media.mjs';
-import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubPhotoImpersonation, scrubConflictRedline } from './moderation.mjs';
+import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubPhotoImpersonation, scrubConflictRedline, scrubFabricatedIllness } from './moderation.mjs';
 import { runArcSignalTick } from './relationship_arc_runtime.mjs';
 import { applyCrisisOverride, userRaisedMemoryTopic } from './relationship_arc.mjs';
 import { log } from './logger.mjs';
@@ -997,6 +997,8 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     reply = scrubConflictRedline(reply, arcCtx.arcState, companion.id);
     // #281：表情包冒充照片护栏——文本回复链上本轮必无真实照片（photo 分支早已 return）
     reply = scrubPhotoImpersonation(reply, companion.id);
+    // 2026-06-13 临时止血闸：凭空生成住院/重伤/重病/急症等重度身体事件拦截（待 life_state 档案化）
+    reply = scrubFabricatedIllness(reply, companion.id);
 
     // ── Persona Guard ─────────────────────────────────────────────────────────
     try {
