@@ -9,6 +9,7 @@
 import { imageGenerate } from './providers/image.mjs';
 import { saveCandidateImage } from './visual_identity.mjs';
 import { ANTI_COLLAGE_PROMPT } from './photo_sender.mjs';
+import { REALISTIC_SKIN_TERMS } from './image_realism_terms.mjs';   // 2026-06-13 单一来源真人质感
 import { log } from './logger.mjs';
 
 // v1.10.53: 4 seed 强差异化 + 全部不露齿（用户反馈「笑最好不漏齿」）。
@@ -39,14 +40,14 @@ function ageVibePrompt(age) {
   const a = Number(age) || 18;
   if (a <= 17) {
     return {
-      look: 'extremely fresh just-out-of-school look, pure youthful baby face appearance, gentle innocent doe-eyed expression, very wholesome clean vibe like a fresh-faced college freshman who just turned 18',
+      look: 'extremely fresh just-out-of-school look, pure youthful fresh appearance, gentle innocent natural expression, very wholesome clean vibe like a college freshman who just turned 18',
       body: 'slim petite delicate youthful frame, slight student-like vibe',
       atmo: 'pure clean wholesome airy fresh atmosphere',
     };
   }
   if (a <= 20) {
     return {
-      look: 'fresh first-year to second-year university freshman vibe, soft baby-faced youthful appearance',
+      look: 'fresh first-year to second-year university freshman vibe, soft youthful natural appearance',
       body: 'slim petite youthful frame',
       atmo: 'fresh young clean college student atmosphere',
     };
@@ -112,26 +113,29 @@ export function buildIdentityCandidatePrompt(companion, seed) {
   // v1.10.51: 按 companion.age 取年龄段 vibe，替代硬编码 freshman
   const av = ageVibePrompt(companion?.age);
 
+  // 2026-06-13 头像恐怖谷修：删四个 doll-face 触发词（porcelain / baby-faced / doe-eyed /
+  // glossy），它们让模型出过度光滑大眼 porcelain 假脸=恐怖谷；改接入 REALISTIC_SKIN_TERMS
+  // 单一来源真人质感（与 photo_planner v1.18-1.19 反塑料升级对齐）。清纯感保留靠 makeup-free /
+  // small delicate chin / petite nose / 表情 seed，**不靠塑料娃娃词**。A/B 真出图对比定稿。
   return [
     'realistic casual smartphone selfie portrait',
     'naturally pretty innocent-looking young East Asian woman',
     av.look,
-    // v1.10.50: 清纯感视觉锚点
-    'soft baby-faced look with round full plump cheeks',
-    'large doe-eyed innocent gentle gaze',
+    // 清纯感视觉锚点（去娃娃脸/塑料触发词后的版本）
     'soft side-swept fringe or wispy bangs framing the face',
     'small delicate chin and petite nose',
-    'porcelain fair smooth dewy skin with slight rosy blush on cheeks',
+    'gentle innocent natural gaze',
     'completely makeup-free natural pure look',
     av.body,
-    `${hairColor} ${hairStyle} hair, soft and silky`,
-    `${eye} eyes with glossy bright shine`,
+    `${hairColor} ${hairStyle} hair, soft and natural with a few loose strands`,
+    `${eye} eyes, clear and bright`,
     `wearing ${clothing}`,
     'smartphone front-facing camera selfie POV',
     'arm partially visible at edge of frame',
     'slight upward angle',
     variation,  // v1.10.51: 包含具体表情 + 视角 + 场景，不再只是光线
     'photorealistic real life amateur phone photography',
+    ...REALISTIC_SKIN_TERMS,   // 单一来源真人质感（反恐怖谷靠真实细节+小瑕疵，不堆完美词）
     av.atmo,
     ANTI_COLLAGE_PROMPT,  // v1.19.5 issue#237: 候选自拍同样偶发拼图
   ].join(', ');
