@@ -319,7 +319,15 @@ export function setCurrentWorkStatus(workId, status) {
     WHERE id = ?`).run(status, status, new Date().toISOString(), workId).changes;
 }
 
-/** 验证缓存：任意 companion 已 verified 的 (title,creator) → 免重搜（缓存即表本身，永不过期；只缓正结果） */
+/**
+ * 验证缓存：任意 companion 已 verified 的 (title,creator) → 免重搜（缓存即表本身，永不过期；只缓正结果）。
+ *
+ * ⚠ 缓存键 normalize 约定（2026-06-13，#312 后补；防重蹈）：`title` 既是展示名又是验证缓存键，
+ * 是**精确匹配**。读写两端的 key 必须先 `stripBrackets` 归一——查询侧（verifyWorkCandidate 传
+ * `stripBrackets(title)`）+ 入库侧（ensureCurrentWorks 入库前 `stripBrackets(chosen.title)`）都已归一。
+ * 否则《活着》与"活着"分裂成两个键、缓存 miss、同书每次重搜烧 Tavily（生产实锤：《小王子》/《草莓人生》）。
+ * **新增任何缓存读/写点务必沿用此约定**（key 先 stripBrackets 再读写）。
+ */
 export function findVerifiedWork(title, creator) {
   return getDb().prepare(`
     SELECT title, creator, verify_evidence FROM companion_current_works
