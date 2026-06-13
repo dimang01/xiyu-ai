@@ -50,7 +50,7 @@ import { detectMinorSmart, activateSafeMode } from './minor_guard.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
 import { recordUserReplied } from './proactive_engine.mjs';
-import { extractOpenLoops, detectAndResolveOpenLoops } from './open_loops.mjs';
+import { extractOpenLoops, detectAndResolveOpenLoops, buildOpenLoopsHint } from './open_loops.mjs';
 import { generateInnerMonologue, buildInnerOsHint } from './inner_os.mjs';
 import { maybeSleepBlock } from './sleep.mjs';
 
@@ -865,10 +865,14 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     let worksHint = '';
     try { worksHint = buildWorksPromptHint(getActiveCurrentWorks(companion.id)); }
     catch (e) { log('warn', `[CurrentWorks] 注入构建失败 companion=${companion.id}: ${e.message}`); }
+    // #324 失忆修：把未了结的事/约定（"约了一起吃晚饭"）无条件注入，不靠 immediate 窗口兜
+    let openLoopsHint = '';
+    try { openLoopsHint = buildOpenLoopsHint(companion.id); }
+    catch (e) { log('warn', `[OpenLoop] 注入构建失败 companion=${companion.id}: ${e.message}`); }
     // v1.21: arc 激活时 escalation 指令让位（L2+ 已作为 pressure_spam 喂进状态机，
     // arc directive 自带冷语气，双指令会打架）；arc 主导语气追加在最后（最高优先）。
     // worksHint 走 buildSystemPrompt 参数注入（生活背景带，§8 排序），结构上永在 arc 指令之前。
-    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint, worksHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + (arcCtx.active ? '' : escalationDirective(esc.level)) + (arcCtx.directive || '');
+    let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint, worksHint, openLoopsHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + (arcCtx.active ? '' : escalationDirective(esc.level)) + (arcCtx.directive || '');
     // v1.21.4 PR-W3: 统一【★真实世界】事实层也注入对话回复——他在 chat 里问"今天什么节气/节日"
     // 或聊到冷/月亮时，她答得上真实历法天象（§9 注入口扩到 reply：chat 才是用户问历法的地方）。
     // 拿不到的字段不提、绝不编造（普通日空注入=不冒节日）。fail-open。
