@@ -92,7 +92,7 @@ jobs:
       - name: 凭空身体事件出站闸（#317 四档·v1.22 PR-L1：severe 无条件/diagnosed 查档案/symptom 放行）
         run: node scripts/fabricated_illness_smoke.mjs
 
-      - name: life_state 身体状态引擎（v1.22 PR-L1：kind 谱系/phase 推进/tick 归档/挂载断言）
+      - name: life_state 引擎+生理期门控（v1.22 PR-L1 引擎/tick + PR-L2 三道门控：防同步/披露/成年）
         run: node scripts/life_state_smoke.mjs
 
       - name: proactive 死人开关心跳

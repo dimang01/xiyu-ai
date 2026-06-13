@@ -46,7 +46,7 @@ import { parseStickerMarkers, buildStickerPromptHint, hasStickers } from './stic
 import { uploadFile, readMediaBuffer } from './media.mjs';
 import { getPhotoGateState, planPhotoMessage } from './photo_planner.mjs';
 import { sendCompanionPhoto } from './photo_sender.mjs';
-import { safeOutboundReply, scrubPhotoImpersonation, scrubFabricatedIllness } from './moderation.mjs';
+import { safeOutboundReply, scrubPhotoImpersonation, scrubFabricatedIllness, scrubPeriodDisclosure } from './moderation.mjs';
 import { log } from './logger.mjs';
 import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, getNeglectStage } from './emotion_state.mjs';
 import { buildRealityFacts, isNightShanghai } from './utils/reality_facts.mjs';   // v1.21.4 PR-W3 统一真实世界事实层（收编月相）
@@ -953,6 +953,8 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
   let _activeLifeStates;
   try { _activeLifeStates = getActiveLifeStates(companion.id); } catch { /* fail-open: gate off */ }
   reply = scrubFabricatedIllness(reply, companion.id, { activeLifeStates: _activeLifeStates });
+  // v1.22 PR-L2 经期披露门控：朋友/暧昧期（affection < 阈值）显式月经表述出站剥（只表现不点明）。
+  reply = scrubPeriodDisclosure(reply, { affectionLevel: companion.affection_level });
 
   // v1.4.0: 微信端语音路径已撤（iLink 协议禁止 bot outbound voice，详见顶部注释）。
   // 语音体验改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。

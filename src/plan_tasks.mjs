@@ -221,7 +221,7 @@ const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周�
 async function runDailySchedules(dateKey, weekdayLabel, weekdayNum) {
   const db = getDb();
   const companions = db.prepare(`
-    SELECT c.id, c.user_id, c.name, c.age, c.role_title, c.personality_tags, c.hobbies
+    SELECT c.id, c.user_id, c.name, c.age, c.role_title, c.personality_tags, c.hobbies, c.safe_mode
     FROM companions c
     JOIN users u ON u.id = c.user_id
     JOIN wechat_accounts wa ON wa.wechat_user_id = u.wechat_user_id
@@ -238,9 +238,10 @@ async function runDailySchedules(dateKey, weekdayLabel, weekdayNum) {
     } catch (e) {
       log('warn', `[CurrentWorks] 换档失败 companion=${comp.id}: ${e.message}`);
     }
-    // v1.22 PR-L1: 推进/归档身体状态档案（生理期/小恙），搭同一日程批便车（不新增定时器）。
-    // 本 PR 引擎只推进已有档案（onset=L2），生产暂为 no-op；refreshLifeState 内部 fail-open。
-    refreshLifeState(comp.id);
+    // v1.22 PR-L1 引擎推进/归档 + PR-L2 period onset（成年门控 + 周期窗口建档），搭同一日程批
+    // 便车（不新增定时器）。传 comp 对象（含 age/safe_mode/role/personality）做成年门控；
+    // **onset 只建档案、零情绪副作用**（情绪路由=L3）。refreshLifeState 内部 fail-open。
+    refreshLifeState(comp);
     try {
       await generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum);
     } catch (e) {

@@ -37,7 +37,7 @@ import { detectTeaching, buildShapingConfirmHint, buildShapingPromptHint } from 
 import { buildWorksPromptHint } from './current_works.mjs';   // v1.21.4 PR-W2 表达层注入
 import { buildRealityFacts, isNightShanghai } from './utils/reality_facts.mjs';   // v1.21.4 PR-W3 统一真实世界事实层
 import { uploadFile, readMediaBuffer } from './media.mjs';
-import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubPhotoImpersonation, scrubConflictRedline, scrubFabricatedIllness } from './moderation.mjs';
+import { safeOutboundReply, inboundIsBlocked, detectSafetyRisk, detectCrisisLevel, buildCrisisReply, scrubPersonaLeak, scrubPhotoImpersonation, scrubConflictRedline, scrubFabricatedIllness, scrubPeriodDisclosure } from './moderation.mjs';
 import { runArcSignalTick } from './relationship_arc_runtime.mjs';
 import { applyCrisisOverride, userRaisedMemoryTopic } from './relationship_arc.mjs';
 import { log } from './logger.mjs';
@@ -1012,6 +1012,8 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     let _activeLifeStates;
     try { _activeLifeStates = getActiveLifeStates(companion.id); } catch { /* fail-open: gate off */ }
     reply = scrubFabricatedIllness(reply, companion.id, { activeLifeStates: _activeLifeStates });
+    // v1.22 PR-L2 经期披露门控：affection < 阈值（朋友/暧昧）→ 显式月经表述出站剥（只表现不点明）。
+    reply = scrubPeriodDisclosure(reply, { affectionLevel: companion.affection_level });
 
     // ── Persona Guard ─────────────────────────────────────────────────────────
     try {
