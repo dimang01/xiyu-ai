@@ -43,7 +43,10 @@ import { extractOpenLoops, detectAndResolveOpenLoops } from './open_loops.mjs';
  * @param {string} userText 用户输入（文本）
  * @returns {Promise<{reply:string, segments:string[], state:{mood, affection_level, relationship_stage}}>}
  */
-export async function playgroundChat(companion, userText) {
+// probe（探针模式）：跑通整条对话链路（含 #310 的 inner-OS double-pass）但**零持久化**——
+// 不写 conversation turns / memory / emotion / profile / safety / open loops / postProcess。
+// 供 scripts/playground_probe.mjs 每日合成探针用（对外通道心跳），配合合成 companion id<0 双保险。
+export async function playgroundChat(companion, userText, { probe = false } = {}) {
   if (!companion) throw new Error('companion 不存在');
   const text = String(userText || '').trim();
   if (!text) throw new Error('userText 不能为空');
@@ -51,18 +54,20 @@ export async function playgroundChat(companion, userText) {
 
   // v1.10.6: 睡眠拦截（与微信端 bot.mjs 一致）。睡着了网页也不回复，前端显示"睡眠中"。
   // maybeSleepBlock 内含挽留延后逻辑：用户说"再陪陪我/别睡"等会延后入睡继续聊。
-  try {
-    const { maybeSleepBlock } = await import('./sleep.mjs');
-    const gate = maybeSleepBlock({ companionId: companion.id, msgType: 'text', content: text });
-    if (gate.blocked) {
-      return { sleeping: true, reply: null, segments: [], state: null };
+  if (!probe) {   // 探针跳过睡眠门：maybeSleepBlock 会初始化/写 sleep schedule，且探针不应被"睡着"早退
+    try {
+      const { maybeSleepBlock } = await import('./sleep.mjs');
+      const gate = maybeSleepBlock({ companionId: companion.id, msgType: 'text', content: text });
+      if (gate.blocked) {
+        return { sleeping: true, reply: null, segments: [], state: null };
+      }
+    } catch (e) {
+      log('warn', `[Playground] sleep gate error: ${e.message}`);
     }
-  } catch (e) {
-    log('warn', `[Playground] sleep gate error: ${e.message}`);
   }
 
   // ── v1.20 安全收尾 (Issue #3)：未成年人检测（与 bot.mjs 同款；锁定是粘性的）──
-  if (!Number(companion.safe_mode)) {
+  if (!Number(companion.safe_mode) && !probe) {
     try {
       const { detectMinorSmart, activateSafeMode } = await import('./minor_guard.mjs');
       const recentTurnsForMinor = getConversationContext(companion.id, 8)
@@ -82,7 +87,7 @@ export async function playgroundChat(companion, userText) {
   try {
     const risk = detectSafetyRisk(text);
     userMsgSafetyLevel = risk.level;
-    if (risk.level !== 'none') {
+    if (risk.level !== 'none' && !probe) {
       recordSafetyEvent({
         companionId: companion.id,
         userId: companion.user_id,
@@ -133,7 +138,7 @@ export async function playgroundChat(companion, userText) {
   //   2. dashboard 看到的 7 维状态因 playground 对话停滞
   //   3. playground 回复缺"她想念档"口吻
   let emotionState = getEmotionStateWithDefaults(companion.id);
-  emotionState = updateEmotionFromUserMessage(companion.id, emotionState, text, { companion });
+  if (!probe) emotionState = updateEmotionFromUserMessage(companion.id, emotionState, text, { companion });
   const missingLevel = getMissingLevel(emotionState, companion.last_user_reply_at);
   const emotionHint = buildEmotionPromptHint(emotionState, { missingLevel });
 
@@ -146,7 +151,7 @@ export async function playgroundChat(companion, userText) {
   }) + stickerHint + emotionHint;
 
   // 关系刚升级
-  const celebration = consumePendingCelebration(companion.id);
+  const celebration = probe ? null : consumePendingCelebration(companion.id);   // consume=写，探针跳过
   if (celebration) {
     systemPrompt += `\n\n【★ 重要：关系刚刚升级】\n刚刚你对他的好感度上升到了新的阶段：${celebration.from} → ${celebration.to}。\n这条回复要自然体现这种变化（比如更亲密的称呼、"突然觉得跟你聊得越来越来电"），但**不要直接说"我们升级关系了"**。`;
   }
@@ -160,7 +165,7 @@ export async function playgroundChat(companion, userText) {
 
   // 用户表白
   const userConfessed = detectUserConfession(text);
-  if (userConfessed && !companion.user_confessed_at) {
+  if (userConfessed && !companion.user_confessed_at && !probe) {
     systemPrompt += `\n\n【★★ 他向你告白】必须接住。不能拒绝，不能转移话题。多条 || 分段。`;
     try {
       const newAff = Math.max(companion.affection_level || 0, 55);
@@ -213,7 +218,7 @@ export async function playgroundChat(companion, userText) {
 
   // v1.5.2 PR E: assistant reply 后也走情绪更新（mood drift / energy 恢复等），跟 bot.mjs 对齐
   try {
-    updateEmotionFromAssistantReply(companion.id, emotionState, reply, { companion });
+    if (!probe) updateEmotionFromAssistantReply(companion.id, emotionState, reply, { companion });
   } catch { /* 情绪更新失败不影响主链路 */ }
 
   // 拆段（与 bot.mjs 同款 || 拆分），并把 [STICKER:xxx] 标记原样保留在 segments 里
@@ -230,33 +235,35 @@ export async function playgroundChat(companion, userText) {
     };
   });
 
-  // 写入对话历史，让长期记忆系统能继续工作
-  try {
-    saveConversationTurn(companion.id, 'user', text, companion.chat_mode_active);
-    saveConversationTurn(companion.id, 'assistant', reply, companion.chat_mode_active);
-  } catch (e) {
-    log('warn', `[Playground] saveConversationTurn 失败: ${e.message}`);
-  }
-
-  // v1.8.0 #4: open loops —— 启发式 resolve 立即跑（不调 LLM，快）
-  try { detectAndResolveOpenLoops(companion.id, text); }
-  catch (e) { log('warn', `[Playground] resolve loop: ${e.message}`); }
-
-  // 后处理（异步，不阻塞响应）：好感度 + 心情 + 记忆提取 + open loops 抽取
-  (async () => {
+  // 写入对话历史，让长期记忆系统能继续工作（探针模式零持久化，整段跳过）
+  if (!probe) {
     try {
-      syncUpdateCompanionState(companion, text, reply);
-      if (companion.memory_enabled) {
-        await extractAndSaveMemories(companion.id, companion.user_id, text, reply);
-        await extractAndUpdateUserProfile(companion.id, companion.user_id, text);
-        extractOpenLoops(companion.id, text, reply).catch(err =>
-          log('warn', `[Playground] extract loop: ${err.message}`)
-        );
-      }
+      saveConversationTurn(companion.id, 'user', text, companion.chat_mode_active);
+      saveConversationTurn(companion.id, 'assistant', reply, companion.chat_mode_active);
     } catch (e) {
-      log('warn', `[Playground] postProcess 失败: ${e.message}`);
+      log('warn', `[Playground] saveConversationTurn 失败: ${e.message}`);
     }
-  })();
+
+    // v1.8.0 #4: open loops —— 启发式 resolve 立即跑（不调 LLM，快）
+    try { detectAndResolveOpenLoops(companion.id, text); }
+    catch (e) { log('warn', `[Playground] resolve loop: ${e.message}`); }
+
+    // 后处理（异步，不阻塞响应）：好感度 + 心情 + 记忆提取 + open loops 抽取
+    (async () => {
+      try {
+        syncUpdateCompanionState(companion, text, reply);
+        if (companion.memory_enabled) {
+          await extractAndSaveMemories(companion.id, companion.user_id, text, reply);
+          await extractAndUpdateUserProfile(companion.id, companion.user_id, text);
+          extractOpenLoops(companion.id, text, reply).catch(err =>
+            log('warn', `[Playground] extract loop: ${err.message}`)
+          );
+        }
+      } catch (e) {
+        log('warn', `[Playground] postProcess 失败: ${e.message}`);
+      }
+    })();
+  }
 
   // 返回最新 companion 状态给前端实时显示
   const after = getCompanionById(companion.id) || companion;

@@ -41,6 +41,7 @@ import { runArcTimeTickBatch } from './relationship_arc_runtime.mjs';
 import { checkProactiveDeadman } from './proactive_deadman.mjs';
 import { refreshCurrentWorks, buildScheduleWorksHint } from './current_works.mjs';   // v1.21.4 PR-W1 换档 / W5 日程消费档案
 import { refreshLifeState } from './life_state.mjs';   // v1.22 PR-L1 身体状态档案推进/归档
+import { runPlaygroundProbe } from './playground_probe.mjs';   // #310 对外通道每日合成探针
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -121,6 +122,11 @@ async function tick(now = new Date()) {
   // proactive 成功=0 连续 2 周期 → CRITICAL + 运维邮件。纯报警零自愈，fail-open。
   await runOnce(parts, `deadman-${parts.hour}`, parts.minute === 50,
     () => checkProactiveDeadman());
+
+  // #310 对外通道心跳：每日 09:00 合成对话探针（默认配置 + ≥8 字 + probe 零持久化），断言
+  // playground 链路成功返回（≡200）；接线类失败→ops 告警。CI 通电冒烟拦合并前、本探针拦运行时。
+  await runOnce(parts, 'playground-probe', parts.hour === 9 && parts.minute === 0,
+    () => runPlaygroundProbe());
 
   // v1.10.0 sleep tick：每分钟跑（轻量，no LLM）
   try {

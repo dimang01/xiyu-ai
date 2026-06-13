@@ -52,6 +52,7 @@ import { buildEmotionPromptHint, getEmotionStateWithDefaults, getMissingLevel, g
 import { buildRealityFacts, isNightShanghai } from './utils/reality_facts.mjs';   // v1.21.4 PR-W3 统一真实世界事实层（收编月相）
 import { buildShapingPromptHint } from './shaping.mjs';
 import { evaluateProactive, recordProactiveSent } from './proactive_engine.mjs';
+import { bumpProactiveHealth, recordTickHeartbeat } from './proactive_health.mjs';   // #263 误报修：三桶健康计数 + tick 心跳
 import { getArcProactivePolicy, getArcExpressionContext, buildOliveBranchHint, markOliveBranchSent } from './relationship_arc_runtime.mjs';
 import { tryAchievement } from './achievements.mjs';
 import {
@@ -117,6 +118,7 @@ function logProactiveFailure({ companionId, kind, error, latencyMs = null, extra
   if (msg) parts.push(`msg="${msg}"`);
   if (extra) parts.push(extra);
   log('warn', `[Proactive][fail] ${parts.join(' ')}`);
+  bumpProactiveHealth('errored', { companionId, reason: errorType });   // #263 误报修：发送失败计错误桶
 }
 
 // v1.5.2 B3 修：进程内"正在处理中" companion 集合，防同 companion 并发 sendProactiveMessage
@@ -240,11 +242,13 @@ async function tick(now = new Date()) {
             } catch (e) {
               log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
               v2Error = true;
+              bumpProactiveHealth('errored', { companionId: companion.id, reason: 'v2_throw' });
             }
             // v2 主动拒发（非异常）→ defer 15min 重试，不丢配额
             if (!v2Error && decision === null) {
               item._v2_deny_until = Date.now() + 15 * 60_000;
               log('info', `[Proactive] v2 拒发，延期 15 分钟重试 companion=${companion.id} kind=${item.kind} minute=${item.minute}`);
+              bumpProactiveHealth('restrained', { companionId: companion.id, reason: 'v2_deny' });
               continue;
             }
           }
@@ -254,21 +258,27 @@ async function tick(now = new Date()) {
           const result = await sendProactiveMessageGuarded(companion, item.kind, account);
           if (result === 'throttled' || result === 'inflight') {
             item._v2_deny_until = Date.now() + 10 * 60_000;   // 10 分钟后重试
+            bumpProactiveHealth('restrained', { companionId: companion.id, reason: result });
           } else if (result === 'safety') {
             item._v2_deny_until = Date.now() + 60 * 60_000;   // 安全门，1 小时后再评估
+            bumpProactiveHealth('restrained', { companionId: companion.id, reason: 'safety' });
           } else if (result === 'arc_skip') {
             item._v2_deny_until = Date.now() + 90 * 60_000;   // v1.21 冷战降频，1.5 小时后再评估
+            bumpProactiveHealth('restrained', { companionId: companion.id, reason: 'arc_skip' });
           } else {
-            // 'sent' 或内部早退（撞车/无 ctx）都算今日已尝试
+            // 'sent' 或内部早退（撞车/无 ctx）都算今日已尝试；'sent' 桶已在
+            // recordProactiveSentTimestamp 汇聚点计（含 reminder/lastcall 等所有 kind）
             item.sent = true;
           }
         }
       } catch (e) {
         // v1.5.2 B2 兜底：任何一个 companion 的本 tick 异常都不能中断后面的处理
         log('error', `[Proactive] companion=${companion.id} 本 tick 异常，跳过: ${e.message}`);
+        bumpProactiveHealth('errored', { companionId: companion.id, reason: 'tick_catch' });
       }
     }
   }
+  recordTickHeartbeat();   // #263 误报修：每 tick 末写心跳——证明调度线程活着（deadman 判 tick 死据此）
 }
 
 // v1.5.2: 三道闸门的 sendProactiveMessage wrapper —
@@ -387,6 +397,7 @@ async function sendProactiveMessageGuarded(companion, kind, account, opts = {}) 
     await sendProactiveMessage(companion, kind, account, opts);
     // 成功后记录（sendProactiveMessage 内部失败/早退也无伤大雅，下次仍会按间隔判断）
     recordProactiveSentTimestamp(companion.id, kind);
+    bumpProactiveHealth('sent', { companionId: companion.id });   // #263 误报修：已发送桶（所有 kind 的发送汇聚点，与 last_proactive_sent_at 同源）
 
     // v1.10.0 sleep 状态切换 hook
     try {
