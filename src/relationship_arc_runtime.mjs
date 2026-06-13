@@ -134,7 +134,7 @@ export function runArcTimeTickOne(companion, now = new Date()) {
  * 消息驱动 tick（bot.mjs reply pipeline）。
  * 返回 { arcState, active, directive, voiceConcern, category }——直接拼 prompt。
  */
-export function runArcSignalTick(companion, { userText = '', escalationLevel = 0, inner = null, now = new Date() } = {}) {
+export function runArcSignalTick(companion, { userText = '', escalationLevel = 0, inner = null, now = new Date(), periodContext = null } = {}) {
   const fallback = { arcState: 'normal', active: false, directive: '', voiceConcern: false, category: 'wound' };
   try {
     // 1) 先时间结算（消除 30min 批的表达空窗：neglect 升级/超时在消息到来时即时入账）
@@ -155,28 +155,34 @@ export function runArcSignalTick(companion, { userText = '', escalationLevel = 0
 
     let result = null;
     if (signal) {
+      // v1.22 PR-L3：经前 PMS 上下文注入 tick（shadow-first，默认不生效；红线 A：仅经前+wound 入口
+      // 影响敏感度判定/shadow，绝不碰 arcCtx.directive）。pmsActive 由本轮 periodContext 派生。
+      const pmsActive = !!(periodContext && periodContext.phase === 'premenstrual' && !periodContext.safeModeBlocked);
       result = tickArcOnSignal({
         state: arc_state, stateChangedAt: arc_state_changed_at, style: companion.attachment_style,
         safeMode: !!Number(companion.safe_mode), openEvent, signal,
         todayEventCount: countTodayRelationshipEvents(companion.id, now),
         recentArchivedType: arc_state === 'normal_with_scar' ? getLastArchivedEventType(companion.id) : null,
-        now,
+        now, pmsActive, periodStateId: periodContext?.stateId ?? null,
       });
       const isHostile = signal.kind === 'taboo_hit' || signal.kind === 'harsh_words' || signal.kind === 'pressure_spam';
       _applyResult(companion, result, {
         stateBefore: arc_state, openEvent, triggerText: isHostile ? userText : '', now,
       });
-      // debug 面板信号流水：有信号 / 有转移 / 有事件操作才记
-      if (result.changed || result.eventOp) {
+      // debug 面板信号流水：有转移 / 有事件操作 **或有 PMS shadow** 才记（shadow 是观测点，
+      // 即便 minor_absorbed 没转移也要落库才能算"M/N 次会改判"的分母，批注②⑥）。
+      if (result.changed || result.eventOp || result.pmsShadow) {
         // 道歉信号细分 matched/generic（arc-digest 的道歉判定流水靠它）
         const kindLogged = signal.kind === 'apology'
           ? `apology_${signal.apologyKind === 'generic' ? 'generic' : 'matched'}`
           : signal.kind;
+        const realLog = result.changed || result.eventOp;   // shadow-only 行不重复存原文（批注⑤）
         insertArcSignalLog(companion.id, {
           signalKind: kindLogged, severity: signal.severity ?? null,
           stateBefore: arc_state, stateAfter: result.state, reason: result.reason,
           innerTone: inner?.user_tone || null, perceivedHurt: inner?.perceived_hurt ?? null,
-          userTextBrief: userText,
+          userTextBrief: realLog ? userText : '',
+          pmsShadow: result.pmsShadow ? JSON.stringify(result.pmsShadow) : null,
         });
       }
     }

@@ -44,6 +44,7 @@ import { log } from './logger.mjs';
 import { applyPersonaGuard } from './persona_guard.mjs';
 import { tryAchievement } from './achievements.mjs';
 import { getEmotionStateWithDefaults, updateEmotionFromUserMessage, updateEmotionFromAssistantReply, buildEmotionPromptHint, getMissingLevel, getNeglectStage, buildReunionHint } from './emotion_state.mjs';
+import { getActivePeriodContext, isPeriodHeavyWindow, isPmsActive } from './life_state.mjs';   // v1.22 PR-L3 经期情绪路由
 import { escalationLevel, escalationDirective } from './escalation.mjs';
 import { detectPhotoIntentSmart, detectPhotoPromise, hasUnsafePhotoContent } from './photo_intent.mjs';
 import { detectMinorSmart, activateSafeMode } from './minor_guard.mjs';
@@ -825,10 +826,13 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
       history,
       context: { accountId: binding.account_id || null, hasOpenArcEvent: !!getOpenRelationshipEvent(companion.id) },
     }).catch(() => null);
+    // v1.22 PR-L3：本轮 period 上下文一次查询（批注③），同喂 arc tick + emotion hint（缓存复用）。
+    let periodCtx = null;
+    try { periodCtx = getActivePeriodContext(companion); } catch { /* fail-open: 无 period 影响 */ }
     // arc 状态机 tick：检测信号 → 状态转移落库 → 返回本轮主导语气指令
     let arcCtx = { arcState: 'normal', active: false, directive: '', voiceConcern: false };
     try {
-      arcCtx = runArcSignalTick(companion, { userText, escalationLevel: esc.level, inner: innerRes?.struct || null });
+      arcCtx = runArcSignalTick(companion, { userText, escalationLevel: esc.level, inner: innerRes?.struct || null, periodContext: periodCtx });
     } catch (e) { log('warn', `[Arc] tick 异常（按 normal 继续）: ${e.message}`); }
     // 红线 #5：危机最高优先——冲突表达确定性替换为关怀指令（纯函数，conflict_redline_guard 盯防）
     arcCtx = applyCrisisOverride(arcCtx, _crisisLevel);
@@ -853,7 +857,9 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     const reunionHint = arcCtx.active ? '' : buildReunionHint(neglectStage, companion.attachment_style, companion.last_user_reply_at);
     // v1.20: 安全模式不拼想念/撒娇类情绪话术（确定性不给料，不靠 LLM 自觉）
     // v1.21: arcActive 时低能量/负面 mood/想念浓档在 hint 内部让位（单一语气出口）
-    const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule, arcActive: arcCtx.active });
+    // v1.22 PR-L3：经期身体低能量（heavyWindow）+ 经前 PMS 语气底色（pmsActive）注入；
+    // safe_mode 时整体为 ''（红线②双保险，period 情绪路由侧不漏）；bodyLowEnergy/pmsActive 内部受 arcActive 让位。
+    const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(emotionState, { missingLevel, neglectStage: reunionHint ? 'none' : neglectStage, dailySchedule, arcActive: arcCtx.active, bodyLowEnergy: isPeriodHeavyWindow(periodCtx), pmsActive: isPmsActive(periodCtx) });
     const preferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
     // M1 共建：检测"他在教你"→ 写入塑造痕迹 + 当场确认；并把"他教过你的"注入人设（她必守）
     const _taught = detectTeaching(userText);

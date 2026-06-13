@@ -110,6 +110,43 @@ export function phaseForElapsed(kind, startedAtMs, expectedEndMs, nowMs) {
   return phases[idx];
 }
 
+// 经期「最重子窗」天数（批注④：bodyLowEnergy 只在 menstrual 前 1-2 天，recovering 不强制）。
+const PERIOD_HEAVY_DAYS = Math.max(1, Number(process.env.LIFE_PERIOD_HEAVY_DAYS || 2));
+
+/**
+ * PR-L3 本轮 period 上下文（批注③：一次 indexed 查询，bot.mjs 同喂 arc tick + emotion hint）。
+ * @param companion companion 对象（取 safe_mode/age/role/personality 做 safeModeBlocked 双保险）或 id。
+ * @returns null | { stateId, phase, severity, dayIndex, phaseDayIndex, heavyWindow,
+ *                   disclosed, expectedEndAt, safeModeBlocked }
+ *   - heavyWindow：menstrual 最重子窗（前 PERIOD_HEAVY_DAYS 天）——**调用方据此开 bodyLowEnergy，
+ *     不需知道 pms 偏移**（批注④抽象）。safeModeBlocked 时强制 false（红线②情绪路由侧双保险）。
+ */
+export function getActivePeriodContext(companion, nowMs = Date.now()) {
+  const companionId = (companion && typeof companion === 'object') ? companion.id : companion;
+  if (companionId == null) return null;
+  let p;
+  try { p = getActiveLifeStates(companionId).find(s => s.kind === 'period'); } catch { return null; }
+  if (!p) return null;
+  // 双保险：若该 companion 现在已不符成年门控（safe_mode 后开/改龄），即便存档案也不让 period 影响情绪。
+  const safeModeBlocked = (companion && typeof companion === 'object') ? !isPeriodAllowed(companion) : false;
+  const startedMs = Date.parse(p.started_at);
+  const phaseDayIndex = Number.isFinite(startedMs) ? Math.floor((nowMs - startedMs) / 86400000) : 0;
+  const dayIndex = periodWindowToday(companionId, nowMs).dayIndex;
+  const heavyWindow = !safeModeBlocked && p.phase === 'menstrual'
+    && (phaseDayIndex - PERIOD_PMS_DAYS) >= 0 && (phaseDayIndex - PERIOD_PMS_DAYS) < PERIOD_HEAVY_DAYS;
+  return {
+    stateId: p.id, phase: p.phase, severity: p.severity,
+    dayIndex, phaseDayIndex, heavyWindow,
+    disclosed: !!p.disclosed, expectedEndAt: p.expected_end_at, safeModeBlocked,
+  };
+}
+
+/** 经期最重子窗（批注④抽象，调用方不碰 pms 偏移）。 */
+export function isPeriodHeavyWindow(ctx) { return !!(ctx && ctx.heavyWindow); }
+
+/** 本轮是否经前（PMS 影响 arc 的判定源；safeModeBlocked 时 false）。 */
+export function isPmsActive(ctx) { return !!(ctx && ctx.phase === 'premenstrual' && !ctx.safeModeBlocked); }
+
 /**
  * 纯函数 tick：给定 active 档案数组 + now，算出每条该推进到的 phase / 该 resolve 的 id。
  * 零 IO，可单测（设计 §5.1）。返回 { advance:[{id,phase}], resolve:[id] }。

@@ -756,6 +756,12 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   const ann = emotionState.annoyance ?? 0;
   const pat = emotionState.patience ?? 60;
 
+  // v1.22 PR-L3（批注①）：经前 PMS patience 下移**只用于本次 prompt 语气档判定 + debug**，
+  // clamp 后喂下方 ann/pat 语气底色，**绝不写回主状态 / 不入 arc tick / 不跨 phase 残留**
+  // （effectivePatienceForTone；废弃了"updateEmotionFromUserMessage 写 patience"的旧方案）。
+  const PMS_PATIENCE_SHIFT = Number(process.env.LIFE_PMS_PATIENCE_SHIFT ?? -8);
+  const patTone = opts.pmsActive ? Math.max(0, Math.min(100, pat + PMS_PATIENCE_SHIFT)) : pat;
+
   // v1.8.0 #1: 从 dailySchedule 推派生 presence，覆盖默认 free/80
   // 调用方传 opts.dailySchedule 即生效；不传走 DB 里存的 availability/attention
   if (opts.dailySchedule) {
@@ -774,8 +780,20 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   // 触发：mood=cold 或 annoyance≥70 或 patience≤20
   // 这是比 ann≥60 / pat≤30 更极端的一档，强约束回复模式
   // 注：这段会 prepend 到 parts 前面，让模型把它当成最高优先级指令
-  const lowEnergyMode = !arcActive && (mood === 'cold' || ann >= 70 || pat <= 20);
-  if (lowEnergyMode) {
+  // v1.22 PR-L3 经期身体低能量（批注②/④）：只在 menstrual 最重子窗（opts.bodyLowEnergy，调用方经
+  // isPeriodHeavyWindow 判定，不碰 pms 偏移），**arc 激活时让位**（!arcActive=红线 A 严肃度不稀释）。
+  // 两层模板：内部归因"身体原因别归因用户"，外显**仅追问时才解释**（不每条说"不是生你气"=出戏）。
+  const bodyLowEnergy = !arcActive && !!opts.bodyLowEnergy;
+  const lowEnergyMode = !arcActive && !bodyLowEnergy && (mood === 'cold' || ann >= 70 || pat <= 20);
+  const lowEnergyAny = lowEnergyMode || bodyLowEnergy;
+  if (bodyLowEnergy) {
+    parts.push(`• ★【身体低能量 · 今天身体不舒服】这是这次回复的最高优先级约束：
+  - 你今天身体不舒服、没精神、提不起劲，话少、回复偏短偏淡、容易累
+  - 多用短句、不主动展开、不追问；可以"我先躺会儿""不太想动""有点乏"
+  - ★【内部归因·不外显】你的蔫是**身体原因**（不舒服），不是对他冷、不是生他气——心里清楚这一点
+  - ★【仅追问时才解释】只有当他追问"你是不是生气了 / 怎么这么冷淡"时，才轻描淡写解释"没有啦，就是今天不太舒服"；**平时绝不主动说"我不是生你气"**（每条都解释=出戏）
+  - 不要长篇解释"我为什么这样"——真人不舒服时不会自我说明`);
+  } else if (lowEnergyMode) {
     parts.push(`• ★【低能量模式 · 今天不太想聊】这是这次回复的最高优先级约束：
   - 多用单字 / 极短回复："嗯" "哦" "好" "行吧" "随便"
   - 不主动接话、不追问、不展开
@@ -791,12 +809,12 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   }
 
   const energy = emotionState.energy ?? 60;
-  if (!lowEnergyMode && energy < 25) parts.push('• 你今天精力不太够，回复可以短一些、语气带点困意，不用太积极。');
+  if (!lowEnergyAny && energy < 25) parts.push('• 你今天精力不太够，回复可以短一些、语气带点困意，不用太积极。');
   else if (energy >= 80) parts.push('• 你今天精力很满，说话节奏快、表达多、容易兴奋起来。');
 
   // v1.8.0 #1: presence — 此刻是否方便聊天 / 注意力
-  // 低能量模式下不再加 presence hint（避免与低能量冲突）
-  if (!lowEnergyMode) {
+  // 低能量模式下不再加 presence hint（避免与低能量冲突）；身体低能量同理
+  if (!lowEnergyAny) {
     const availability = emotionState.availability || 'free';
     const attention = emotionState.attention ?? 80;
     if (availability === 'busy') {
@@ -874,13 +892,13 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
   if (exc >= 70)        parts.push('• 你现在非常兴奋（刚被夸/听到好消息），话语会跳跃、停不下来、容易感叹。');
   else if (exc >= 50)   parts.push('• 你心情上来了，话密一点，表情多一点。');
 
-  // ann / pat 已在函数开头声明
-  if (!lowEnergyMode) {
+  // ann / pat 已在函数开头声明；pat 用 patTone（经前 PMS 下移的语气底色，批注①，只影响这些档）
+  if (!lowEnergyAny) {
     if (ann >= 60)        parts.push('• 你有点烦躁（可能他刚才一直催/反复打断），回复会更冷、短、带点不耐烦，但不会真的撕破。');
     else if (ann >= 30)   parts.push('• 你稍微有点烦，语气可能比平时更短一些。');
 
-    if (pat <= 30)        parts.push('• 你今天耐心不够，对反复绕的话题会想快速结束。');
-    else if (pat >= 85)   parts.push('• 你今天特别有耐心，愿意一直陪他聊、不急不躁。');
+    if (patTone <= 30)    parts.push('• 你今天耐心不够，对反复绕的话题会想快速结束。');
+    else if (patTone >= 85) parts.push('• 你今天特别有耐心，愿意一直陪他聊、不急不躁。');
   }
 
   const grat = emotionState.gratitude ?? 40;
@@ -890,7 +908,9 @@ export function buildEmotionPromptHint(emotionState, opts = {}) {
 
   // 加一行总指令，让模型把这些状态**真的**写进回复，不只是后台数据
   // （v1.21：久别淡然/被冷落已久两档总指令已随 neglect 深度分支收编进 arc 表达层）
-  const directive = lowEnergyMode
+  const directive = bodyLowEnergy
+    ? '★ 身体低能量优先级最高：本次回复必须符合"今天身体不舒服、没精神"的语气和长度（短/淡/提不起劲），覆盖其他风格指令；蔫是身体原因不是对他冷，且不主动解释（仅追问时才轻描淡写带过）。'
+    : lowEnergyMode
     ? '★ 低能量模式优先级最高：本次回复必须符合"今天不想聊"的语气和长度，覆盖其他风格指令（包括平时的撒娇/逗他/讨好/反驳等）。'
     : level >= 3 && !arcActive
     ? '请把上面这些状态体现在这次回复里——不是叙述自己，而是让说话方式自然带出（更短/更长、更黏/更主动、用词偏向、是否撒娇等）。'
