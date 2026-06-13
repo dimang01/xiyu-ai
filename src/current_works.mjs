@@ -17,7 +17,7 @@
 
 import { webSearch } from './web_search.mjs';
 import { extractStructuredInfo, embedText } from './ai.mjs';
-import { findVerifiedWork, getActiveCurrentWorks, insertCurrentWork, setCurrentWorkStatus, getAppSetting, setAppSetting, saveMemory } from './db.mjs';
+import { findVerifiedWork, getActiveCurrentWorks, insertCurrentWork, setCurrentWorkStatus, getAppSetting, setAppSetting, saveMemory, getRecentWorkTitles } from './db.mjs';
 import { log } from './logger.mjs';
 
 const VERIFIABLE = new Set(['book', 'series', 'anime', 'game']);   // craft 免验
@@ -259,9 +259,10 @@ export async function ensureCurrentWorks(companion, deps = {}) {
   // 2) 槽位不满 → 生成候选 + 验证 + 入档（验证≤retries 次换候选，仍无→generic）
   if (active.length < cfg.maxActive && typeof deps.generate === 'function') {
     const existing = active.map(w => w.title);
+    const recentTitles = deps.recentTitles || [];   // #1 多样性：他人近期已选（降权避雷同）
     let chosen = null, evidence = null, statusFinal = 'generic', genre = null;
     for (let attempt = 0; attempt <= cfg.verifyRetries; attempt++) {
-      const cand = await deps.generate(companion, existing);
+      const cand = await deps.generate(companion, existing, { recentTitles });
       if (!cand || !cand.title) break;
       genre = cand.genre || genre;
       const v = await verifyWorkCandidate(cand, {
@@ -272,11 +273,13 @@ export async function ensureCurrentWorks(companion, deps = {}) {
         chosen = cand; evidence = v.evidence; statusFinal = v.status; break;
       }
       if (v.status === 'generic') { statusFinal = 'generic'; break; }   // provider 故障/日上限：止损
-      existing.push(cand.title);   // retry：换一部
+      existing.push(stripBrackets(cand.title));   // retry：换一部（剥《》与入库口径一致）
     }
     if (chosen) {
       insert(companion.id, {
-        kind: chosen.kind, title: chosen.title, creator: chosen.creator,
+        // #2 入库统一剥《》：与 findVerifiedWork 缓存查询（用 stripBrackets）口径一致，
+        // 修缓存命中 bug（存《活着》查"活着"对不上→同书每次重搜）；表达层 renderWork 再包《》。
+        kind: chosen.kind, title: stripBrackets(chosen.title), creator: chosen.creator,
         verifyStatus: statusFinal, verifyEvidence: evidence,
         progressNote: chosen.progressNote || null, startedAt: now.toISOString(),
       });
@@ -303,15 +306,31 @@ function extractJson(text) {
   return null;
 }
 
-/** 真 LLM 生成候选（题材从 hobbies 取）。返回 {kind,title,creator,genre,progressNote} 或 null。 */
-export async function generateWorkCandidate(companion, existingTitles = []) {
+/**
+ * 换档生成 prompt（纯函数，便于 smoke 断言人设软提示/多样性约束真在场）。
+ * #1 多样性：existing(自己) + recentTitles(他人近期) 合并去重作"避免雷同"清单。
+ * #3 人设软提示：年龄/性格 → 品味倾向（不拦真书，只调品味，案例 #8 瑾选《金瓶梅》）。
+ * #2 源头：明令 title 不加书名号（入库再 stripBrackets 兜底，双保险）。
+ */
+export function buildWorkGenPrompt(companion, { existingTitles = [], recentTitles = [] } = {}) {
   let hobbies = '';
   try { hobbies = JSON.parse(companion?.hobbies || '[]').join('、'); } catch {}
+  let persona = '';
+  try { persona = JSON.parse(companion?.personality_tags || '[]').join('、'); } catch {}
+  const age = Number(companion?.age) || 22;
+  const avoid = [...new Set([...(existingTitles || []), ...(recentTitles || [])].map(t => stripBrackets(t)).filter(Boolean))];
   const system = '你给一个 AI 伴侣生成"她最近在看/在做的一件真实存在的事"。只返回合法 JSON，不解释。';
-  const prompt = `她的兴趣：${hobbies || '阅读、看剧'}。
-已经在看的（别重复）：${(existingTitles || []).join('、') || '无'}。
+  const prompt = `她的兴趣：${hobbies || '阅读、看剧'}。她 ${age} 岁，性格：${persona || '温和'}。
+请按她这个**年龄和性格的真实品味倾向**来选（如年轻文静→治愈/成长/经典文学；外向活泼→热门剧/悬疑；不同人品味不同）。**必须真实存在**，但别选明显不符她年龄气质的（如清纯文静的年轻女生通常不会主动在读情色或过于艰深沉重的书）。
+**避免雷同**（这些最近已被选过，请换不一样的）：${avoid.join('、') || '无'}。
 生成一件她最近在看的**真实存在**的书/剧/番/游戏，或在做的手工(craft)。书优先填作者，剧/番填出品方。
-返回 {"kind":"book|series|anime|game|craft","title":"真实存在的作品名(不要编)","creator":"作者或出品方(craft 填 null)","genre":"题材如 推理/科幻/治愈","progressNote":"进度一句话如 看到第三章"}`;
+返回 {"kind":"book|series|anime|game|craft","title":"真实存在的作品名(不加书名号《》、不要编)","creator":"作者或出品方(craft 填 null)","genre":"题材如 推理/科幻/治愈","progressNote":"进度一句话如 看到第三章"}`;
+  return { system, prompt };
+}
+
+/** 真 LLM 生成候选（题材从 hobbies 取 + 人设品味 + 多样性）。返回 {kind,title,creator,genre,progressNote} 或 null。 */
+export async function generateWorkCandidate(companion, existingTitles = [], { recentTitles = [] } = {}) {
+  const { system, prompt } = buildWorkGenPrompt(companion, { existingTitles, recentTitles });
   try {
     const raw = await extractStructuredInfo(system, prompt, { accountId: companion?.user_id || null, maxTokens: 200, temperature: 0.8 });
     return extractJson(raw);
@@ -341,6 +360,8 @@ async function archiveFinishedWork(companion, work, dropped, now) {
 
 /** 单 companion 换档（00:30 日程批顺路调；全程 fail-open，绝不阻断日程生成）。 */
 export async function refreshCurrentWorks(companion, { now = new Date() } = {}) {
+  let recentTitles = [];
+  try { recentTitles = getRecentWorkTitles(companion.id, { now: now.getTime() }); } catch { /* fail-open：无多样性降权 */ }
   const out = await ensureCurrentWorks(companion, {
     now,
     getActive: getActiveCurrentWorks, insert: insertCurrentWork, setStatus: setCurrentWorkStatus,
@@ -348,6 +369,7 @@ export async function refreshCurrentWorks(companion, { now = new Date() } = {}) 
     search: (q) => webSearch(q),
     findCached: findVerifiedWork,
     dailyUsed: worksDailyUsed(now),
+    recentTitles,                                                  // #1 多样性降权
     archiveFinished: (comp, w, dropped) => archiveFinishedWork(comp, w, dropped, now),
   });
   if (out.added && out.statusOfAdded !== 'skip') bumpWorksDaily(now);   // 计一次验证额度（上限语义）
