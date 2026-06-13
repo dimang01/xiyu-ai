@@ -20,6 +20,7 @@ import {
   getCategorySendCounts,                      // v1.21.6 PR-A 照片品类 weeklyCap
   listPreferences, getMemories,               // v1.21.6 PR-B 想到你素材源（梗 listShaping 已在上）
   getActiveCurrentWorks, countRecentMaterialUse,   // v1.21.4 PR-W2 works 注入 + 周上限计数
+  getActiveLifeStates,                        // v1.22 PR-L1: #317 四档身体事件闸查档案
 } from './db.mjs';
 import { buildWorksPromptHint, worksSceneSeed, pickProactiveWork, workMaterialId, worksConfig } from './current_works.mjs';  // v1.21.4 PR-W2 表达层
 import { pickProactiveCategory, cappedCategoryIds } from './photo_categories.mjs';  // v1.21.6 PR-A 照片品类加权采样（默认关）
@@ -947,8 +948,11 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     }
   }
 
-  // 2026-06-13 临时止血闸：proactive 凭空重度身体事件拦截（reply 定稿单点，覆盖主+撞车重生）
-  reply = scrubFabricatedIllness(reply, companion.id);
+  // #317 四档身体事件出站闸（v1.22 PR-L1）：severe/自伤无条件拦 / diagnosed 无档案则拦 /
+  // symptom-only / transient 放行。reply 定稿单点，覆盖主+撞车重生。fail-open：gate 查不到不开。
+  let _activeLifeStates;
+  try { _activeLifeStates = getActiveLifeStates(companion.id); } catch { /* fail-open: gate off */ }
+  reply = scrubFabricatedIllness(reply, companion.id, { activeLifeStates: _activeLifeStates });
 
   // v1.4.0: 微信端语音路径已撤（iLink 协议禁止 bot outbound voice，详见顶部注释）。
   // 语音体验改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。

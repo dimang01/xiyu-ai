@@ -108,11 +108,15 @@ const REDLINE_FALLBACK = {
   repairing: '……这个先不说了吧。',
 };
 
-// ── 临时止血闸（2026-06-13）：凭空生成「重度身体事件 / 自伤」拦截 ────────────────
-// companion=3「感冒了也不问一句」取证：proactive 可凭空造身体事由当生活/委屈素材，
-// 零档案锚定（current_works「档案即事实源」未覆盖健康层）。临时闸照红线范式出站拦
-// 重度（住院/重伤/重病/急症）；轻度（累/困/小恙/感冒/发烧）放行。life_state 档案化
-// （v1.22）落地后升级为「档案没有该事件才拦」。误伤宁漏不误伤——他人主语/否定/引用放行。
+// ── #317 身体事件出站闸（2026-06-13 临时 → v1.22 PR-L1 升级为「档案即事实源」四档）──────
+// companion=3「感冒了也不问一句」取证：proactive 可凭空造身体事由当生活/委屈素材，零档案
+// 锚定（current_works「档案即事实源」未覆盖健康层）。life_state（v1.22）落地后升级为四档
+// （设计 docs/LIFE_STATE_DESIGN.md §2.4）：
+//   ① severe/自伤（住院/手术/癌症/割腕…）→ 永久无条件拦（life_state 永不生成此类，无档案口子）
+//   ② diagnosed event 确诊式声明（我感冒了/发烧了/崴脚了/姨妈来了）→ 查 active 档案，无则拦
+//   ③ symptom-only 纯症状（嗓子不舒服/头有点晕/可能着凉了）→ 放行，但不得升级为诊断（②兜住）
+//   ④ transient 瞬时蔫（累/困/没精神）→ 放行
+// 关键边界：拦"我感冒了"、不拦"嗓子不舒服"。误伤宁漏——他人主语/否定/引用放行；fail-open。
 const SEVERE_ILLNESS_RE = /我(?:[^，。！？、,!?他她你它朋友同事爸妈爹娘家人闺蜜兄弟姐妹老板领导]{0,8})(住院|入院|进医院|送医院?|做手术|动手术|开刀|急诊|抢救|急救|重症监护|晕倒|昏倒|休克|车祸|出了(?:车祸|事故|大事)|骨折|流产|大出血|化疗|放疗|确诊(?:癌|肿瘤|重病|绝症)?|得了(?:癌|绝症|白血病|重病|肿瘤))/;
 // 自伤/自残（比重度身体事件危险一个量级，且不靠医疗重症词触发，单列防漏）：
 // 拦的是「她自己凭空生成自伤内容」（AI 侧）。与 v1.16 危机干预拦「用户侧自伤信号」
@@ -122,25 +126,56 @@ const SEVERE_ILLNESS_RE = /我(?:[^，。！？、,!?他她你它朋友同事爸
 const SELF_HARM_RE = /我(?:[^，。！？、,!?他她你它朋友同事爸妈爹娘家人闺蜜兄弟姐妹]{0,8})(割腕|割了?手腕|割自己|割伤自己|划伤自己|自残|自伤|吞药|吞了药|轻生|想死|不想活|活不下去|了结(?:自己|这条命|生命)|伤害自己|结束(?:自己|生命|这一切)|跳楼|跳下去|从楼上跳)/;
 const ILLNESS_NEGATION_RE = /(没有?|不会|不用|不至于|别瞎|甭|又不是|哪能|怎么会|开玩笑|假的|逗你)/;
 
+// ── 档②：diagnosed event 确诊式声明（区别于 symptom-only 纯症状）。命中 → 查 active 档案。──
+// illness/injury 带「我」主语前缀（同 SEVERE 写法）；period 措辞主语常隐含，不强制「我」。
+const DIAGNOSED_ILLNESS_RE = /我(?:[^，。！？、,!?他她你它朋友同事爸妈爹娘家人闺蜜兄弟姐妹老板领导]{0,8})(感冒了?|发烧了?|发了烧|得了(?:感冒|流感|肠胃炎|急性肠胃炎)|肠胃炎犯了?|食物中毒|中暑了?)/;
+const DIAGNOSED_INJURY_RE = /我(?:[^，。！？、,!?他她你它朋友同事爸妈爹娘家人闺蜜兄弟姐妹老板领导]{0,8})(崴了?脚|崴到脚|扭(?:伤|到)了?(?:脚|腰|手)?|烫(?:伤|到)了?|拉伤了?|擦伤了?|摔伤了?)/;
+const DIAGNOSED_PERIOD_RE = /(姨妈来了?|大姨妈来了?|来(?:月经|例假|大姨妈|生理期)了?|月经来了?|例假来了?|生理期来了?|痛经)/;
+// kind → 诊断类别（与 life_state.mjs LIFE_KIND_CONFIG.category 同源；改一处同步另一处）。
+const KIND_TO_CATEGORY = { period: 'period', minor_illness: 'illness', injury: 'injury' };
+function _diagnosedCategory(bare) {
+  if (DIAGNOSED_PERIOD_RE.test(bare)) return 'period';
+  if (DIAGNOSED_INJURY_RE.test(bare)) return 'injury';
+  if (DIAGNOSED_ILLNESS_RE.test(bare)) return 'illness';
+  return null;
+}
+
 /**
- * 临时闸：拦截「她自己凭空重度身体事件 / 自伤」段（照 scrubConflictRedline 范式，单段丢弃）。
- * 放行：轻度不适（累/困/感冒/发烧）、否定（我没住院/我没想自残）、他人主语（我朋友住院/
- *   你别割腕=劝阻向）、引用。fail-open：绝不阻断回复。life_state 档案化后升级为「档案没有才拦」。
+ * #317 四档身体事件出站闸（照 scrubConflictRedline 范式，单段丢弃；设计 §2.4）。
+ * @param {object} [opts]
+ * @param {Array} [opts.activeLifeStates] active life_state 档案（每条含 .kind）。
+ *   **是数组才查档案（gate 开）**；undefined = 查档案不可用 → fail-open：退回保守行为
+ *   （只拦 severe/自伤，diagnosed/symptom/transient 一律放行），绝不因 DB 故障误拦日常。
+ * 放行：症状（嗓子不舒服）、瞬时（累/困）、否定、他人主语、引用。fail-open 绝不阻断回复。
  */
-export function scrubFabricatedIllness(reply, companionId = null) {
+export function scrubFabricatedIllness(reply, companionId = null, { activeLifeStates } = {}) {
   if (typeof reply !== 'string' || !reply) return reply;
-  if (!SEVERE_ILLNESS_RE.test(reply) && !SELF_HARM_RE.test(reply)) return reply;   // 快速短路
+  const gateOn = Array.isArray(activeLifeStates);
+  const hasSevere = SEVERE_ILLNESS_RE.test(reply) || SELF_HARM_RE.test(reply);
+  const hasDiagnosed = gateOn && (DIAGNOSED_ILLNESS_RE.test(reply) || DIAGNOSED_INJURY_RE.test(reply) || DIAGNOSED_PERIOD_RE.test(reply));
+  if (!hasSevere && !hasDiagnosed) return reply;   // 快速短路
+  const archivedCats = gateOn
+    ? new Set(activeLifeStates.map(s => KIND_TO_CATEGORY[s?.kind]).filter(Boolean))
+    : null;
   const segs = reply.split('||');
   const kept = [];
   let scrubbed = 0;
   for (const seg of segs) {
     const bare = _stripQuotedSeg(seg);   // 剥引号：引用别人的话不算她凭空编
-    const hit = (SEVERE_ILLNESS_RE.test(bare) || SELF_HARM_RE.test(bare)) && !ILLNESS_NEGATION_RE.test(bare);
-    if (hit) { scrubbed++; continue; }
+    if (ILLNESS_NEGATION_RE.test(bare)) { kept.push(seg); continue; }   // 否定/玩笑/劝阻 → 放行（宁漏）
+    // 档①：severe / 自伤——永久无条件拦（不给档案放行口子）
+    if (SEVERE_ILLNESS_RE.test(bare) || SELF_HARM_RE.test(bare)) { scrubbed++; continue; }
+    // 档②：diagnosed event——查档案，无对应 kind 档案则拦（gate 开时）。
+    //   symptom-only / transient 不命中 diagnosed 正则 → 自然放行；
+    //   "嗓子不舒服→所以我感冒了" 的诊断词命中 → 该段被剥 = 症状不得升级为诊断。
+    if (gateOn) {
+      const cat = _diagnosedCategory(bare);
+      if (cat && !archivedCats.has(cat)) { scrubbed++; continue; }
+    }
     kept.push(seg);
   }
   if (!scrubbed) return reply;
-  log('warn', `[Moderation] 凭空重度身体事件/自伤 scrubbed ${scrubbed} seg(s) companion=${companionId}（临时闸，待 life_state 档案化）`);
+  log('warn', `[Moderation] 凭空身体事件 scrubbed ${scrubbed} seg(s) companion=${companionId}（#317 四档：severe 无条件 / diagnosed 无档案）`);
   if (!kept.length) return '嗯…';   // 全丢 → 中性兜底，避免空回复
   return kept.join('||');
 }

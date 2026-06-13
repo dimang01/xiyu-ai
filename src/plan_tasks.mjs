@@ -39,6 +39,7 @@ import { runEmotionRecalcBatch } from './emotion_state.mjs';
 import { runArcTimeTickBatch } from './relationship_arc_runtime.mjs';
 import { checkProactiveDeadman } from './proactive_deadman.mjs';
 import { refreshCurrentWorks, buildScheduleWorksHint } from './current_works.mjs';   // v1.21.4 PR-W1 换档 / W5 日程消费档案
+import { refreshLifeState } from './life_state.mjs';   // v1.22 PR-L1 身体状态档案推进/归档
 import { generateReply, extractStructuredInfo, embedText } from './ai.mjs';
 import { log } from './logger.mjs';
 import { tryAchievement } from './achievements.mjs';
@@ -237,6 +238,9 @@ async function runDailySchedules(dateKey, weekdayLabel, weekdayNum) {
     } catch (e) {
       log('warn', `[CurrentWorks] 换档失败 companion=${comp.id}: ${e.message}`);
     }
+    // v1.22 PR-L1: 推进/归档身体状态档案（生理期/小恙），搭同一日程批便车（不新增定时器）。
+    // 本 PR 引擎只推进已有档案（onset=L2），生产暂为 no-op；refreshLifeState 内部 fail-open。
+    refreshLifeState(comp.id);
     try {
       await generateScheduleFor(comp, dateKey, weekdayLabel, weekdayNum);
     } catch (e) {
