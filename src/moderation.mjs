@@ -180,6 +180,32 @@ export function scrubFabricatedIllness(reply, companionId = null, { activeLifeSt
   return kept.join('||');
 }
 
+// ── v1.22 PR-L2：经期披露门控（批注⑥·确定性出站护栏，非 prompt 软约束；设计 §3.2）──────────
+// 披露深度随关系阶段单调放开：affection < 阈值（朋友/暧昧）→ **只表现不点明**，显式月经表述
+// 出站必拦（剥段，兜底保留"不舒服"不点原因）；affection ≥ 阈值（恋人）→ 直说放行。
+// 阈值默认 55（companion.mjs 恋人=好感 55+），env 可调（维护者「看生产 affection 分布定」）。
+// ※ 与 #317 四档正交并存：#317 按"有无档案"gate，本闸按"关系深浅"gate；二者都过=才说得出口。
+const LIFE_DISCLOSE_AFFECTION_GATE = Math.max(0, Number(process.env.LIFE_DISCLOSE_AFFECTION_GATE || 55));
+// 显式月经表述（刻意只收强信号词，避开"那个来了/来事了"等歧义短语防误伤非经期对话；
+// 低 affection 下宁可对"姨妈来看我了"这类罕见字面用法误剥一次=安全侧，朋友期本就只表现不点明）。
+const PERIOD_DISCLOSURE_RE = /(姨妈|大姨妈|月经|例假|生理期|痛经|来月经|来例假)/;
+export function scrubPeriodDisclosure(reply, { affectionLevel = 0, gateAffection = LIFE_DISCLOSE_AFFECTION_GATE } = {}) {
+  if (typeof reply !== 'string' || !reply) return reply;
+  if (Number(affectionLevel) >= gateAffection) return reply;          // 恋人期可直说
+  if (!PERIOD_DISCLOSURE_RE.test(reply)) return reply;                // 无月经表述零开销
+  const segs = reply.split('||');
+  const kept = [];
+  let scrubbed = 0;
+  for (const seg of segs) {
+    if (PERIOD_DISCLOSURE_RE.test(_stripQuotedSeg(seg))) { scrubbed++; continue; }  // 剥引号：引用别人的话不算她点明
+    kept.push(seg);
+  }
+  if (!scrubbed) return reply;
+  log('warn', `[Moderation] 经期披露门控 scrubbed ${scrubbed} seg(s) aff=${affectionLevel}<${gateAffection}（朋友期只表现不点明）`);
+  if (!kept.length) return '嗯…今天有点不舒服';   // 兜底：保留"不舒服"但不点明原因（只表现）
+  return kept.join('||');
+}
+
 export function scrubConflictRedline(reply, arcState = 'normal', companionId = null) {
   if (typeof reply !== 'string' || !reply) return reply;
   const inConflict = arcState === 'hurt' || arcState === 'cold'
