@@ -149,6 +149,9 @@ jobs:
       - name: proactive digest 旁路素材冷却闸门（接线类第五案：mem:509 复读修+双向红验）
         run: node scripts/proactive_digest_cooldown_smoke.mjs
 
+      - name: 头像反恐怖谷（2026-06-13 删四 doll-face 触发词+真实肤质单一来源/塑料黑名单自检）
+        run: node scripts/avatar_prompt_smoke.mjs
+
       - name: 记忆 chip↔layer 双向对账（2026-06-12 删死枚举 chip 后防空抽屉/防有数据无窗口）
         run: node scripts/memory_chip_parity_smoke.mjs
 
