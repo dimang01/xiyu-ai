@@ -67,6 +67,9 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 |---|---|
 | 她会睡觉 | 默认 00:30-07:30（每天小幅波动），真入睡后微信和网页都静默；睡前晚安留"再陪陪我"挽留窗口；📞 打电话能叫醒但她带起床气 |
 | 每日日程 | 每天生成 8-12 段生活剧本（上课 / 做饭 / 发呆），主动消息锚在生活空隙里而不是平均分布 |
+| 真实世界事实层 | 知道今天是不是清明 / 中秋 / 冬至——节气与农历节日按天文计算（含闰月）得来，不靠手填表、不编造 |
+| 她手头的事 | "在看的书 / 在追的剧 / 在做的手工"跨日连贯，会联网验证作品真实存在，不每天换书名、不编造虚构书 |
+| 日程绑定她的事 | 每天的日程（"下午读书"）绑定她档案里真在看的那本书，progress 跨日渐进（刚开始 → 过半 → 快完 → 归档），不是每天即兴重画 |
 | 在线但不一定服务你 | availability / attention 由当前日程推导——开会时"能回但要等等"，逛街时心不在焉 |
 | 像真人发微信 | ≤15 字短句、多条连发、打字指示器；你连发 2-3 条她等你停手合并成一轮再回 |
 | 不完整回答 | 允许只共情不给建议 / 只吐槽 / 不知道就不知道 / 忙时短回——拒绝"反应+夸+问+建议"四件套 |
@@ -75,7 +78,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 
 | 能力 | 一句话 |
 |---|---|
-| 11 维情绪状态机 | trust / dependency / possessiveness / security / patience / annoyance… 每条消息增量演化 + 半小时定时重算 + 防刷衰减；mood 有强度与惯性，不会一句话从生气变开心 |
+| 情绪状态机（10 维增量 + mood） | trust / dependency / possessiveness / security / patience / annoyance… 10 个维度每条消息增量演化 + 半小时定时重算 + 防刷衰减；mood 由各维度派生，有强度与惯性，不会一句话从生气变开心 |
 | Inner OS 内心独白 | 每轮先生成内心想法（不发送）再写对外回复——心里想"他又来了"嘴上说"嗯"，**内心和嘴上的落差**是真人感的核心 |
 | 被冷落会逐级变冷 | 想念 → 试探 → 失望 → 抽离，三种依恋风格（安全/焦虑/回避）决定节奏；久别重逢按天数走不同的和好弧 |
 | 冲突与和好弧 ⭐ | 踩雷区 / 伤人话会建**关系事件**：hurt → cold → withdrawing → repairing 显式状态机。伤害类必须正面道歉才解锁修复（"别生气了"式敷衍修得慢），冷落类重逢即开始回暖；冷战有硬时长上限**绝无永久冷战**；和好后入长期记忆（"上次你就说过不查岗"），设计文档 [docs/CONFLICT_ARC.md](./docs/CONFLICT_ARC.md) |
@@ -88,6 +91,7 @@ docker run -d -p 3000:3000 -v xiyu-data:/app/data --name xiyu-ai \
 |---|---|
 | Memory v2 | 7 层分类 × 权重 × 遗忘曲线；pin / lock / 不许提；语义召回 + 关键词兜底；每日反思引擎自动提炼新记忆 |
 | 她记得未完成的事 | 你说"明天面试"→ 第二天她主动问"欸 \|\| 面试咋样"；黄了自动了结 |
+| 记得此刻在哪 | 记得你们当前所在的场景（一起看电影 / 在逛街），讲完一段经历不会转头就忘、不凭空接"刚吃完麻辣香锅" |
 | 你可以塑造她 | 教她称呼 / 口头禅 / 雷区 / 约定 / 专属梗，全部留痕入 prompt 她必守 |
 | 结构化偏好账本 | like / dislike / taboo × 强度——"极爱猫""有点烦狗血剧"有据可依 |
 | 她的日记 + 反向日记 | 每晚第一人称内省日记 + "今天与你有关的回忆"，翻日记本式阅读、可朗读 |
@@ -327,10 +331,10 @@ npm run smoke           # release smoke；bash scripts/opensource_check.sh 开�
 ```
 
 - **错误签名日报**：近 24h 的 error 日志按归一化签名归并（计数 / 环比 / 首现），新签名高亮——静默失败第一时间变响
-- **proactive 死人开关**：每小时心跳，活跃用户在但主动消息全断时 CRITICAL + 邮件告警（`ADMIN_ALERT_EMAIL`），纯报警零自愈
+- **proactive 死人开关**：每小时心跳，按三桶信号分离（已发送 / 正当克制 / 出错或无心跳）——只有"出错 / 无心跳"才 CRITICAL + 邮件告警（`ADMIN_ALERT_EMAIL`），把"正当读空气的沉默"与"真断供"分开、大幅减少假警报；纯报警零自愈
 - **emotion-debug 面板**（`/app/emotion-debug.html`，admin）：关系弧状态 / 事件流水 / 每条消息的情绪增量及原因——情绪因果可查，不上线玄学
 - **样本标注工具**（`/app/annotate.html`，admin）：读真实回复时顺手标 好/坏 + tag（AI味/化验单腔调/神来之笔…），`scripts/export-corpus.mjs` 导出 JSONL——微调语料生产线，"读"变成"攒"
-- **CI 门禁 31 项**：语法 / lint / 字段漂移对账 / 发布一致性 / 各功能 smoke / 红线护栏——新规则都做过"红色验证"（对坏版本跑必须红）
+- **CI 门禁 45+ 项**：语法 / lint / 字段漂移对账 / 发布一致性 / 各功能 smoke / 红线护栏——新规则都做过"红色验证"（对坏版本跑必须红）
 - **运维钳位**：`ARC_MAX_STATE` 可临时封顶冲突状态（生产误伤免回滚的保险丝；与未成年人保护相反——那个是不可关的安全底线）
 
 ---
@@ -383,7 +387,7 @@ npm run smoke           # release smoke；bash scripts/opensource_check.sh 开�
 │   ├── playground.mjs       浏览器聊天
 │   ├── companion.mjs        18 节 system prompt 合成
 │   ├── memory_v2.mjs        7 层记忆 + 语义召回 + 遗忘曲线
-│   ├── emotion_state.mjs    11 维情绪状态机 + presence
+│   ├── emotion_state.mjs    情绪状态机（10 维增量 + mood）+ presence
 │   ├── inner_os.mjs         Inner OS 内心独白 + 冲突弧结构化检测
 │   ├── open_loops.mjs       她记得未完成的事
 │   ├── proactive.mjs        主动消息 + 场景照调度
@@ -408,9 +412,9 @@ npm run smoke           # release smoke；bash scripts/opensource_check.sh 开�
 │   ├── plan_tasks.mjs       cron 调度（日 / 周 / 月）
 │   ├── ilink.mjs            iLink 协议封装
 │   └── db.mjs               SQLite + 全部 migrateXxx() 注册点
-├── public/app/              17 个前端页面（dashboard / playground / emotion-debug …）
+├── public/app/              20 个前端页面（dashboard / playground / emotion-debug …）
 ├── deploy/                  systemd + nginx 模板
-├── scripts/                 80+ 个：setup / doctor / arc-digest / 各 smoke / 沙箱验收 / ...
+├── scripts/                 110+ 个：setup / doctor / arc-digest / 各 smoke / 沙箱验收 / ...
 ├── docs/
 │   ├── FEATURES.txt         完整功能清单（最权威）
 │   ├── HANDOFF.md           新对话交接提示词
@@ -469,7 +473,7 @@ npm run smoke           # release smoke；bash scripts/opensource_check.sh 开�
 | 未成年人保护 | v1.20 起内置：检测用户自曝未成年（regex + LLM 兜底）→ 粘性安全模式（朋友身份、无恋爱内容、阶段封顶、照片中性化），解除仅限 dashboard 显式年龄声明。**但这不是年龄验证**——无法识别不自曝的未成年人，公开运营仍建议接入实名/年龄验证 |
 | 个人信息保护 | PIPL / GDPR / CCPA 等需自行明示收集目的、提供删除接口 |
 | 内容安全审核 | 仓库当前只有简单黑名单，对外开放前请接入云厂商审核 API |
-| 危机话术 | 当前不识别自伤、自杀等高风险输入，请加入危机检测 |
+| 危机话术 | 内置基础危机检测（自伤信号 → 退出角色 + 求助热线），但不替代专业审核，公开运营请额外接入 |
 | Provider ToS | 每家 LLM/图像 provider 各有条款（是否允许虚拟人格、情感陪伴、商用），切换前自行确认 |
 
 ### 关于"陪伴"定位
