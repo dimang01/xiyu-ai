@@ -388,3 +388,49 @@ PR-L4 内容层 + proactive 收紧
 ---
 
 > 评审有条件通过，照稿施工拆 PR-L1→L4（依赖顺序不变，各 PR 合并门槛 current_works/conflict_arc/p0 全绿）；**动 arc 的 PR-L3 须沙箱真 LLM 验收贴对话片段 + shadow 数据**，逐条撞四红线（同冲突弧 #253 wound 沙箱闸）。**L1 不动 arc，可正常推进施工**。
+
+---
+
+## 附录 L3 · 情绪路由 + PMS shadow 施工记录（as-built）
+
+> 状态：**两轮评审（维护者 + ChatGPT）有条件通过，已施工（PR-L3 #325，CI 绿待第二轮审）**。
+> 本附录是 §3.3/§4 的落地映射（file:function）+ 八条合并拍板的兑现记录。**第一个动 arc 的 PR；PMS 对 arc 默认 shadow-first（`LIFE_PMS_ARC_ENABLED` off = 零行为变化）。**
+
+### 八条拍板兑现
+
+| # | 拍板 | 落地 |
+|---|---|---|
+| ① | PMS patience **不写 canonical**，只 prompt 语气底色+debug | `emotion_state.mjs buildEmotionPromptHint` 入口算 `patTone=clamp(patience+PMS_SHIFT)`，只喂 ann/pat 语气档；**绝不写回主状态/不入 arc tick**（红验：调用后 `emotionState.patience` 不变） |
+| ② | bodyLowEnergy **两层模板** + PMS→arc **shadow-first** | 模板：内部归因"身体原因别归用户" + **仅追问才解释**（不每条说"不是生你气"）。shadow：`composeSeverity` 算 base/pmsEff，`LIFE_PMS_ARC_ENABLED` off→`eff=baseEff`（不生效），shadow JSON 落库 |
+| ③ | **合成上限** `effDelta=min(1, anxiousDelta\|\|pmsDelta)` 绝不取和 | `relationship_arc.mjs` 入 hurt 处：anxiousBump/pmsBump 各最多把 `eff 2→3`，叠加封顶 eff=3、绝不到 4（cold）。`deltaCap:1` 钉死 |
+| ④ | 严肃度不稀释 | `bodyLowEnergy = !arcActive && opts.bodyLowEnergy`——arc 激活时身体低能量让位，arc directive 独立不被软化（红验：arcActive 时 bodyLowEnergy 不注入） |
+| ⑤ | proactive 收紧 + shadow JSON 固定 schema | shadow JSON `{v,pmsActive,arcEnabled,baseEff,pmsEff,changed,perceivedHurt,anxiousActive,deltaCap,lifeStateId,phase,direction}`，**不塞原始用户文本**（shadow-only 行 `user_text_brief=''`）。proactive 收紧=L4 |
+| ⑥ | 披露门控 affection 单调（L2）+ shadow **分方向** | shadow `direction`：`not_hurt_to_hurt`（刻板化风险）/ `hurt_to_heavier`（温和）/ `none`；拍 ENABLED 看第一类占比 |
+| ⑦ | #317 四档（L1） | 已落 PR-L1 |
+| ⑧ | minor_illness 对话触发建档 backlog | 未做，标 backlog |
+
+### 挂载点（file:function）
+
+- **经期低能量**：`emotion_state.mjs:buildEmotionPromptHint`（`opts.bodyLowEnergy` 两层模板，`!arcActive` 让位）；`bot.mjs` / `proactive.mjs` 经 `getActivePeriodContext` 喂 `bodyLowEnergy=isPeriodHeavyWindow(ctx)`。
+- **PMS patience 底色**：同函数 `patTone`（`opts.pmsActive`），只影响 ann/pat 语气档。
+- **PMS hurt 边界 shadow**：`relationship_arc.mjs:composeSeverity` 入 hurt 处算 base/pmsEff；`composeArcSignal` 带 `regexHit`（**红线C：无 regex 不改判**）；`relationship_arc_runtime.mjs:runArcSignalTick` 注入 `pmsActive`（经 periodContext）+ 落 `pms_shadow`。
+- **ctx 单次查询**：`life_state.mjs:getActivePeriodContext`（批注③，bot 同喂 arc tick+emotion hint）+ `isPeriodHeavyWindow`/`isPmsActive`（批注④ 抽象，调用方不碰 pms 偏移）。
+- **shadow 落库**：`db.mjs` `companion_arc_signal_log.pms_shadow TEXT`（CREATE+幂等 ALTER）+ `insertArcSignalLog` 加 `pmsShadow`。
+- **愧疚扩词（红线③）**：`moderation.mjs:REDLINE_GUILT_RE` 加"我难受还不是因为你/你害我不舒服/你都不知道照顾我"。
+
+### 红线确定性护栏（全进 `life_state_emotion_smoke` 25 项 + 静态断言）
+
+- **A** arcActive=true 时 periodContext 不改 `arcCtx.directive`（bodyLowEnergy 让位）。
+- **B** `LIFE_PMS_ARC_ENABLED=off` 时 `pms_shadow.changed=true` 不改 arc_state/directive/本轮回复（`eff=baseEff`，纯观测）。
+- **C** premenstrual + LLM-only wound + no regex → shadow 可记但 `changed` 不得可入 hurt（`pmsBump` 须 `regexHit`）。
+- 热情窗口期：period 路由出口源码级仅 bodyLowEnergy（零升温/暧昧分支）。
+- safe_mode：L2 不挂载 + L3 `emotionHint` 被 safe_mode 整体挡（双保险，`getActivePeriodContext.safeModeBlocked`）。
+- 情色化：走现有 NSFW 出口护栏链。
+
+### 沙箱真 LLM 验收（`scripts/life_state_emotion_sandbox.mjs`，手动）
+
+5 场景 + 对照组：①经期不指向用户（追问才解释）②朋友 vs 恋人披露 ③经前+踩 taboo shadow + **对照组**（非经前同条件，证改判是 PMS 差异非噪声）④safe_mode period 零出现 ⑤shadow 数据样例（分方向）。真 LLM 片段贴 PR-L3 #325 供第二轮审。
+
+### 待拍（数据驱动）
+
+`LIFE_PMS_ARC_ENABLED` 是否开 = 待生产 shadow 数据（`not_hurt_to_hurt` 占比）后维护者据数据审慎开启（同冲突弧"先观察再调参"）。
