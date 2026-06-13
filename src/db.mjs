@@ -202,11 +202,14 @@ function migrateRelationshipArc() {
       inner_tone    TEXT,
       perceived_hurt INTEGER,
       user_text_brief TEXT,              -- 过 privacy_filter 后截 60 字
+      pms_shadow    TEXT,                 -- v1.22 PR-L3 PMS shadow JSON（无原始用户文本，批注⑤）
       created_at    TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_arc_signal_log
       ON companion_arc_signal_log(companion_id, created_at DESC);
   `);
+  // 存量库补列（CREATE TABLE IF NOT EXISTS 不会给已存在表加列）；幂等，已存在则吞。
+  try { getDb().exec('ALTER TABLE companion_arc_signal_log ADD COLUMN pms_shadow TEXT'); } catch { /* 已有 */ }
 }
 
 // ─── v1.21.2 PR-D: 照片尺寸流水（比例防回归——'1:1 错了大半个月才被肉眼发现，
@@ -423,12 +426,13 @@ export function insertArcSignalLog(companionId, row = {}) {
     }
     getDb().prepare(`
       INSERT INTO companion_arc_signal_log
-        (companion_id, signal_kind, severity, state_before, state_after, reason, inner_tone, perceived_hurt, user_text_brief, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (companion_id, signal_kind, severity, state_before, state_after, reason, inner_tone, perceived_hurt, user_text_brief, pms_shadow, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       companionId, row.signalKind || null, row.severity ?? null,
       row.stateBefore || null, row.stateAfter || null, row.reason || null,
       row.innerTone || null, row.perceivedHurt ?? null, brief || null,
+      row.pmsShadow || null,            // v1.22 PR-L3 PMS shadow JSON（无原始用户文本，批注⑤）
       new Date().toISOString(),
     );
     // 轻量轮转：超 200 条删最老的

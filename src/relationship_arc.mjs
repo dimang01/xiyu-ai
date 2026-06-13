@@ -90,6 +90,13 @@ function _maxStateFromEnv() {
   return (v === 'hurt' || v === 'cold' || v === 'withdrawing') ? v : null;
 }
 
+// v1.22 PR-L3（批注②）：经前 PMS 对 arc 的影响 **默认 off=shadow-first**——记"若应用是否改判"
+// 不生效，跑数据后维护者据 shadow 分方向占比再拍开。1/true/on=开。
+function _pmsArcEnabledFromEnv() {
+  const v = String(process.env.LIFE_PMS_ARC_ENABLED || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on' || v === 'yes';
+}
+
 const _capState = (target, safeMode, maxState) => {
   let t = (safeMode && (target === 'cold' || target === 'withdrawing')) ? 'hurt' : target;
   if (maxState && (ARC_STATE_RANK[t] ?? 0) > (ARC_STATE_RANK[maxState] ?? 9)) t = maxState;
@@ -166,8 +173,36 @@ export function tickArcOnSignal(ctx = {}) {
     let eff = sev;
     // scar 的记忆：同类再犯加重一档（"我说过的吧"）
     if (state === 'normal_with_scar' && recentArchivedType && recentArchivedType === kind) eff = Math.min(4, eff + 1);
-    // anxious 敏感度：sev2 但 LLM 感知强烈受伤 → 按 sev3 入
-    if (style === 'anxious' && eff === 2 && (Number(signal.perceivedHurt) || 0) >= 3) eff = 3;
+
+    // ── 入 hurt 敏感度门槛下移：anxious（现状）+ PMS（PR-L3 shadow-first）─────────────
+    // **合成上限（批注③）：effDelta = min(1, anxiousDelta || pmsDelta)，绝不取和**——两者都只把
+    // eff===2 提到 3（一档），叠加也封顶 3、绝不到 4。
+    const ph2 = Number(signal.perceivedHurt) || 0;
+    const anxiousBump = (style === 'anxious' && eff === 2 && ph2 >= 3);
+    // PMS（批注②，红线 C）：经前放宽一档（perceived≥2），但**须 regex 证据**（无 regex 不建事件，
+    // 在 shadow 里也守）。pmsActive 由 ctx 注入（经前），pmsArcEnabled 默认 off=不生效只记 shadow。
+    const pmsActive = !!ctx.pmsActive;
+    const pmsBump = (pmsActive && eff === 2 && ph2 >= 2 && !!signal.regexHit);
+    const baseEff = anxiousBump ? 3 : eff;                 // PMS off（现状行为）
+    const pmsEff = (anxiousBump || pmsBump) ? 3 : eff;     // PMS 应用（封顶一档→3，绝不到 4）
+    const pmsArcEnabled = ('pmsArcEnabled' in ctx) ? !!ctx.pmsArcEnabled : _pmsArcEnabledFromEnv();
+
+    // shadow（批注②⑤⑥）：只经前 wound 入口记；changed=**封顶后**；direction 分两类
+    // （not_hurt_to_hurt=刻板化风险 / hurt_to_heavier=温和），不塞原始用户文本。
+    if (pmsActive && isWound) {
+      const baseEnters = baseEff >= 3, pmsEnters = pmsEff >= 3;
+      res.pmsShadow = {
+        v: 1, pmsActive: true, arcEnabled: pmsArcEnabled,
+        baseEff, pmsEff, changed: pmsEnters !== baseEnters,
+        perceivedHurt: ph2, anxiousActive: anxiousBump, deltaCap: 1,
+        lifeStateId: ctx.periodStateId ?? null, phase: 'premenstrual',
+        direction: (!baseEnters && pmsEnters) ? 'not_hurt_to_hurt'
+          : (baseEnters && pmsEnters && pmsEff > baseEff) ? 'hurt_to_heavier' : 'none',
+      };
+    }
+
+    // 实际生效：默认 OFF → baseEff（零行为变化；红线 B：shadow.changed=true 不改判）；ON → pmsEff
+    eff = pmsArcEnabled ? pmsEff : baseEff;
 
     if (eff <= 2) return stay('minor_absorbed');                       // 小事自然消化，不建事件
     if (todayEventCount >= ARC_PARAMS.DAILY_EVENT_CAP) { res.reason = 'daily_cap'; return res; }   // 防刷
@@ -526,7 +561,8 @@ export function composeArcSignal({ userText = '', taboos = [], escalationLevel =
     const sev = composeSeverity({ regexSeverity: rx, perceivedHurt: ph, jokeExempt: harsh.jokeExempt });
     if (sev > 0) {
       const kind = taboo.severity >= harsh.severity && taboo.severity > 0 ? 'taboo_hit' : 'harsh_words';
-      return { kind, severity: sev, perceivedHurt: ph };
+      // regexHit：PR-L3 PMS shadow 的红线 C 闸——无 regex 证据时 PMS 不得改判（"无 regex 不建事件"）。
+      return { kind, severity: sev, perceivedHurt: ph, regexHit: rx > 0 };
     }
   }
 

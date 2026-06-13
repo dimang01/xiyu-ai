@@ -22,6 +22,7 @@ import {
   getActiveCurrentWorks, countRecentMaterialUse,   // v1.21.4 PR-W2 works 注入 + 周上限计数
   getActiveLifeStates,                        // v1.22 PR-L1: #317 四档身体事件闸查档案
 } from './db.mjs';
+import { getActivePeriodContext, isPeriodHeavyWindow, isPmsActive } from './life_state.mjs';   // v1.22 PR-L3 经期情绪路由
 import { buildWorksPromptHint, worksSceneSeed, pickProactiveWork, workMaterialId, worksConfig } from './current_works.mjs';  // v1.21.4 PR-W2 表达层
 import { pickProactiveCategory, cappedCategoryIds } from './photo_categories.mjs';  // v1.21.6 PR-A 照片品类加权采样（默认关）
 import { selectThoughtMaterial, thoughtSceneSeed } from './photo_thought.mjs';      // v1.21.6 PR-B 想到你素材选择
@@ -729,7 +730,10 @@ async function sendProactiveMessage(companion, kind, account, opts = {}) {
     arcHint = _arcExpr.directive;
   }
   // v1.20: 安全模式不拼想念/撒娇类情绪话术；v1.21: arc 激活时想念/冷落档让位
-  const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule, arcActive: _arcExpr.active });
+  // v1.22 PR-L3：经期蔫（heavyWindow）+ 经前语气底色（pmsActive）也带进主动消息；safe_mode 整体为 ''。
+  let _periodCtx = null;
+  try { _periodCtx = getActivePeriodContext(companion); } catch { /* fail-open */ }
+  const emotionHint = Number(companion.safe_mode) ? '' : buildEmotionPromptHint(_es, { missingLevel: _ml, neglectStage: _ns, dailySchedule: proactiveDailySchedule, arcActive: _arcExpr.active, bodyLowEnergy: isPeriodHeavyWindow(_periodCtx), pmsActive: isPmsActive(_periodCtx) });
   const proactivePreferences = getCompanionPreferencesForPrompt(companion.id);  // v1.8.0 #3
   // v1.21.4 PR-W2: current_works 注入——她主动找他时也带着"手头的事"的生活背景。
   // worksHint 进 buildSystemPrompt 生活背景带（§8 排序），永在 arcHint 之前。fail-open。

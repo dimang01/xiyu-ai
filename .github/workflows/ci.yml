@@ -95,6 +95,9 @@ jobs:
       - name: life_state 引擎+生理期门控（v1.22 PR-L1 引擎/tick + PR-L2 三道门控：防同步/披露/成年）
         run: node scripts/life_state_smoke.mjs
 
+      - name: life_state 情绪路由+PMS shadow（v1.22 PR-L3：bodyLowEnergy 让位/patTone 不写回/shadow 红线A·B·C/合成上限）
+        run: node scripts/life_state_emotion_smoke.mjs
+
       - name: proactive 死人开关心跳
         run: node scripts/proactive_deadman_smoke.mjs
 
