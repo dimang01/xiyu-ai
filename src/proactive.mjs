@@ -39,6 +39,7 @@ import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem, recallContextToken, peekSendQuota } from './ilink.mjs';
 import { dedupSegments, isSemanticallySimilar } from './text_similarity.mjs';
 import { classifyIntent, topicKey, recentIntentEvents, trailingAckStreak, isIntentCooled } from './intent_dedup.mjs';
+import { classifyProactive, isSilenceExemptType, missYouVerdict, photoPushAllowed, hasRealContext, buildReservedToneHint } from './proactive_policy.mjs';  // PR-2 主动行为调度
 // v1.4.0: 微信端 voice 路径已废弃（iLink 协议禁止 bot outbound voice，腾讯
 // 官方 SDK 没有 sendVoiceMessageWeixin，HTTP 200 但消息静默丢弃）。
 // 语音功能改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。
@@ -240,7 +241,7 @@ async function tick(now = new Date()) {
             let v2Error = false;
             let decision = null;
             try {
-              decision = evaluateProactive(companion, {});
+              decision = evaluateProactive(companion, { kind: item.kind });   // PR-2：传 kind 让早安/reminder 豁免静默闸
             } catch (e) {
               log('warn', `[Proactive] evaluateProactive 异常，fallback legacy: ${e.message}`);
               v2Error = true;
@@ -459,12 +460,20 @@ function listProactiveCompanionsForBot(botId) {
 }
 
 // 检查是否应该安排一次候选照片：默认至少 36 小时，真正是否发送交给 AI planner 再判断。
+// PR-2（2026-06-14）矜持化：暗恋期(affection<阈值)非请求 proactive 照片走 photoPushAllowed 强限频(48h≤1)；
+// 关系够熟(affection≥阈值)仍走原 36h 抖动。本函数只管 proactive 场景照（用户索图走 bot.mjs 链路，不经此）。
 function shouldSendPhotoToday(companion) {
   if (!companion) return false;
   const last = companion.last_photo_at;
-  if (!last) return true;  // 从未发过
-  const lastTs = new Date(String(last).replace(' ', 'T') + (String(last).includes('Z') ? '' : 'Z')).getTime();
-  const hours = (Date.now() - lastTs) / 3_600_000;
+  const hours = last
+    ? (Date.now() - new Date(String(last).replace(' ', 'T') + (String(last).includes('Z') ? '' : 'Z')).getTime()) / 3_600_000
+    : null;
+  const v = photoPushAllowed({ hoursSinceLastProactivePhoto: hours, affection: companion.affection_level, isUserRequested: false });
+  if (!v.allowed) {
+    log('debug', `[ProactivePolicy] proactive 照片限频·不安排 companion=${companion.id}（${v.reason}）`);
+    return false;
+  }
+  if (last == null) return true;  // 从未发过（已过限频闸）
   const minHours = Math.max(36, Number(process.env.PHOTO_PROACTIVE_MIN_HOURS || 36));
   const threshold = minHours + Math.random() * 12;
   return hours >= threshold;
@@ -931,6 +940,12 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
     }
   }
 
+  // PR-2（2026-06-14）矜持化语气兜底：只对 normal/lastcall（自由起话题，最容易自来熟泛深情/张罗自拍）注入。
+  // 主实现在上面的 gate(静默闸/想你 drop/photo 限频)，本串只收语气；早安/晚安/reminder/photo 有自己的语气不注。
+  if (effectiveKind === 'normal' || effectiveKind === 'lastcall') {
+    systemPrompt += buildReservedToneHint();
+  }
+
   const proactiveBinding = getActiveWechatBinding(companion.wechat_user_id, companion.bot_id);
   let reply = await generateReply(systemPrompt, history, userMessage, {
     temperature: companion.temperature,
@@ -987,6 +1002,17 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
       log('info', `[IntentDedup] proactive 复读止血·不发 companion=${companion.id} kind=${kind} intent=${_intent}（${_cool.reason}）`);
       return;
     }
+  }
+
+  // PR-2（2026-06-14）主动行为调度·想你三档之 drop：泛化「想你」无真实上下文 → **直接不发**(不强行改写)。
+  // 真实上下文=用户近期明确现实事项(考试/出门/露营/工作/睡眠/吃饭/不适…)；有则归 contextual_care 照发。
+  // _proactiveType 供发送成功后的静默计数(只非豁免 +1)。reminder 豁免(纪念日类)。
+  const _recentUserText = recentTurns.filter(t => t.role === 'user' && t.content).slice(-6).map(t => String(t.content)).join(' ');
+  const _realCtx = hasRealContext({ recentUserText: _recentUserText });
+  const _proactiveType = classifyProactive({ kind: effectiveKind, content: reply, realContext: _realCtx });
+  if (effectiveKind !== 'reminder' && missYouVerdict({ content: reply, realContext: _realCtx }) === 'drop') {
+    log('info', `[ProactivePolicy] 泛化想你·无真实上下文·drop 不发 companion=${companion.id} kind=${effectiveKind} type=${_proactiveType}`);
+    return;
   }
 
   // v1.4.0: 微信端语音路径已撤（iLink 协议禁止 bot outbound voice，详见顶部注释）。
@@ -1104,8 +1130,10 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
   }
   // Record proactive sent for engine backoff tracking
   try { recordProactiveSent(companion.id); } catch {}
-  // v1.16.x: 未回连发计数 +1（读空气刹车）——用户回消息时由 bot.mjs 清零
-  try { bumpProactiveUnanswered(companion.id); } catch {}
+  // v1.16.x 读空气 + PR-2(2026-06-14)：未回连发计数 +1，但**只对非豁免类**（生死线①：morning_anchor/
+  // open_loop_followup 不计数，别让早安/牵挂接住污染静默闸，也别让它们掩盖「用户一直没回」）。
+  // 用户回消息时由 bot.mjs 清零（早安不清零，符合 PR-2 精确语义）。
+  try { if (!isSilenceExemptType(_proactiveType)) bumpProactiveUnanswered(companion.id); } catch {}
 
   // 首次主动消息成就（静默）
   tryAchievement(companion.id, 'first_proactive_message');
