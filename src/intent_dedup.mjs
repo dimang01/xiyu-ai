@@ -138,7 +138,7 @@ export function buildIntentDedupHint(events, nowMs = Date.now()) {
   for (const e of recent) { const k = e.topic ? `${e.intent}:${e.topic}` : e.intent; if (!seen.has(k)) { seen.add(k); tags.push(k); } }
   if (!tags.length) return '';
   return `\n\n【★ 别复读】你最近几小时已经主动说过这些（intent:topic）：${tags.slice(-6).join('、')}。`
-    + `用户只是简短回应时，**别再原样重复同一种话**（如反复叮嘱"带齐东西"、反复说"想你"、反复问"还去吗"）——换个角度、或更简短地接一句就好。`;
+    + `他只是简短回应时，**别再原样重复同一种话**（如反复叮嘱"带齐东西"、反复说"想你"、反复问"还去吗"）——换个角度、或更简短地接一句就好。`;
 }
 
 // reply 侧确定性兜底：复读-after-ack 命中后的极简变化应答（小集合·避开最近用过的·非罐头堆词）。
