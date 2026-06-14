@@ -107,6 +107,9 @@ jobs:
       - name: 照片比例（机位路由 + 转码卡口）
         run: node scripts/photo_aspect_smoke.mjs
 
+      - name: 照片无脸闸走权威 shotMode（接线第六案：ACTIVITY_POV/SCENERY 确定性无脸·不靠文本嗅探·LLM 漂移也兜住）
+        run: node scripts/photo_noface_gate_smoke.mjs
+
       - name: proactive 素材级去重（冷却/归因/作用域钉死）
         run: node scripts/proactive_material_smoke.mjs
 
