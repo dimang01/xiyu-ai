@@ -68,6 +68,9 @@ jobs:
       - name: 主动消息同义复读防护回归
         run: node scripts/proactive_dedup_smoke.mjs
 
+      - name: 语义/intent 级复读止血（PR-1：intent 分类/冷却/ack 闸·守住早安续命器·u48 真实序列红验）
+        run: node scripts/intent_dedup_smoke.mjs
+
       - name: 情绪机 1000 轮压测 + fuzzing
         run: node scripts/emotion_stress_test.mjs
 
