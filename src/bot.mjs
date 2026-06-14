@@ -14,7 +14,11 @@ import { stripCurrentTurnFromHistory, isProtocolDuplicate } from './inbound_dedu
 import { generateReply, recognizeImage, embedText } from './ai.mjs';
 import { downloadInboundVoiceToMp3 } from './voice_inbound.mjs';
 import { analyzeVoiceWithQwen } from './voice_emotion.mjs';
-import { dedupSegments } from './text_similarity.mjs';
+import { dedupSegments, findCollision } from './text_similarity.mjs';
+import {
+  classifyIntent, topicKey, recentIntentEvents, trailingAckStreak,
+  isIntentCooled, isAck, buildIntentDedupHint, pickMicroAck,
+} from './intent_dedup.mjs';
 import {
   saveMessage, getRecentHistory, findRecentInboundCandidate, getUserProfile, recallMemories, recallMemoriesSemantic,
   getConversationContext, saveConversationTurn,
@@ -879,6 +883,9 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // arc directive 自带冷语气，双指令会打架）；arc 主导语气追加在最后（最高优先）。
     // worksHint 走 buildSystemPrompt 参数注入（生活背景带，§8 排序），结构上永在 arc 指令之前。
     let systemPrompt = buildSystemPrompt(companion, { memories, userProfile, recentTurns, longTermDigest, promptMode: 'reply', dailySchedule, recentSchedules, personaFacts, preferences, shapingHint, worksHint, openLoopsHint }) + stickerHint + emotionHint + reunionHint + shapingConfirmHint + (arcCtx.active ? '' : escalationDirective(esc.level)) + (arcCtx.directive || '');
+    // PR-1 复读止血（reply 侧·prompt 级·intent 而非纯字符串）：把她最近几小时主动说过的 intent/topic
+    // 喂回去，叫她在用户简短回应时别原样复读（反复叮嘱/想你/追问）。确定性兜底在下方 ack 闸。
+    systemPrompt += buildIntentDedupHint(recentIntentEvents(recentTurns, Date.now()));
     // v1.21.4 PR-W3: 统一【★真实世界】事实层也注入对话回复——他在 chat 里问"今天什么节气/节日"
     // 或聊到冷/月亮时，她答得上真实历法天象（§9 注入口扩到 reply：chat 才是用户问历法的地方）。
     // 拿不到的字段不提、绝不编造（普通日空注入=不冒节日）。fail-open。
@@ -1060,9 +1067,27 @@ async function processUserTurn({ companion, binding, ctx, botId, fromUser, conte
     // 每条之间：typing indicator + 短停顿，模拟"先发一条再打下一条"
     // v1.5.2: 段内 dedup — 修 LLM 一次生成的多段 || 内部出现语义重复 bug
     const rawSegments = splitReplySegments(reply);
-    const { kept: segments, dropped: droppedSegs } = dedupSegments(rawSegments, 0.55);
+    const { kept: _keptSegs, dropped: droppedSegs } = dedupSegments(rawSegments, 0.55);
+    let segments = _keptSegs;
     if (droppedSegs.length) {
       log('info', `[Bot] 段内去重：剪掉 ${droppedSegs.length} 段重复内容 companion=${companion.id}; ${droppedSegs.map(d => `"${d.text.slice(0,20)}"~"${d.similar_to.slice(0,20)}"(sim=${d.sim.toFixed(2)})`).join('; ')}`);
+    }
+    // PR-1 复读止血（reply 侧·确定性兜底）：**仅当用户当前消息是 ack**（好/知道了/嗯…，红线：
+    // 不碰 user 驱动的回答）且这条回复 intent 在冷却中、又与近期某条 assistant 近重复 → 收成一句
+    // 极简变化应答，别在用户只回"好"时再把"带齐东西/想你/还去吗"原样复读一遍。
+    if (isAck(userText)) {
+      const _joined = segments.join(' ');
+      const _recentAsst = recentTurns.filter(t => t.role === 'assistant' && t.content).slice(-5).map(t => String(t.content));
+      const _nowMs = Date.now();
+      const _intent = classifyIntent(_joined);
+      const _cool = isIntentCooled({ intent: _intent, topic: topicKey(_joined), events: recentIntentEvents(recentTurns, _nowMs), nowMs: _nowMs, ackStreak: trailingAckStreak(recentTurns) });
+      const _dup = _cool.cooled ? findCollision(_joined, _recentAsst, 0.6) : null;
+      if (_dup) {
+        const _micro = pickMicroAck(_intent, _recentAsst);
+        log('info', `[IntentDedup] reply 复读止血·收极简 companion=${companion.id} intent=${_intent}（${_cool.reason}·sim=${_dup.sim.toFixed(2)}）「${_joined.slice(0, 24)}」→「${_micro}」`);
+        segments = [_micro];
+        reply = _micro;
+      }
     }
     log('debug', `[Bot] reply 拆为 ${segments.length} 段：${segments.map(s => s.slice(0, 20)).join(' | ')}`);
 

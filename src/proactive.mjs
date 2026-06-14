@@ -38,6 +38,7 @@ import { buildSystemPrompt } from './companion.mjs';
 import { generateReply } from './ai.mjs';
 import { sendTextMessage, sendMessageItem, recallContextToken, peekSendQuota } from './ilink.mjs';
 import { dedupSegments, isSemanticallySimilar } from './text_similarity.mjs';
+import { classifyIntent, topicKey, recentIntentEvents, trailingAckStreak, isIntentCooled } from './intent_dedup.mjs';
 // v1.4.0: 微信端 voice 路径已废弃（iLink 协议禁止 bot outbound voice，腾讯
 // 官方 SDK 没有 sendVoiceMessageWeixin，HTTP 200 但消息静默丢弃）。
 // 语音功能改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。
@@ -970,6 +971,23 @@ ${recallLoop.expected_followup ? `你心里想：${recallLoop.expected_followup}
   reply = scrubFabricatedIllness(reply, companion.id, { activeLifeStates: _activeLifeStates });
   // v1.22 PR-L2 经期披露门控：朋友/暧昧期（affection < 阈值）显式月经表述出站剥（只表现不点明）。
   reply = scrubPeriodDisclosure(reply, { affectionLevel: companion.affection_level });
+
+  // PR-1（2026-06-14）intent 级复读止血：bot 主动重复的同 intent(+topic)在冷却窗内**直接不发**。
+  // 比 3-gram 撞车检测多拦"语义同·文本不同"的复读(remind/ask_plan/miss_you 反复)。reminder 豁免；
+  // morning/goodnight 走宽松窗(<24h，cross-day 早安必放行——红线：早安是唯一续命器，绝不误杀)。
+  if (effectiveKind !== 'reminder') {
+    const _nowMs = Date.now();
+    const _intent = classifyIntent(reply);
+    const _cool = isIntentCooled({
+      intent: _intent, topic: topicKey(reply),
+      events: recentIntentEvents(recentTurns, _nowMs),
+      nowMs: _nowMs, ackStreak: trailingAckStreak(recentTurns),
+    });
+    if (_cool.cooled) {
+      log('info', `[IntentDedup] proactive 复读止血·不发 companion=${companion.id} kind=${kind} intent=${_intent}（${_cool.reason}）`);
+      return;
+    }
+  }
 
   // v1.4.0: 微信端语音路径已撤（iLink 协议禁止 bot outbound voice，详见顶部注释）。
   // 语音体验改在 playground / dashboard 试听 / diary 朗读等浏览器端实现。
