@@ -65,6 +65,9 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 |---|---|
 | She sleeps | Default 00:30–07:30 (small daily jitter); once truly asleep both WeChat and web go silent; goodnight leaves a "stay a little longer" grace window; 📞 calling wakes her — grumpily |
 | Daily schedule | 8–12 life segments generated each day (class / cooking / zoning out); proactive messages anchor to life's gaps, not even spacing |
+| Real-world facts layer | She knows whether today is a solar term / lunar festival (Qingming / Mid-Autumn / winter solstice) — computed astronomically (incl. leap months), never hand-keyed or fabricated |
+| What she's into | Her book / show / craft stays consistent across days; titles are web-verified to actually exist — no daily book-name churn, no fabricated titles |
+| Schedule bound to her life | Her daily schedule ("reading this afternoon") binds to the real book in her profile; progress advances across days (just-started → halfway → almost-done → archived), not re-improvised each morning |
 | Present but not always serving | availability / attention derived from her current schedule — "can reply but you'll have to wait" in a meeting, distracted while out shopping |
 | Texts like a real person | ≤15-char bursts, multi-message sends, typing indicator; when you rapid-fire 2–3 messages she waits for you to stop and replies once |
 | Incomplete replies | Allowed to just empathize / just vent / just not know / reply short when busy — rejects the "react + praise + question + advice" 4-piece AI combo |
@@ -73,7 +76,7 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 
 | Capability | One-liner |
 |---|---|
-| 11-dimension emotion machine | trust / dependency / possessiveness / security / patience / annoyance… incremental per message + half-hourly recalc + anti-grind damping; moods have intensity and inertia — one sentence can't flip anger to joy |
+| Emotion machine (10 incremental dims + mood) | trust / dependency / possessiveness / security / patience / annoyance… 10 dims evolve incrementally per message + half-hourly recalc + anti-grind damping; mood is derived from the dims, with intensity and inertia — one sentence can't flip anger to joy |
 | Inner OS monologue | Every turn first generates an inner thought (never sent) then the outer reply — thinks "ugh, again", says "mm". **The gap between thought and speech** is the core of feeling human |
 | Neglect changes her, step by step | missing → probing → disappointed → withdrawn; three attachment styles (secure / anxious / avoidant) set the pacing; reunions follow a day-by-day repair arc |
 | Conflict & repair arc ⭐ | Hitting her taboos / harsh words create **relationship events**: an explicit hurt → cold → withdrawing → repairing state machine. Wounds need a real apology to unlock repair (a dismissive "stop being mad" repairs slowly); distance heals from the reunion itself; withdrawal has a hard time cap — **cold war can never be permanent**; reconciliations enter long-term memory ("you promised not to check my phone last time"). Design doc: [docs/CONFLICT_ARC.md](./docs/CONFLICT_ARC.md) |
@@ -86,6 +89,7 @@ For detailed startup methods (Compose / local bare-metal / Docker image tags), s
 |---|---|
 | Memory v2 | 7 layers × weights × forgetting curve; pin / lock / do-not-mention; semantic recall with keyword fallback; a nightly reflection engine distills new memories |
 | Remembers unfinished things | You say "interview tomorrow" → next day she asks "hey \|\| how did it go"; auto-resolves when it falls through |
+| Remembers where you are now | Holds the current scene you two are in (watching a movie together / out shopping); after you tell a story she doesn't forget mid-thread or blurt "just had spicy hotpot" out of nowhere |
 | You can shape her | Teach her nicknames / catchphrases / taboos / pacts / inside jokes — all recorded and binding in her prompt |
 | Structured preference ledger | like / dislike / taboo × intensity — "extremely cat-person", "slightly tired of soap operas", with receipts |
 | Her diary + relational diary | Nightly first-person diary plus "today's memory about you"; book-style reading, read-aloud |
@@ -278,7 +282,7 @@ If your nginx `root` points directly at the project's `public/` (recommended), i
 
 ```bash
 npm run doctor          # Node/SQLite/keys/iLink/port/service-health in one command
-npm run check:p0        # P0/P1 regression — 126 checks (incl. proactive guard since v1.10.0)
+npm run check:p0        # P0/P1 regression — 127 checks
 npm run check:imports   # ESM cycle / dead-import check
 npm run check:field-drift  # daily_summary field-name drift
 npm run smoke           # Release smoke test — 10 checks
@@ -325,10 +329,10 @@ npm run smoke           # release smoke; bash scripts/opensource_check.sh — 6 
 ```
 
 - **Error-signature report**: last-24h error logs grouped by normalized signature (count / delta / first-seen), new signatures highlighted — silent failures get loud immediately
-- **Proactive dead-man switch**: hourly heartbeat; active users present but proactive sends all dead → CRITICAL + email alert (`ADMIN_ALERT_EMAIL`), alert-only with zero self-healing
+- **Proactive dead-man switch**: hourly heartbeat split into three signal buckets (sent / legitimately restrained / errored-or-no-heartbeat); only "errored / no heartbeat" raises CRITICAL + email alert (`ADMIN_ALERT_EMAIL`), separating "rightly reading the room and staying quiet" from "a real outage" to cut false alarms; alert-only with zero self-healing
 - **emotion-debug panel** (`/app/emotion-debug.html`, admin): arc state / event stream / per-message emotion deltas with reasons — emotional causality is inspectable, never voodoo
 - **Annotation tool** (`/app/annotate.html`, admin): label real replies good/bad with tags (AI-flavour / lab-report tone / brilliant…) as you read them; `scripts/export-corpus.mjs` exports JSONL — a fine-tuning corpus pipeline that turns "reading" into "collecting"
-- **31 CI gates**: syntax / lint / field-drift reconciliation / release consistency / feature smokes / red-line guards — every new gate is "red-tested" (must fail against a known-bad version)
+- **45+ CI gates**: syntax / lint / field-drift reconciliation / release consistency / feature smokes / red-line guards — every new gate is "red-tested" (must fail against a known-bad version)
 - **Ops clamp**: `ARC_MAX_STATE` can temporarily cap conflict states (a no-rollback fuse for production mishaps; the opposite of minor protection — that one is an uncloseable safety floor)
 
 ---
@@ -381,7 +385,7 @@ npm run smoke           # release smoke; bash scripts/opensource_check.sh — 6 
 │   ├── playground.mjs       Browser chat
 │   ├── companion.mjs        18-section system prompt assembler
 │   ├── memory_v2.mjs        7-layer memory + semantic recall + forgetting curve
-│   ├── emotion_state.mjs    11-dim emotion state machine + presence
+│   ├── emotion_state.mjs    Emotion state machine (10 incremental dims + mood) + presence
 │   ├── inner_os.mjs         Inner OS monologue + conflict-arc structured detection
 │   ├── open_loops.mjs       She remembers unfinished things
 │   ├── proactive.mjs        Proactive messages + scene-photo scheduling
@@ -402,9 +406,9 @@ npm run smoke           # release smoke; bash scripts/opensource_check.sh — 6 
 │   ├── plan_tasks.mjs       Cron schedules (daily / weekly / monthly)
 │   ├── ilink.mjs            iLink protocol wrapper
 │   └── db.mjs               SQLite + all migrateXxx() registration points
-├── public/app/              17 frontend pages (dashboard / playground / emotion-debug …)
+├── public/app/              20 frontend pages (dashboard / playground / emotion-debug …)
 ├── deploy/                  systemd + nginx templates
-├── scripts/                 80+ scripts: setup / doctor / arc-digest / smokes / sandbox acceptance / ...
+├── scripts/                 110+ scripts: setup / doctor / arc-digest / smokes / sandbox acceptance / ...
 ├── docs/
 │   ├── FEATURES.txt         Full feature list (the authoritative source)
 │   ├── HANDOFF.md           New-conversation handoff prompt
@@ -460,10 +464,10 @@ A 7-item operator self-check list (not legal advice):
 |---|---|
 | Privacy policy / Terms of Service | `terms.html` / `privacy.html` are blank templates, **do not use as-is** |
 | AI-generated content labeling | China's "Interim Measures for Generative AI Services", EU AI Act, etc. all require visible labeling |
-| Minor protection | Current version has no built-in age verification / content rating |
+| Minor protection | Built in since v1.20: detects self-disclosed minors (regex + LLM fallback) → sticky safe mode (friend persona / no romance / stage cap / neutral photos), released only via explicit age attestation in the dashboard. **This is not age verification** — it can't catch minors who don't self-disclose; public deployments should still add real-name / age verification |
 | Personal data protection | PIPL / GDPR / CCPA, etc. — you must declare collection purpose and provide a delete interface |
 | Content safety moderation | Repo currently only has a simple blocklist; integrate a cloud vendor moderation API before public exposure |
-| Crisis intervention | Currently does not detect self-harm / suicide risk in inputs; please add crisis detection |
+| Crisis intervention | Basic crisis detection is built in (self-harm signals → step out of character + hotline resources), but it is not a substitute for professional moderation; add your own before public deployment |
 | Provider ToS | Each LLM/image provider has its own terms (whether virtual persona / emotional companionship / commercial use is allowed) — verify before switching |
 
 ### About the "Companion" Positioning
