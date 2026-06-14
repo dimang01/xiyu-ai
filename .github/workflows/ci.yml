@@ -182,6 +182,9 @@ jobs:
       - name: proactive 三桶心跳 emit↔parse 契约（2026-06-13 deadman 信号分离·防"永远无心跳"漂移）
         run: node scripts/proactive_heartbeat_smoke.mjs
 
+      - name: digest 轮转感知日志读取（2026-06-14 B 修·集成红验：跨 bot.log/.1/.gz + 窗口过滤 + reject 分级）
+        run: node scripts/digest_log_rotation_smoke.mjs
+
       - name: playground 对外通道每日探针（2026-06-13 #310 系统解：接线必叫/provider 软处理/零污染）
         run: node scripts/playground_probe_smoke.mjs
 

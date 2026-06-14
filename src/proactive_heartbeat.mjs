@@ -13,24 +13,28 @@ export function formatDeadmanCycle(s) {
   const age = s.tickAgeMs == null ? 'null' : Math.round(s.tickAgeMs);
   let by;
   try { by = JSON.stringify(s.restrainedBy || {}); } catch { by = '{}'; }
+  // quiet=1 = 夜间静默期（沪 23–9）心跳：活体证明照写，但 sent=0 不计 strike、不告警。
+  // 字段插在 restrainedBy（末位贪婪 JSON）之前，保持 restrainedBy 始终是行尾锚点。
   return `cycle active=${s.active | 0} sent=${s.sent | 0} restrained=${s.restrained | 0}`
     + ` errored=${s.errored | 0} bucket=${s.bucket} strikes=${s.strikes | 0}`
-    + ` tickAgeMs=${age} restrainedBy=${by}`;
+    + ` tickAgeMs=${age} quiet=${s.quiet ? 1 : 0} restrainedBy=${by}`;
 }
 
+// quiet=([01]) 设为可选组：兼容 2026-06-14 C 修之前的旧行（无 quiet 字段，且旧行只在白天写=quiet0）。
 export const DEADMAN_CYCLE_RE =
-  /cycle active=(\d+) sent=(\d+) restrained=(\d+) errored=(\d+) bucket=(\w+) strikes=(\d+) tickAgeMs=(\d+|null) restrainedBy=(\{.*\})\s*$/;
+  /cycle active=(\d+) sent=(\d+) restrained=(\d+) errored=(\d+) bucket=(\w+) strikes=(\d+) tickAgeMs=(\d+|null)(?: quiet=([01]))? restrainedBy=(\{.*\})\s*$/;
 
 /** 从一行日志解析 cycle 心跳；非心跳行返回 null。 */
 export function parseDeadmanCycle(line) {
   const m = String(line).match(DEADMAN_CYCLE_RE);
   if (!m) return null;
   let restrainedBy;
-  try { restrainedBy = JSON.parse(m[8]) || {}; } catch { restrainedBy = {}; }
+  try { restrainedBy = JSON.parse(m[9]) || {}; } catch { restrainedBy = {}; }
   return {
     active: +m[1], sent: +m[2], restrained: +m[3], errored: +m[4],
     bucket: m[5], strikes: +m[6],
     tickAgeMs: m[7] === 'null' ? null : +m[7],
+    quiet: m[8] === '1',          // 旧行无此组 → undefined → false（旧行皆白天 quiet0）
     restrainedBy,
   };
 }

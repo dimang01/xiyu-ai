@@ -106,13 +106,19 @@ r = await checkProactiveDeadman({ now: DAY, sendAlert: fakeSend });
 ok(r.active === 0 && r.bucket === 'idle_no_active' && r.strikes === 0 && !r.alerted, `无活跃 → 即便 errored>0 也不告警（实测 active=${r.active}/${r.bucket}）`);
 db.prepare('UPDATE companions SET last_user_reply_at = ? WHERE id = 12').run(new Date(DAY.getTime() - 2 * HOUR).toISOString());  // 复原
 
-// ── 夜间不判定（quiet hours：错误也不累计不清零）────────────────────────────────
+// ── 夜间静默期（quiet hours：写活体心跳但不判——错误不累计、不清零、不告警）────────────
+// C 修（2026-06-14）：夜间不再整段 skip，而是 bucket='quiet'、写 quiet=1 心跳行（活体证明 7×24），
+// 仅 strike/告警保持夜间静默。否则 digest 早上扫到午夜后的窗口零 cycle → 误报"无心跳"。
 reset();
 setAppSetting('proactive_deadman_strikes', '1');
 const NIGHT = new Date('2026-06-11T19:00:00Z');   // 上海 03:00
 setHealth({ errored: 5, tickAtMs: fresh(NIGHT) });
 r = await checkProactiveDeadman({ now: NIGHT, sendAlert: fakeSend });
-ok(r.skipped === true && Number(getAppSetting('proactive_deadman_strikes')) === 1, '夜间跳过：不累计不清零（strikes 原样）');
+ok(r.quiet === true && r.bucket === 'quiet', `夜间：写心跳但不判（quiet 桶，实测 quiet=${r.quiet}/${r.bucket}）`);
+ok(Number(getAppSetting('proactive_deadman_strikes')) === 1, '夜间：strikes 冻结（errored=5 也不累计、不清零，原样=1）');
+ok(r.alerted === false, '夜间：绝不发告警邮件（半夜静默）');
+const nightSnap = JSON.parse(getAppSetting('proactive_deadman_last_class') || '{}');
+ok(nightSnap.quiet === true && nightSnap.bucket === 'quiet', '夜间：活体心跳快照照写 quiet=1（digest 不再误报"无 cycle 心跳行"）');
 
 // ── 告警冷却：同冷却期内再叫 CRITICAL 但不重复发邮件 ─────────────────────────────
 reset();
