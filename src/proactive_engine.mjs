@@ -9,6 +9,7 @@
 import { log } from './logger.mjs';
 import { patchCompanion, getDailySchedule, shanghaiDateKey } from './db.mjs';
 import { getEmotionStateWithDefaults } from './emotion_state.mjs';
+import { isSilenceExemptKind, SILENCE_LIMIT } from './proactive_policy.mjs';   // PR-2 静默闸：早安/reminder 豁免
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -208,9 +209,11 @@ export function shouldBackoffProactive(companion, context = {}) {
   const idleSinceUserH = lastUser ? (now - lastUser) / 3_600_000 : 0;
   const style = String(companion.attachment_style || 'secure').toLowerCase();
   if (intensity !== 'clingy') {
-    // v1.16.x: 读空气——连发 N 条主动消息用户一条没回 → 闭嘴，等他先开口（防自说自话轰炸赶人）。
-    const unansweredLimit = Number(process.env.PROACTIVE_UNANSWERED_LIMIT || 3);
-    if ((companion.proactive_unanswered || 0) >= unansweredLimit) return true;
+    // v1.16.x 读空气 + PR-2(2026-06-14) 静默闸：连续 N 条【非豁免】proactive 用户一条没回 → 闭嘴。
+    // 计数已改为只对非豁免 kind +1（proactive.mjs 发送侧）；阈值 SILENCE_LIMIT(2，原 3)=更快刹对空气。
+    // 生死线①：morning/reminder/confession 豁免静默闸（早安续命器/牵挂接住/告白绝不被对空气拦），
+    // 但它们仍受下方依恋风格长期退场约束（长期沉默降频=保持现状，本 PR 不扩张）。
+    if (!isSilenceExemptKind(context.kind) && (companion.proactive_unanswered || 0) >= SILENCE_LIMIT) return true;
     if (style === 'anxious') {
       // v1.14.5 (P2-5) 焦虑型会追，但有尊严上限：追到 ~5 天没任何回应也收手，别滑向 needy/纠缠。
       if (idleSinceUserH > 120) return true;
