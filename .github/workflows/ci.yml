@@ -191,5 +191,8 @@ jobs:
       - name: playground 对外通道每日探针（2026-06-13 #310 系统解：接线必叫/provider 软处理/零污染）
         run: node scripts/playground_probe_smoke.mjs
 
+      - name: 真实留存看板口径（PR-0：synthetic 切分/留存窗口/proactive 判定/复读检出·防北极星仪表口径漂移）
+        run: node scripts/retention_board_smoke.mjs
+
 # 注：check:p0 / smoke(release_smoke_test.sh) 含 HTTP 探测，需服务在 :3000，
 # 暂未进门禁（在 CI 无服务会红）。后续给它们加 SKIP_HTTP 模式再接入。
