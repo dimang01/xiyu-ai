@@ -5,7 +5,10 @@
  * 监控自己制造盲区是最讽刺的 bug，故 round-trip 锁死：plan_tasks 写出的格式，
  * arc-digest 必须能解析回原值。格式漂移(改了 emit 忘改 parse 或反之)立即变红。
  */
-import { formatReflectionRollup, parseReflectionRollup } from '../src/reflection_heartbeat.mjs';
+import {
+  formatReflectionRollup, parseReflectionRollup,
+  formatReflectRejectMapping, formatReflectInsertFail, parseReflectReject,
+} from '../src/reflection_heartbeat.mjs';
 
 let pass = 0, fail = 0;
 const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log('  ✗', n); } };
@@ -32,6 +35,24 @@ ok(parseReflectionRollup('[INFO] some unrelated log line') === null, '红验：�
 
 // ── rejected>0 是「有产出在蒸发」的信号，必须能被读出来供 digest 告警 ──
 ok(parseReflectionRollup(line).rejected === 2, '红验：rejected 计数被读出（digest 据此报蒸发）');
+
+// ── ② reject 分级：两条拒绝路径 emit↔parse，digest 据此打不同颜色（预期 🟡 vs 真 bug 🔴）──
+// 06-14 取证：8 条蒸发全是 mapping 拒绝（relationship_rule，设计内可见拒绝），零 insert 失败；
+// 若 digest 把两者混为一个 🔴 = 狼来了，每早预期拒绝的虚惊会淹没真 CHECK 失败。
+const mapLine = `[2026-06-13T18:15:56.280Z] [WARN] ${formatReflectRejectMapping(3, 'relationship_rule')}`;
+const mapR = parseReflectReject(mapLine);
+ok(mapR && mapR.kind === 'mapping' && mapR.layer === 'relationship_rule' && mapR.companionId === 3,
+  `mapping 拒绝往返（实得 kind=${mapR?.kind}/layer=${mapR?.layer}）—— digest 打 🟡 预期·非蒸发`);
+
+const failLine = `[2026-06-12T18:16:01.777Z] [WARN] ${formatReflectInsertFail(12, 'CHECK constraint failed: memory_type IN (...)')}`;
+const failR = parseReflectReject(failLine);
+ok(failR && failR.kind === 'insert_fail' && failR.companionId === 12 && /CHECK/.test(failR.msg),
+  `insert 失败往返（实得 kind=${failR?.kind}/msg 含 CHECK=${failR ? /CHECK/.test(failR.msg) : false}）—— digest 打 🔴 查约束`);
+
+// ── 红验：两路径不互相误判 + 无关行返回 null ──
+ok(parseReflectReject(mapLine)?.kind !== 'insert_fail', '红验：mapping 行不被误判为 insert 失败');
+ok(parseReflectReject(failLine)?.kind !== 'mapping', '红验：insert 失败行不被误判为 mapping');
+ok(parseReflectReject('[INFO] [Reflection] companion=3 candidates=3 inserted=2 ...') === null, '红验：正常产出行不被误判为 reject');
 
 console.log(`\nreflection_heartbeat_smoke: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

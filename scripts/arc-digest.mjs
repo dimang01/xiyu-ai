@@ -15,8 +15,9 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { isReportableErrorLine, normalizeErrorSignature } from './error_signature.mjs';
 import { parseUiLayers, parityOffenders } from './memory_chip_parity_smoke.mjs';
-import { parseReflectionRollup } from '../src/reflection_heartbeat.mjs';
+import { parseReflectionRollup, parseReflectReject } from '../src/reflection_heartbeat.mjs';
 import { parseDeadmanCycle } from '../src/proactive_heartbeat.mjs';
+import { iterLogLines } from './digest_log_sources.mjs';
 
 const DB_PATH = process.env.DB_PATH || 'data/bot.db';
 const daysIdx = process.argv.indexOf('--days');
@@ -297,29 +298,43 @@ if (hasTable('companion_current_works')) {
 
 // ── reflection 批产出（正向心跳：没有报错 ≠ 有产出）──
 // 真源是日志里的 `[PlanTasks] *-reflection done ... candidates/inserted/merged/rejected/updated`，
-// 不查 DB 的 memory_source（reflection insert 路径未落 source，DB 计数会骗人）。rejected>0=有记忆在蒸发。
+// 不查 DB 的 memory_source（reflection insert 路径未落 source，DB 计数会骗人）。
+// reject 分级（② 修 2026-06-14）：mapping 拒绝（relationship_rule 等无边界映射）=预期·非蒸发→🟡；
+// 真 insert 失败（CHECK/约束抛错）=记忆在蒸发→🔴。两路径绝不混为一个 🔴（狼来了埋真 bug）。
 {
   const rollups = [];
-  if (existsSync(LOG_FILE)) {
-    const rl = createInterface({ input: createReadStream(LOG_FILE, { encoding: 'utf8' }), crlfDelay: Infinity });
-    const sinceMs = Date.now() - DAYS * 86400e3;
-    for await (const line of rl) {
-      const tm = line.match(/^\[([^\]]+)\]/);
-      const ts = tm ? new Date(tm[1]).getTime() : NaN;
-      if (!Number.isFinite(ts) || ts < sinceMs) continue;
-      const r = parseReflectionRollup(line);
-      if (r) rollups.push({ ts, ...r });
-    }
+  const rejMapping = {};   // layer → 计数（预期拒绝）
+  let rejInsertFail = [];  // { companionId, msg }（真蒸发）
+  const sinceMs = Date.now() - DAYS * 86400e3;
+  for await (const { ts, line } of iterLogLines(LOG_FILE, sinceMs)) {
+    const r = parseReflectionRollup(line);
+    if (r) { rollups.push({ ts, ...r }); continue; }
+    const rej = parseReflectReject(line);
+    if (rej?.kind === 'mapping')      rejMapping[rej.layer] = (rejMapping[rej.layer] || 0) + 1;
+    else if (rej?.kind === 'insert_fail') rejInsertFail.push(rej);
   }
   if (!rollups.length) {
     console.log(`\n⚠ reflection 批产出：近 ${DAYS} 天日志无 *-reflection done 心跳行（批没跑完 / 日志未含 / 旧版无此行）`);
   } else {
     const totRej = rollups.reduce((s, r) => s + r.rejected, 0);
-    console.log(`\n── reflection 批产出：${rollups.length} 批（近 ${DAYS} 天）${totRej ? ` 🔴 共 ${totRej} 条被拒蒸发` : ''} ──`);
+    // 🔴 只由真 insert 失败触发；纯 mapping 拒绝不再让整段尖叫。
+    console.log(`\n── reflection 批产出：${rollups.length} 批（近 ${DAYS} 天）${rejInsertFail.length ? ` 🔴 ${rejInsertFail.length} 条 insert 失败在蒸发` : ''} ──`);
     for (const r of rollups.slice(-7)) {
-      console.log(`  ${fmtT(new Date(r.ts).toISOString())}  ${r.kind} ${r.date}  ran=${r.ran}  提议 ${r.candidates} → 入 ${r.inserted}/并 ${r.merged}/更 ${r.updated}${r.rejected ? `  🔴 拒 ${r.rejected}` : ''}`);
+      console.log(`  ${fmtT(new Date(r.ts).toISOString())}  ${r.kind} ${r.date}  ran=${r.ran}  提议 ${r.candidates} → 入 ${r.inserted}/并 ${r.merged}/更 ${r.updated}${r.rejected ? `  拒 ${r.rejected}` : ''}`);
     }
-    if (totRej) console.log('   拒>0：有记忆产出在静默蒸发（查 [Reflection] insert 失败 的 CHECK/约束原因）');
+    const mapTot = Object.values(rejMapping).reduce((a, b) => a + b, 0);
+    if (mapTot) {
+      const detail = Object.entries(rejMapping).sort((a, b) => b[1] - a[1]).map(([l, n]) => `${l}×${n}`).join(' ');
+      console.log(`  🟡 边界映射拒绝 ${mapTot} 条（预期·非蒸发，待 v1.23 决定是否开正式类型）：${detail}`);
+    }
+    if (rejInsertFail.length) {
+      console.log(`  🔴 真 insert 失败 ${rejInsertFail.length} 条（CHECK/约束 → 记忆在蒸发，查约束原因）：`);
+      for (const f of rejInsertFail.slice(-5)) console.log(`     ${cname(f.companionId)}  ${cut(f.msg, 80)}`);
+    }
+    // 自洽校验：rollup 计的 rejected 应 ≈ mapping + insert_fail（差额=旧版无分类 WARN 或窗口边缘，仅提示）
+    if (totRej && totRej !== mapTot + rejInsertFail.length) {
+      console.log(`  （注：rollup 拒计 ${totRej} ≠ 分类 ${mapTot}+${rejInsertFail.length}，差额多为窗口边缘/旧无分类行）`);
+    }
   }
 }
 
@@ -330,27 +345,26 @@ if (hasTable('companion_current_works')) {
 {
   const sumVals = (o) => Object.values(o || {}).reduce((a, b) => a + Number(b), 0);
   const cycles = [];
-  if (existsSync(LOG_FILE)) {
-    const rl = createInterface({ input: createReadStream(LOG_FILE, { encoding: 'utf8' }), crlfDelay: Infinity });
-    const sinceMs = Date.now() - DAYS * 86400e3;
-    for await (const line of rl) {
-      const tm = line.match(/^\[([^\]]+)\]/);
-      const ts = tm ? new Date(tm[1]).getTime() : NaN;
-      if (!Number.isFinite(ts) || ts < sinceMs) continue;
-      const c = parseDeadmanCycle(line);
-      if (c) cycles.push({ ts, ...c });
-    }
+  // B 修（2026-06-14）：跨当前 + 轮转件扫 cycle 行——否则早上跑时昨天白天的行已轮转进 bot.log.1，
+  // 当前 bot.log 午夜后只剩夜间窗 → 误报「无 cycle 心跳行」（06-14 晨即此假警报）。
+  const sinceMs = Date.now() - DAYS * 86400e3;
+  for await (const { ts, line } of iterLogLines(LOG_FILE, sinceMs)) {
+    const c = parseDeadmanCycle(line);
+    if (c) cycles.push({ ts, ...c });
   }
   const appVal = (k) => db.prepare('SELECT value FROM app_settings WHERE key = ?').get(k)?.value;
   const strikes = Number(appVal('proactive_deadman_strikes') || 0);
   const lastAlertMs = Number(appVal('proactive_deadman_last_alert') || 0);
   const tickRun = appVal('proactive_tick_last_run');
   const tickAgeMin = tickRun ? Math.round((Date.now() - Number(tickRun)) / 60000) : null;
+  // quiet=夜间静默期心跳（沪 23–9，活体证明照写但 sent=0 不判，digest 据此知"这不是断供"）。
+  const quietN = cycles.filter(c => c.quiet).length;
 
   console.log(`\n── proactive 健康（近 ${DAYS} 天）strikes=${strikes}${strikes >= 2 ? ' 🔴' : ''}  tick 心跳=${tickAgeMin == null ? '⚠ 从未写入' : tickAgeMin + 'min 前'}${lastAlertMs ? `  上次告警 ${fmtT(new Date(lastAlertMs).toISOString())}` : ''} ──`);
   if (!cycles.length) {
-    console.log(`  ⚠ 近 ${DAYS} 天日志无 [Deadman] cycle 心跳行（批没跑完 / 日志未含 / 旧版无此行）`);
+    console.log(`  ⚠ 近 ${DAYS} 天（含轮转件）无 [Deadman] cycle 心跳行——tick 真没跑 / 日志缺失（非夜间静默：C 修后夜间也写 quiet 心跳）`);
   } else {
+    if (quietN) console.log(`  （${quietN} 个夜间静默周期 quiet=1：活体证明，sent=0 不计 strike）`);
     const sum = cycles.reduce((a, c) => ({ sent: a.sent + c.sent, restrained: a.restrained + c.restrained, errored: a.errored + c.errored }), { sent: 0, restrained: 0, errored: 0 });
     const errWins = cycles.filter(c => c.errored > 0);
     console.log(`  三桶累计（${cycles.length} 周期）：已发送 ${sum.sent} / 克制 ${sum.restrained} / 错误 ${sum.errored}${sum.errored ? ` 🔴（${errWins.length} 个窗有 errored，即便同窗有 sent 也要查）` : ''}`);

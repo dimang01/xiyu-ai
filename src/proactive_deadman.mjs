@@ -46,11 +46,15 @@ const BOOT_GRACE_MS = Number(process.env.DEADMAN_BOOT_GRACE_MS || 30 * 60_000); 
  * @returns { skipped, active, sent, restrained, errored, bucket, tickAgeMs, strikes, alerted } —— 纯诊断
  */
 export async function checkProactiveDeadman({ now = new Date(), uptimeS = process.uptime(), sendAlert = sendOpsAlertEmail } = {}) {
-  const out = { skipped: false, active: 0, sent: 0, restrained: 0, errored: 0, bucket: null, tickAgeMs: null, strikes: 0, alerted: false };
+  const out = { skipped: false, active: 0, sent: 0, restrained: 0, errored: 0, bucket: null, tickAgeMs: null, strikes: 0, alerted: false, quiet: false };
   try {
-    // 夜间不判定（沪 23:00–09:00）：quiet hours 里 proactive 本来安静，sent=0 是正常的。
+    // 夜间（沪 23:00–09:00）：proactive 本来安静、sent=0 正常 → quiet 期不计 strike、不发告警邮件。
+    // 但「活体心跳」必须 7×24 照写（C 修，2026-06-14）：心跳脱离告警闸——一个允许合法缺席的心跳
+    // 会被 digest 误读成「无心跳」断供假警报（06-14 晨 digest 即如此：轮转后只剩夜间窗→零 cycle 行）。
+    // 承"批管线必须有正向心跳"公理：告警可夜间静默，活体证明不可。
     const shHour = (now.getUTCHours() + 8) % 24;
-    if (shHour >= 23 || shHour < 9) { out.skipped = true; return out; }
+    const quiet = (shHour >= 23 || shHour < 9);
+    out.quiet = quiet;
 
     const sinceIso = new Date(now.getTime() - ACTIVE_WINDOW_H * 3600e3).toISOString();
 
@@ -81,10 +85,12 @@ export async function checkProactiveDeadman({ now = new Date(), uptimeS = proces
       ? (uptimeS * 1000 >= BOOT_GRACE_MS)
       : (out.tickAgeMs > TICK_DEAD_MS);
 
-    // ── 三桶分桶：仅「错误 / 无心跳」计 strike（克制/已发送/无活跃皆不计）──
+    // ── 三桶分桶：仅「错误 / 无心跳」计 strike（克制/已发送/无活跃皆不计）。
+    //    quiet 期一律 bucket='quiet'、strikes 冻结不动（夜间 sent=0 不可判，留 09:00 复判）──
     let strikes = Number(getAppSetting(STRIKES_KEY) || 0);
     let bucket;
-    if (out.active === 0)        { bucket = 'idle_no_active'; strikes = 0; }   // 无活跃用户：silence 正常
+    if (quiet)                   { bucket = 'quiet'; }                          // 夜间：只写心跳，strikes 冻结
+    else if (out.active === 0)   { bucket = 'idle_no_active'; strikes = 0; }   // 无活跃用户：silence 正常
     else if (tickDead)           { bucket = 'tick_dead';      strikes += 1; }   // 桶3：无心跳（含从未写入+过宽限）
     else if (out.sent > 0)       { bucket = 'sent';           strikes = 0; }    // 桶1：已发送
     else if (out.errored > 0)    { bucket = 'error';          strikes += 1; }   // 桶3：发送路径抛错（#263 形态）
@@ -92,19 +98,20 @@ export async function checkProactiveDeadman({ now = new Date(), uptimeS = proces
     else                         { bucket = 'idle_no_due';    strikes = 0; }    // tick 活·本周期无 due（密聊中/未到点）
     out.bucket = bucket;
     out.strikes = strikes;
-    setAppSetting(STRIKES_KEY, String(strikes));
+    if (!quiet) setAppSetting(STRIKES_KEY, String(strikes));   // 夜间不写回（strikes 冻结，不在不可判时清零）
 
     // digest 快照（补充②③：三桶全量 + per-companion 克制细分）；arc-digest 读此 + 扫 cycle 日志行。
     const snap = {
       at: now.toISOString(), active: out.active, sent: out.sent, restrained: out.restrained,
-      errored: out.errored, bucket, strikes, tickAgeMs: out.tickAgeMs, restrainedBy: health.restrainedBy,
+      errored: out.errored, bucket, strikes, tickAgeMs: out.tickAgeMs, quiet, restrainedBy: health.restrainedBy,
     };
     try { setAppSetting(LAST_CLASS_KEY, JSON.stringify(snap)); } catch { /* digest 快照非关键，吞 */ }
-    // 结构化 cycle 心跳日志行（digest 扫描源；emit↔parse round-trip smoke 锁，防 regex 漂移假警报）。
+    // 结构化 cycle 心跳日志行（活体证明·7×24 照写含夜间；digest 扫描源；emit↔parse round-trip smoke 锁）。
     log('info', `[Deadman] ${formatDeadmanCycle(snap)}`);
 
+    // 告警闸：夜间静默（不半夜发邮件，sent=0 在夜间正常），仅白天 striking 桶连击触发。
     const strikingBucket = bucket === 'tick_dead' || bucket === 'error';
-    if (strikingBucket && strikes >= STRIKES_TO_ALERT) {
+    if (!quiet && strikingBucket && strikes >= STRIKES_TO_ALERT) {
       const detail = bucket === 'tick_dead'
         ? `proactive tick 心跳停摆（${out.tickAgeMs == null ? '心跳从未写入 + 过启动宽限' : Math.round(out.tickAgeMs / 60000) + 'min 未跑'}）`
         : `近 ${ACTIVE_WINDOW_H}h 有 ${out.active} 个活跃 companion、本周期 proactive 发送=0 但发送路径报错 ${out.errored} 次`;

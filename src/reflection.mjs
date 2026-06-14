@@ -19,6 +19,7 @@ import {
 } from './memory_v2.mjs';
 import { saveMemory, getMemoriesV2, legacyTypeForLayer } from './db.mjs';
 import { processMemoryForGraph } from './event_graph.mjs';
+import { formatReflectRejectMapping, formatReflectInsertFail } from './reflection_heartbeat.mjs';
 
 const CONFIDENCE_MIN = 0.7;
 const RECENT_TURNS_LIMIT = 300;
@@ -141,7 +142,8 @@ export async function applyReflectionMemoryUpdates(companionId, updates, options
         const legacyType = legacyTypeForLayer(m.memory_layer);
         if (!legacyType) {
           rejected++;
-          log('warn', `[Reflection] 跳过无边界映射的层 companion=${companionId} layer=${m.memory_layer}（如 relationship_rule，待 v1.23 情绪建构包决定是否开正式类型）`);
+          // 预期·非蒸发（设计内可见拒绝，待 v1.23）；digest 据此打 🟡，与真 insert 失败严格分开。
+          log('warn', formatReflectRejectMapping(companionId, m.memory_layer));
           continue;
         }
         saveMemory({
@@ -165,7 +167,8 @@ export async function applyReflectionMemoryUpdates(companionId, updates, options
       }
     } catch (e) {
       rejected++;   // 心跳计数：insert 被拒(如 memory_type CHECK 约束)不再只埋在 WARN 里
-      log('warn', `[Reflection] insert 失败 companion=${companionId}: ${e.message}`);
+      // 真抛错=记忆在蒸发；digest 据此打 🔴 + "查约束原因"，与预期的 mapping 拒绝分开。
+      log('warn', formatReflectInsertFail(companionId, e.message));
     }
   }
 
