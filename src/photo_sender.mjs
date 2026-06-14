@@ -251,8 +251,27 @@ export function isSceneryScene(scene) {
   return scenery.test(s);
 }
 
-export function realismTailFor(scene) {
-  return isSceneryScene(scene)
+// v1.22.x（接线第六案，2026-06-14）：无脸机位的**权威**集合。上游 decideShotMode / 品类采样
+// 已定死机位并落库（food/trophy/thought/activity_pov→ACTIVITY_POV，sky→SCENERY）；出图边界必须
+// 直接消费这个权威信号，而不是去文本嗅探 LLM 写的 imagePrompt（嗅探判错=食物 POV 被当人像→
+// 挂裁脸参考→出脸，prod 06-13 实案）。
+export const NO_FACE_SHOTMODES = Object.freeze(new Set(['ACTIVITY_POV', 'SCENERY']));
+
+/**
+ * 这张照片是否「无脸」（POV 拍景/物，不拍她的脸）。
+ * 权威优先：有 shotMode 就**信它**（确定性，杜绝 LLM 漂移/嗅探误判）；
+ * 仅当 shotMode 缺失（如旧 user-request 老路 / buildScenePrompt 兜底）才退回文本嗅探。
+ */
+export function isNoFaceShot({ shotMode = '', scenePrompt = '' } = {}) {
+  if (shotMode) return NO_FACE_SHOTMODES.has(shotMode);
+  return isSceneryScene(scenePrompt);
+}
+
+// sceneryShot 可由调用方（已按权威 shotMode 算好）显式传入，避免再次文本嗅探漂移；
+// 不传时退回文本嗅探（probe 脚本等旧调用方）。
+export function realismTailFor(scene, sceneryShot = undefined) {
+  const noFace = typeof sceneryShot === 'boolean' ? sceneryShot : isSceneryScene(scene);
+  return noFace
     ? [...REALISM_CORE, ...REALISM_SCENERY]
     : [...REALISM_CORE, ...REALISM_PERSON];
 }
@@ -307,10 +326,11 @@ function buildScenePrompt({ activity, timeSlot, mood }) {
 // **之后**（sanitizePhotoPrompt 的 900 字截断会吃掉尾部，不能拼在它之前）。
 export const ANTI_COLLAGE_PROMPT = 'STRICTLY a single photo in one single frame — NOT a collage, no photo grid, no side-by-side panels, no photo strip, no multi-panel layout, no repeated copies of the same person';
 
-export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath }) {
+export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCapabilities, referenceImagePath, shotMode = '' }) {
   // v1.19.2: SCENERY/ACTIVITY-POV 无人脸 —— 不写人物 identity，也不写"keep the same face"
   // 的 referenceNote（否则 i2i 会硬把脸塞进无脸的桌面/风景 POV，如电脑前的工作 POV 变成人脸 candid）。
-  const sceneryShot = isSceneryScene(scenePrompt);
+  // v1.22.x（接线第六案）：无脸判定走**权威 shotMode**（有就信它），shotMode 缺失才退回文本嗅探。
+  const sceneryShot = isNoFaceShot({ shotMode, scenePrompt });
   const referenceNote = sceneryShot
     ? 'first-person POV photo of the scene/objects in front of her — do NOT show her face, do NOT make it a selfie; the objects/scenery fill the frame, at most one hand or sleeve at the edge'
     : (referenceImagePath && providerCapabilities?.referenceImage
@@ -319,7 +339,7 @@ export function buildFinalImagePrompt({ identityPrompt, scenePrompt, providerCap
   // 去重：planner 写的 imagePrompt 常已含部分质感词，拼接前剔掉重复，
   // 避免顶到 900 字上限把独有的质感词（skin texture / grain / DoF）截掉。
   const sceneLower = String(scenePrompt || '').toLowerCase();
-  const tail = realismTailFor(scenePrompt).filter((t) => {
+  const tail = realismTailFor(scenePrompt, sceneryShot).filter((t) => {
     const key = t.split(',')[0].trim().toLowerCase();
     return key && !sceneLower.includes(key);
   });
@@ -417,6 +437,7 @@ export async function sendCompanionPhoto({
       scenePrompt,
       providerCapabilities: visual?.capabilities,
       referenceImagePath: visual?.referenceImagePath,
+      shotMode,   // 接线第六案：把权威机位喂进出图边界，无脸判定不再靠文本嗅探
     });
     if (!finalPrompt) {
       return { ok: false, code: 'invalid_prompt', error: '照片 prompt 不合规', caption: finalCaption, activity: finalActivity };
@@ -424,8 +445,11 @@ export async function sendCompanionPhoto({
     // v1.10.53: image-to-image —— provider 支持参考图且有锁定/自动 ref 时，把 ref
     // 图字节作为 input image 喂进生图，真正锚定同一张脸（不再只塞进文字 note）。
     // v1.19.2: SCENERY/ACTIVITY-POV 无人脸 —— 不传参考图（走 t2i），否则 i2i 会把脸塞进桌面/风景 POV。
+    // v1.22.x（接线第六案·红线）：无脸机位**绝不载入/使用裁脸参考**——判定走权威 shotMode（与
+    // buildFinalImagePrompt 同源 isNoFaceShot），不再靠 isSceneryScene 文本嗅探（嗅探判错=食物 POV
+    // 仍载入裁脸参考→出脸，prod 06-13 实案）。LLM 在 POV 里夹了人物词也被这道权威闸兜住。
     let referenceImage = null;
-    if (!isSceneryScene(scenePrompt) && visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
+    if (!isNoFaceShot({ shotMode, scenePrompt }) && visual?.capabilities?.referenceImage && visual?.referenceImagePath) {
       try {
         const rawRef = await readFile(visual.referenceImagePath);
         const refBuf = await cropReferenceToFace(rawRef, aspect); // 裁成目标比例窗：锁脸不锁方（输出跟随 ref 比例）
