@@ -21,7 +21,8 @@
     "arc:digest": "node scripts/arc-digest.mjs",
     "stickers:fetch": "python3 scripts/fetch_stickers.py",
     "smoke": "bash scripts/release_smoke_test.sh",
-    "postinstall": "wx-voice compile || echo '[postinstall] wx-voice compile failed (语音功能将不可用，先忽略)'"
+    "postinstall": "wx-voice compile || echo '[postinstall] wx-voice compile failed (语音功能将不可用，先忽略)'",
+    "retention:board": "node scripts/retention-board.mjs"
   },
   "keywords": [
     "ai-companion",
